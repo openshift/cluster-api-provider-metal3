@@ -1,23 +1,21 @@
-# See the OWNERS docs at https://go.k8s.io/owners
-
+# approval == this is a good idea /approve
 approvers:
- - furkatgofurov7
- - kashifest
- - mboukhalfa
+  - derekhiggins
+  - dtantsur
+  - elfosardo
+  - honza
+  - hroyrh
+  - zaneb
 
+# review == this code is good /lgtm
 reviewers:
- - adilGhaffarDev
- - lentzi90
- - smoshiur1237
- - tuminoid
- - zhouhao3
- 
-emeritus_approvers:
- - fmuyassarov
- - maelk
- - Xenwar
+  - derekhiggins
+  - dtantsur
+  - elfosardo
+  - honza
+  - hroyrh
+  - zaneb
 
-emeritus_reviewers:
- - jan-est
- - namnx228
-
+# Bugzilla Information
+component: "Bare Metal Hardware Provisioning"
+subcomponent: "cluster-api-provider"
