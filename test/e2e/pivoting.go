@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -20,6 +19,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 
 	dockerTypes "github.com/docker/docker/api/types"
+	containertypes "github.com/docker/docker/api/types/container"
 	docker "github.com/docker/docker/client"
 	"sigs.k8s.io/cluster-api/cmd/clusterctl/client/config"
 	framework "sigs.k8s.io/cluster-api/test/framework"
@@ -83,6 +83,27 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 		fetchContainerLogs(&ironicContainers, input.ArtifactFolder, input.E2EConfig.GetVariable("CONTAINER_RUNTIME"))
 	}
 
+	By("Fetch manifest for bootstrap cluster before pivot")
+	kconfigPathBootstrap := input.BootstrapClusterProxy.GetKubeconfigPath()
+	os.Setenv("KUBECONFIG_BOOTSTRAP", kconfigPathBootstrap)
+	path := filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
+	cmd := exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
+	cmd.Dir = path
+	_ = cmd.Run()
+
+	By("Fetch target cluster kubeconfig for target cluster log collection")
+	kconfigPathWorkload := input.TargetCluster.GetKubeconfigPath()
+	os.Setenv("KUBECONFIG_WORKLOAD", kconfigPathWorkload)
+	Logf("Save kubeconfig in temp folder for project-infra target log collection")
+	// TODO(smoshiur1237): This is a workaround to copy the target kubeconfig and enable project-infra
+	// target log collection. There is possibility to handle the kubeconfig in better way.
+	// KubeconfigPathTemp will be used by project-infra target log collection only incase of failed e2e test
+	kubeconfigPathTemp := "/tmp/kubeconfig-test1.yaml"
+	cmd = exec.Command("cp", kconfigPathWorkload, kubeconfigPathTemp) // #nosec G204:gosec
+	stdoutStderr, er := cmd.CombinedOutput()
+	Logf("%s\n", stdoutStderr)
+	Expect(er).To(BeNil(), "Cannot fetch target cluster kubeconfig")
+
 	By("Remove Ironic containers from the source cluster")
 	isIronicDeployment := true
 	if ephemeralCluster == Kind {
@@ -99,12 +120,12 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 
 	By("Create Ironic namespace")
 	targetClusterClientSet := input.TargetCluster.GetClientSet()
-	ironicNamespace := &corev1.Namespace{
+	ironicNamespaceObj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: input.E2EConfig.GetVariable(ironicNamespace),
 		},
 	}
-	_, err := targetClusterClientSet.CoreV1().Namespaces().Create(ctx, ironicNamespace, metav1.CreateOptions{})
+	_, err := targetClusterClientSet.CoreV1().Namespaces().Create(ctx, ironicNamespaceObj, metav1.CreateOptions{})
 	Expect(err).To(BeNil(), "Unable to create the Ironic namespace")
 
 	By("Initialize Provider component in target cluster")
@@ -125,24 +146,8 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	By("Add Labels to hardwareData CRDs")
 	labelHDCRDs(nil)
 
-	By("Install BMO")
-	installIronicBMO(func() installIronicBMOInput {
-		return installIronicBMOInput{
-			ManagementCluster:          input.TargetCluster,
-			BMOPath:                    input.E2EConfig.GetVariable(bmoPath),
-			deployIronic:               false,
-			deployBMO:                  true,
-			deployIronicTLSSetup:       getBool(input.E2EConfig.GetVariable(ironicTLSSetup)),
-			deployIronicBasicAuth:      getBool(input.E2EConfig.GetVariable(ironicBasicAuth)),
-			deployIronicKeepalived:     getBool(input.E2EConfig.GetVariable(ironicKeepalived)),
-			deployIronicMariadb:        getBool(input.E2EConfig.GetVariable(ironicMariadb)),
-			NamePrefix:                 input.E2EConfig.GetVariable(NamePrefix),
-			RestartContainerCertUpdate: getBool(input.E2EConfig.GetVariable(restartContainerCertUpdate)),
-		}
-	})
-
 	By("Install Ironic in the target cluster")
-	installIronicBMO(func() installIronicBMOInput {
+	installIronicBMO(ctx, func() installIronicBMOInput {
 		return installIronicBMOInput{
 			ManagementCluster:          input.TargetCluster,
 			BMOPath:                    input.E2EConfig.GetVariable(bmoPath),
@@ -152,8 +157,30 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 			deployIronicBasicAuth:      getBool(input.E2EConfig.GetVariable(ironicBasicAuth)),
 			deployIronicKeepalived:     getBool(input.E2EConfig.GetVariable(ironicKeepalived)),
 			deployIronicMariadb:        getBool(input.E2EConfig.GetVariable(ironicMariadb)),
+			Namespace:                  ironicNamespaceObj.Name,
 			NamePrefix:                 input.E2EConfig.GetVariable(NamePrefix),
 			RestartContainerCertUpdate: getBool(input.E2EConfig.GetVariable(restartContainerCertUpdate)),
+			E2EConfig:                  input.E2EConfig,
+			SpecName:                   input.SpecName,
+		}
+	})
+
+	By("Install BMO")
+	installIronicBMO(ctx, func() installIronicBMOInput {
+		return installIronicBMOInput{
+			ManagementCluster:          input.TargetCluster,
+			BMOPath:                    input.E2EConfig.GetVariable(bmoPath),
+			deployIronic:               false,
+			deployBMO:                  true,
+			deployIronicTLSSetup:       getBool(input.E2EConfig.GetVariable(ironicTLSSetup)),
+			deployIronicBasicAuth:      getBool(input.E2EConfig.GetVariable(ironicBasicAuth)),
+			deployIronicKeepalived:     getBool(input.E2EConfig.GetVariable(ironicKeepalived)),
+			deployIronicMariadb:        getBool(input.E2EConfig.GetVariable(ironicMariadb)),
+			Namespace:                  ironicNamespaceObj.Name,
+			NamePrefix:                 input.E2EConfig.GetVariable(NamePrefix),
+			RestartContainerCertUpdate: getBool(input.E2EConfig.GetVariable(restartContainerCertUpdate)),
+			E2EConfig:                  input.E2EConfig,
+			SpecName:                   input.SpecName,
 		}
 	})
 
@@ -233,11 +260,14 @@ type installIronicBMOInput struct {
 	deployIronicBasicAuth      bool
 	deployIronicKeepalived     bool
 	deployIronicMariadb        bool
+	Namespace                  string
 	NamePrefix                 string
 	RestartContainerCertUpdate bool
+	E2EConfig                  *clusterctl.E2EConfig
+	SpecName                   string
 }
 
-func installIronicBMO(inputGetter func() installIronicBMOInput) {
+func installIronicBMO(ctx context.Context, inputGetter func() installIronicBMOInput) {
 	input := inputGetter()
 
 	ironicHost := os.Getenv("CLUSTER_BARE_METAL_PROVISIONER_IP")
@@ -275,24 +305,27 @@ func installIronicBMO(inputGetter func() installIronicBMOInput) {
 	cmd.Dir = path
 	cmd.Env = append(env, os.Environ()...)
 
-	outputPipe, er := cmd.StdoutPipe()
-	Expect(er).To(BeNil(), "Cannot get the stdout from the command")
-	errorPipe, er := cmd.StderrPipe()
-	Expect(er).To(BeNil(), "Cannot get the stderr from the command")
-	err := cmd.Start()
-	Expect(err).To(BeNil(), "Failed to deploy Ironic")
-	data, er := io.ReadAll(outputPipe)
-	Expect(er).To(BeNil(), "Cannot get the stdout from the command")
-	if len(data) > 0 {
-		Logf("Output of the shell: %s\n", string(data))
+	stdoutStderr, er := cmd.CombinedOutput()
+	Logf("%s\n", stdoutStderr)
+	Expect(er).To(BeNil(), "Failed to deploy Ironic")
+
+	deploymentNameList := []string{}
+	if input.deployIronic {
+		deploymentNameList = append(deploymentNameList, "-ironic")
 	}
-	errorData, er := io.ReadAll(errorPipe)
-	Expect(er).To(BeNil(), "Cannot get the stderr from the command")
-	err = cmd.Wait()
-	if len(errorData) > 0 {
-		Logf("Error of the shell: %v\n", string(errorData))
+	if input.deployBMO {
+		deploymentNameList = append(deploymentNameList, "-controller-manager")
 	}
-	Expect(err).To(BeNil(), "Failed to deploy Ironic")
+	// Wait for the deployments to become available
+	clientSet := input.ManagementCluster.GetClientSet()
+	for _, name := range deploymentNameList {
+		deployment, err := clientSet.AppsV1().Deployments(input.Namespace).Get(ctx, input.NamePrefix+name, metav1.GetOptions{})
+		Expect(err).To(BeNil(), "Unable to get the deployment %s in namespace %s \n error message: %s", input.NamePrefix+name, input.Namespace, err)
+		framework.WaitForDeploymentsAvailable(ctx, framework.WaitForDeploymentsAvailableInput{
+			Getter:     input.ManagementCluster.GetClient(),
+			Deployment: deployment,
+		}, input.E2EConfig.GetIntervals(input.SpecName, "wait-deployment")...)
+	}
 }
 
 type RemoveIronicInput struct {
@@ -320,9 +353,9 @@ func removeIronic(ctx context.Context, inputGetter func() RemoveIronicInput) {
 		dockerClient, err := docker.NewClientWithOpts()
 		Expect(err).To(BeNil(), "Unable to get docker client")
 		removeOptions := dockerTypes.ContainerRemoveOptions{}
+		stopTimeout := 60
 		for _, container := range ironicContainerList {
-			d := 1 * time.Minute
-			err = dockerClient.ContainerStop(ctx, container, &d)
+			err = dockerClient.ContainerStop(ctx, container, containertypes.StopOptions{Timeout: &stopTimeout})
 			Expect(err).To(BeNil(), "Unable to stop the container %s: %v", container, err)
 			err = dockerClient.ContainerRemove(ctx, container, removeOptions)
 			Expect(err).To(BeNil(), "Unable to delete the container %s: %v", container, err)
@@ -393,6 +426,25 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
 	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
+
+	By("Fetch logs from target cluster")
+	path := filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
+	cmd := exec.Command("./fetch_target_logs.sh") // #nosec G204:gosec
+	cmd.Dir = path
+	errorPipe, _ := cmd.StderrPipe()
+	_ = cmd.Start()
+	errorData, _ := io.ReadAll(errorPipe)
+	if len(errorData) > 0 {
+		Logf("Error of the shell: %v\n", string(errorData))
+	}
+
+	By("Fetch manifest for workload cluster after pivot")
+	path = filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
+	cmd = exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
+	cmd.Dir = path
+	_ = cmd.Run()
+	os.Unsetenv("KUBECONFIG_WORKLOAD")
+
 	By("Remove Ironic deployment from target cluster")
 	removeIronic(ctx, func() RemoveIronicInput {
 		return RemoveIronicInput{
@@ -414,7 +466,7 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 		Expect(err).To(BeNil(), "Cannot run local ironic")
 	} else {
 		By("Install Ironic in the bootstrap cluster")
-		installIronicBMO(func() installIronicBMOInput {
+		installIronicBMO(ctx, func() installIronicBMOInput {
 			return installIronicBMOInput{
 				ManagementCluster:          input.BootstrapClusterProxy,
 				BMOPath:                    input.E2EConfig.GetVariable(bmoPath),
@@ -424,8 +476,11 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 				deployIronicBasicAuth:      getBool(input.E2EConfig.GetVariable(ironicBasicAuth)),
 				deployIronicKeepalived:     getBool(input.E2EConfig.GetVariable(ironicKeepalived)),
 				deployIronicMariadb:        getBool(input.E2EConfig.GetVariable(ironicMariadb)),
+				Namespace:                  input.E2EConfig.GetVariable(ironicNamespace),
 				NamePrefix:                 input.E2EConfig.GetVariable(NamePrefix),
 				RestartContainerCertUpdate: getBool(input.E2EConfig.GetVariable(restartContainerCertUpdate)),
+				E2EConfig:                  input.E2EConfig,
+				SpecName:                   input.SpecName,
 			}
 		})
 	}
@@ -488,6 +543,13 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 		Replicas:  numberOfAllBmh,
 		Intervals: input.E2EConfig.GetIntervals(input.SpecName, "wait-machine-running"),
 	})
+
+	By("Fetch manifest for bootstrap cluster after re-pivot")
+	path = filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
+	cmd = exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
+	cmd.Dir = path
+	_ = cmd.Run()
+	os.Unsetenv("KUBECONFIG_BOOTSTRAP")
 
 	By("RE-PIVOTING TEST PASSED!")
 }

@@ -21,19 +21,19 @@ providers:
   - name: ${CAPI_FROM_RELEASE}
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_FROM_RELEASE}/core-components.yaml"
     type: "url"
-    contract: v1alpha4
+    contract: ${CONTRACT_FROM}
     replacements:
       - old: --metrics-addr=127.0.0.1:8080
         new: --metrics-addr=:8080
     files:
-      - sourcePath: "../data/shared/v1alpha4/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_FROM_RELEASE:0:4}/metadata.yaml"
   - name: ${CAPI_TO_RELEASE}
     # Use manifest from source files
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_TO_RELEASE}/core-components.yaml"
     type: "url"
-    contract: v1beta1
+    contract: ${CONTRACT_TO}
     files:
-      - sourcePath: "../data/shared/v1beta1/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_TO_RELEASE:0:4}/metadata.yaml"
     replacements:
       - old: "--leader-elect"
         new: "--leader-elect=false"
@@ -43,19 +43,19 @@ providers:
   - name: ${CAPI_FROM_RELEASE} # latest published release in the v1alpha4 series; this is used for v1alpha4 --> v1beta1 clusterctl upgrades test only.
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_FROM_RELEASE}/bootstrap-components.yaml"
     type: "url"
-    contract: v1alpha4
+    contract: ${CONTRACT_FROM}
     replacements:
       - old: --metrics-addr=127.0.0.1:8080
         new: --metrics-addr=:8080
     files:
-      - sourcePath: "../data/shared/v1alpha4/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_FROM_RELEASE:0:4}/metadata.yaml"
   - name: ${CAPI_TO_RELEASE}
     # Use manifest from source files
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_TO_RELEASE}/bootstrap-components.yaml"
     type: "url"
-    contract: v1beta1
+    contract: ${CONTRACT_TO}
     files:
-      - sourcePath: "../data/shared/v1beta1/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_TO_RELEASE:0:4}/metadata.yaml"
     replacements:
       - old: "--leader-elect"
         new: "--leader-elect=false"
@@ -65,19 +65,19 @@ providers:
   - name: ${CAPI_FROM_RELEASE} # latest published release in the v1alpha4 series; this is used for v1alpha4 --> v1beta1 clusterctl upgrades test only.
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_FROM_RELEASE}/control-plane-components.yaml"
     type: "url"
-    contract: v1alpha4
+    contract: ${CONTRACT_FROM}
     replacements:
       - old: --metrics-addr=127.0.0.1:8080
         new: --metrics-addr=:8080
     files:
-      - sourcePath: "../data/shared/v1alpha4/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_FROM_RELEASE:0:4}/metadata.yaml"
   - name: ${CAPI_TO_RELEASE}
     # Use manifest from source files
     value: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_TO_RELEASE}/control-plane-components.yaml"
     type: "url"
-    contract: v1beta1
+    contract: ${CONTRACT_TO}
     files:
-      - sourcePath: "../data/shared/v1beta1/metadata.yaml"
+      - sourcePath: "../data/shared/${CAPI_TO_RELEASE:0:4}/metadata.yaml"
     replacements:
       - old: "--leader-elect"
         new: "--leader-elect=false"
@@ -87,19 +87,18 @@ providers:
   - name: ${CAPM3_FROM_RELEASE}
     value: "https://github.com/metal3-io/cluster-api-provider-metal3/releases/download/${CAPM3_FROM_RELEASE}/infrastructure-components.yaml"
     type: "url"
-    contract: v1alpha4
+    contract: ${CONTRACT_FROM}
     files:
-    - sourcePath: "../data/infrastructure-metal3/v1alpha5/metadata.yaml"
+    - sourcePath: "../data/infrastructure-metal3/${CAPM3_FROM_RELEASE:0:4}/metadata.yaml"
       targetName: "metadata.yaml"
     - sourcePath: "../_out/cluster-template-ubuntu.yaml"
       targetName: "cluster-template-ubuntu.yaml"
     - sourcePath: "../_out/cluster-template-upgrade-workload.yaml"
       targetName: "cluster-template-upgrade-workload.yaml"
-  - name: ${CAPM3_TO_RELEASE}
+  - name: v1.4.99
     value: "${PWD}/config/default"
-    contract: v1beta1
     files:
-    - sourcePath: "../data/infrastructure-metal3/v1beta1/metadata.yaml"
+    - sourcePath: "../data/infrastructure-metal3/main/metadata.yaml"
       targetName: "metadata.yaml"
     - sourcePath: "../_out/cluster-template-ubuntu.yaml"
       targetName: "cluster-template-ubuntu.yaml"
@@ -108,11 +107,11 @@ providers:
 
 variables:
   CNI: "/tmp/calico.yaml"
-  KUBERNETES_VERSION: "v1.26.0"
+  KUBERNETES_VERSION: "v1.27.1"
   # INIT_WITH_KUBERNETES_VERSION will be used here
   # https://github.com/kubernetes-sigs/cluster-api/blob/bb377163f141d69b7a61479756ee96891f6670bd/test/e2e/clusterctl_upgrade.go#L170
-  # INIT_WITH_KUBERNETES_VERSION  used by management cluster upgrade and it is fixed to 1.23.8 because v1a4 capi does not support k8s version higher
-  INIT_WITH_KUBERNETES_VERSION: "v1.23.8"
+  # INIT_WITH_KUBERNETES_VERSION  used by management cluster upgrade
+  INIT_WITH_KUBERNETES_VERSION: "${INIT_WITH_KUBERNETES_VERSION}"
   CONTROL_PLANE_MACHINE_COUNT: 3
   WORKER_MACHINE_COUNT: 1
   APIVersion: "infrastructure.cluster.x-k8s.io/${CAPM3_VERSION}"
@@ -126,15 +125,16 @@ variables:
   IRONIC_USE_MARIADB: "false"
   RESTART_CONTAINER_CERTIFICATE_UPDATED: "true"
   CONTAINER_REGISTRY: "${CONTAINER_REGISTRY:-quay.io}"
+  DOCKER_HUB_PROXY: "${DOCKER_HUB_PROXY:-docker.io}"
   IRONIC_IMAGE_TAG: "${IRONIC_IMAGE_TAG:-main}"
   UPGRADED_BMO_IMAGE_TAG: "${UPGRADED_BMO_IMAGE_TAG:-main}"
 
   INIT_WITH_BINARY: "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_FROM_RELEASE}/clusterctl-{OS}-{ARCH}"
   PROVIDER_ID_FORMAT: "metal3://{{ ds.meta_data.providerid }}"
   # Pin Calico version
-  CALICO_PATCH_RELEASE: "v3.24.1"
+  CALICO_PATCH_RELEASE: "v3.25.1"
   # Pin CertManager for upgrade tests
-  CERT_MANAGER_RELEASE: v1.5.3
+  CERT_MANAGER_RELEASE: v1.11.1
   # Default vars for the template, those values could be overridden by the env-vars.
   CAPI_VERSION: "v1beta1"
   CAPM3_VERSION: "v1beta1"
@@ -152,7 +152,7 @@ variables:
   IPAM_PROVISIONING_POOL_RANGE_END: "172.22.0.200"
   EXTERNAL_SUBNET_V4_HOST: "192.168.111.1"
   REGISTRY: "192.168.111.1:5000"
-  IMAGE_CHECKSUM_TYPE: "md5"
+  IMAGE_CHECKSUM_TYPE: "sha256"
   IMAGE_USERNAME: "metal3"
   NODE_DRAIN_TIMEOUT: "0s"
 
@@ -175,10 +175,11 @@ intervals:
   default/wait-bmh-deprovisioning: ["50m", "10s"]
   default/wait-bmh-available: ["50m", "20s"]
   default/wait-bmh-inspecting: ["10m", "2s"]
-  default/wait-machine-deleting: ["7m", "2s"]
+  default/wait-machine-deleting: ["15m", "2s"]
   default/wait-bmh-deprovisioning-available: ["7m", "500ms"]
-  default/wait-bmh-available-provisioning: ["5m", "2s"]
+  default/wait-bmh-available-provisioning: ["15m", "2s"]
   default/wait-machine-running: ["50m", "20s"]
   default/wait-bmh-provisioned: ["50m", "20s"]
   default/wait-pod-restart: ["6m", "10s"]
   default/wait-deprovision-cluster: ["30m", "10s"]
+  default/wait-all-pod-to-be-running-on-target-cluster: ["15m", "10s"]

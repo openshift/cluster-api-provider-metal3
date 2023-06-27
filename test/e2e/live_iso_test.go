@@ -14,7 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("When testing live iso [live-iso]", func() {
+var _ = Describe("When testing live iso [live-iso] [features]", func() {
 	liveIsoTest()
 })
 
@@ -83,9 +83,9 @@ func liveIsoTest() {
 	})
 
 	AfterEach(func() {
-		// Abort the test in case of failure and skipCleanup is true during keep VM trigger
+		// Abort the test in case of failure and keepTestEnv is true during keep VM trigger
 		if CurrentSpecReport().Failed() {
-			if skipCleanup {
+			if keepTestEnv {
 				AbortSuite("e2e test aborted and skip cleaning the VM", 4)
 			}
 		}

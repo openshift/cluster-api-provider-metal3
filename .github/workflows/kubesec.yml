@@ -10,13 +10,16 @@ permissions:
 
 jobs:
   setup:
+    # This workflow is only of value to the metal3-io/cluster-api-provider-metal3 repository and
+    # would always fail in forks
+    if: github.repository == 'metal3-io/cluster-api-provider-metal3'
     runs-on: ubuntu-20.04
     permissions:
       actions: read
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@dc323e67f16fb5f7663d20ff7941f27f5809e9b6 # v2.6.0
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
 
       - name: Collect all yaml
         id: list_yaml
@@ -39,7 +42,7 @@ jobs:
         value: ${{ fromJson(needs.setup.outputs.matrix) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@dc323e67f16fb5f7663d20ff7941f27f5809e9b6 # v2.6.0
+        uses: actions/checkout@c85c95e3d7251135ab7dc9ce3241c5835cc595a9 # v3.5.3
 
       - name: Run kubesec scanner
         uses: controlplaneio/kubesec-action@43d0ddff5ffee89a6bb9f29b64cd865411137b14
@@ -56,6 +59,6 @@ jobs:
 
       - name: Upload Kubesec scan results to GitHub Security tab
         if: ${{ steps.save_result.outputs.result != '[]' }}
-        uses: github/codeql-action/upload-sarif@a34ca99b4610d924e04c68db79e503e1f79f9f02 # v2.1.39
+        uses: github/codeql-action/upload-sarif@f6e388ebf0efc915c6c5b165b019ee61a6746a38 # v2.20.1
         with:
           sarif_file: ${{ matrix.value }}.sarif

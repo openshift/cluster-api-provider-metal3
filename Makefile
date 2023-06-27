@@ -142,6 +142,7 @@ E2E_CONF_FILE_ENVSUBST ?= $(E2E_OUT_DIR)/$(notdir $(E2E_CONF_FILE))
 E2E_CONTAINERS ?= quay.io/metal3-io/cluster-api-provider-metal3 quay.io/metal3-io/baremetal-operator quay.io/metal3-io/ip-address-manager
 
 SKIP_CLEANUP ?= false
+KEEP_TEST_ENV ?= false
 EPHEMERAL_TEST ?= false
 SKIP_CREATE_MGMT_CLUSTER ?= true
 
@@ -164,7 +165,7 @@ cluster-templates: $(KUSTOMIZE) ## Generate cluster templates
 ## --------------------------------------
 ## E2E Testing
 ## --------------------------------------
-GINKGO_FOCUS  ?=
+GINKGO_FOCUS ?=
 GINKGO_SKIP ?=
 GINKGO_TIMEOUT ?= 6h
 
@@ -182,11 +183,13 @@ e2e-tests: $(GINKGO) e2e-substitutions cluster-templates ## This target should b
 
 	$(GINKGO) --timeout=$(GINKGO_TIMEOUT) -v --trace --tags=e2e  \
 		--show-node-events --no-color=$(GINKGO_NOCOLOR) \
+		--fail-fast="$(KEEP_TEST_ENV)" \
 		--junit-report="junit.e2e_suite.1.xml" \
 		--focus="$(GINKGO_FOCUS)" $(_SKIP_ARGS) "$(ROOT_DIR)/$(TEST_DIR)/e2e/" -- \
 		-e2e.artifacts-folder="$(ARTIFACTS)" \
 		-e2e.config="$(E2E_CONF_FILE_ENVSUBST)" \
 		-e2e.skip-resource-cleanup=$(SKIP_CLEANUP) \
+		-e2e.keep-test-environment=$(KEEP_TEST_ENV) \
 		-e2e.trigger-ephemeral-test=$(EPHEMERAL_TEST) \
 		-e2e.use-existing-cluster=$(SKIP_CREATE_MGMT_CLUSTER)
 
@@ -239,7 +242,7 @@ $(KUBEBUILDER): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR) && ./install_kubebuilder.sh
 
 $(SETUP_ENVTEST): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR) && go get sigs.k8s.io/controller-runtime/tools/setup-envtest && \
+	cd $(TOOLS_DIR) && \
 	go build -tags=tools -o $(BIN_DIR)/setup-envtest sigs.k8s.io/controller-runtime/tools/setup-envtest
 
 $(GINKGO): $(TOOLS_DIR)/go.mod
@@ -483,12 +486,12 @@ delete-examples:
 ## Release
 ## --------------------------------------
 
-## latest git tag for the commit, e.g., v1.3.0
+## latest git tag for the commit, e.g., v1.4.0
 RELEASE_TAG ?= $(shell git describe --abbrev=0 2>/dev/null)
 ifneq (,$(findstring -,$(RELEASE_TAG)))
     PRE_RELEASE=true
 endif
-# the previous release tag, e.g., v1.3.0, excluding pre-release tags
+# the previous release tag, e.g., v1.4.0, excluding pre-release tags
 PREVIOUS_TAG ?= $(shell git tag -l | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$$" | sort -V | grep -B1 $(RELEASE_TAG) | head -n 1 2>/dev/null)
 RELEASE_DIR := out
 RELEASE_NOTES_DIR := releasenotes
