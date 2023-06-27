@@ -308,6 +308,13 @@ modules: ## Runs go mod to ensure proper vendoring.
 	cd $(TEST_DIR) && go mod tidy
 	cd $(TEST_DIR) && go mod verify
 
+.PHONY: vendor
+vendor: ## Runs go mod to ensure proper vendoring.
+	go mod vendor
+	cd $(TOOLS_DIR) && go mod vendor
+	cd $(APIS_DIR) && go mod vendor
+	cd $(TEST_DIR) && go mod vendor
+
 .PHONY: generate
 generate: ## Generate code
 	$(MAKE) generate-go
