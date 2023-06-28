@@ -15,7 +15,7 @@ settings = {
     "kind_cluster_name": "capm3",
     "capi_version": "$CAPIRELEASE",
     "kubernetes_version": "$KUBERNETES_VERSION",
-    "cert_manager_version": "v1.10.0",
+    "cert_manager_version": "v1.11.1",
     "enable_providers": [],
 }
 
@@ -356,6 +356,11 @@ def strip_sec_ctx(yaml):
             spec["securityContext"] = {}
             for container in spec.get("containers", []):
                 container["securityContext"] = {}
+        if data.get("kind") == "Namespace":
+            spec = data["metadata"]["labels"]
+            pod_security_standard_label = "pod-security.kubernetes.io/enforce" 
+            spec.pop(pod_security_standard_label, None)
+                
         output.append(str(encode_yaml(data)))
 
     return "---\n".join(output)

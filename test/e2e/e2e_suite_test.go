@@ -12,6 +12,7 @@ import (
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -49,6 +50,9 @@ var (
 
 	// ephemeralTest triggers only e2e test in ephemeral cluster if true.
 	ephemeralTest bool
+
+	// keepTestEnv keeps the test environment by aborting the test suite when e2e test fails.
+	keepTestEnv bool
 )
 
 // Test suite global vars.
@@ -81,6 +85,7 @@ func init() {
 	flag.StringVar(&configPath, "e2e.config", "", "path to the e2e config file")
 	flag.StringVar(&artifactFolder, "e2e.artifacts-folder", "", "folder where e2e test artifact should be stored")
 	flag.BoolVar(&skipCleanup, "e2e.skip-resource-cleanup", false, "if true, the resource cleanup after tests will be skipped")
+	flag.BoolVar(&keepTestEnv, "e2e.keep-test-environment", false, "if true, the test aborts when failed, keeping all the environment")
 	flag.BoolVar(&upgradeTest, "e2e.trigger-upgrade-test", false, "if true, the e2e upgrade test will be triggered and other tests will be skipped")
 	flag.BoolVar(&ephemeralTest, "e2e.trigger-ephemeral-test", false, "if true, all e2e tests run in the ephemeral cluster without pivoting to the target cluster")
 	flag.BoolVar(&useExistingCluster, "e2e.use-existing-cluster", true, "if true, the test uses the current cluster instead of creating a new one (default discovery rules apply)")
@@ -163,6 +168,7 @@ func initScheme() *runtime.Scheme {
 	Expect(clusterv1alpha4.AddToScheme(sc))
 	Expect(bmov1alpha1.AddToScheme(sc)).To(Succeed())
 	Expect(infrav1.AddToScheme(sc)).To(Succeed())
+	Expect(ipamv1.AddToScheme(sc)).To(Succeed())
 
 	return sc
 }
@@ -262,7 +268,9 @@ func updateCalico(config *clusterctl.E2EConfig, calicoYaml, calicoInterface stri
 
 	Logf("Replace the default CIDR with the one set in $POD_CIDR")
 	podCIDR := config.GetVariable("POD_CIDR")
+	calicoContainerRegistry := config.GetVariable("DOCKER_HUB_PROXY")
 	cniYaml = []byte(strings.Replace(string(cniYaml), "192.168.0.0/16", podCIDR, -1))
+	cniYaml = []byte(strings.Replace(string(cniYaml), "docker.io", calicoContainerRegistry, -1))
 
 	yamlDocuments, err := splitYAML(cniYaml)
 	Expect(err).To(BeNil(), "Cannot unmarshal the calico yaml elements to golang objects")

@@ -4,15 +4,15 @@ go 1.19
 
 require (
 	github.com/google/gofuzz v1.2.0
-	github.com/metal3-io/ip-address-manager/api v0.0.0-20220919121103-31c03f129143
-	github.com/onsi/gomega v1.27.4
+	github.com/metal3-io/ip-address-manager/api v1.4.1
+	github.com/onsi/gomega v1.27.8
 	github.com/pkg/errors v0.9.1
-	golang.org/x/net v0.8.0
+	golang.org/x/net v0.11.0
 	k8s.io/api v0.26.1
 	k8s.io/apimachinery v0.26.1
 	k8s.io/client-go v0.26.1
 	k8s.io/utils v0.0.0-20221128185143-99ec85e7a448
-	sigs.k8s.io/cluster-api v1.4.0
+	sigs.k8s.io/cluster-api v1.4.2
 	sigs.k8s.io/controller-runtime v0.14.5
 
 )
@@ -25,7 +25,7 @@ require (
 	github.com/emicklei/go-restful/v3 v3.9.0 // indirect
 	github.com/evanphx/json-patch/v5 v5.6.0 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/go-logr/logr v1.2.3 // indirect
+	github.com/go-logr/logr v1.2.4 // indirect
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
 	github.com/go-openapi/jsonreference v0.20.0 // indirect
 	github.com/go-openapi/swag v0.22.3 // indirect
@@ -50,9 +50,9 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	golang.org/x/oauth2 v0.6.0 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/term v0.6.0 // indirect
-	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/sys v0.9.0 // indirect
+	golang.org/x/term v0.9.0 // indirect
+	golang.org/x/text v0.10.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.2.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -69,8 +69,6 @@ require (
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
 
-replace sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.4.0
-
-replace github.com/docker/distribution => github.com/docker/distribution v2.8.1+incompatible
+replace sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.4.2
 
 replace github.com/coredns/corefile-migration => github.com/coredns/corefile-migration v1.0.17

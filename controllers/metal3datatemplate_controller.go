@@ -33,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
@@ -58,6 +59,10 @@ type Metal3DataTemplateReconciler struct {
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipclaims/status,verbs=get;watch
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipaddresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipaddresses/status,verbs=get
+// +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddressclaims,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddressclaims/status,verbs=get;watch
+// +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddresses,verbs=get;list;watch
+// +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddresses/status,verbs=get
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch
@@ -138,7 +143,7 @@ func (r *Metal3DataTemplateReconciler) reconcileNormal(ctx context.Context,
 
 	_, err := metadataMgr.UpdateDatas(ctx)
 	if err != nil {
-		return checkRequeueError(err, "Failed to recreate the status")
+		return checkReconcileError(err, "Failed to recreate the status")
 	}
 	return ctrl.Result{}, nil
 }
@@ -148,7 +153,7 @@ func (r *Metal3DataTemplateReconciler) reconcileDelete(ctx context.Context,
 ) (ctrl.Result, error) {
 	allocationsNb, err := metadataMgr.UpdateDatas(ctx)
 	if err != nil {
-		return checkRequeueError(err, "Failed to recreate the status")
+		return checkReconcileError(err, "Failed to recreate the status")
 	}
 
 	if allocationsNb == 0 {
@@ -196,12 +201,18 @@ func (r *Metal3DataTemplateReconciler) Metal3DataClaimToMetal3DataTemplate(obj c
 	return []ctrl.Request{}
 }
 
-func checkRequeueError(err error, errMessage string) (ctrl.Result, error) {
+func checkReconcileError(err error, errMessage string) (ctrl.Result, error) {
 	if err == nil {
 		return ctrl.Result{}, nil
 	}
-	if ok := errors.As(err, &hasRequeueAfterError); ok {
-		return ctrl.Result{Requeue: true, RequeueAfter: hasRequeueAfterError.GetRequeueAfter()}, nil
+	var reconcileError baremetal.ReconcileError
+	if errors.As(err, &reconcileError) {
+		if reconcileError.IsTransient() {
+			return reconcile.Result{Requeue: true, RequeueAfter: reconcileError.GetRequeueAfter()}, nil
+		}
+		if reconcileError.IsTerminal() {
+			return reconcile.Result{}, nil
+		}
 	}
 	return ctrl.Result{}, errors.Wrap(err, errMessage)
 }

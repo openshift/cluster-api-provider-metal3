@@ -19,7 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Kubernetes version upgrade in target nodes [upgrade]", func() {
+var _ = Describe("Kubernetes version upgrade in target nodes [k8s-upgrade]", func() {
 
 	var (
 		ctx                 = context.TODO()
@@ -56,16 +56,16 @@ var _ = Describe("Kubernetes version upgrade in target nodes [upgrade]", func() 
 	})
 
 	AfterEach(func() {
-		// // Abort the test in case of failure and skipCleanup is true during keep VM trigger
-		if CurrentSpecReport().Failed() {
-			if skipCleanup {
-				AbortSuite("e2e test aborted and skip cleaning the VM", 4)
-			}
-		}
 		ListBareMetalHosts(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMetal3Machines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMachines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListNodes(ctx, targetCluster.GetClient())
+		// // Abort the test in case of failure and keepTestEnv is true during keep VM trigger
+		if CurrentSpecReport().Failed() {
+			if keepTestEnv {
+				AbortSuite("e2e test aborted and skip cleaning the VM", 4)
+			}
+		}
 		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
 	})
 
@@ -113,7 +113,7 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	By("Create new KCP Metal3MachineTemplate with upgraded image to boot")
 	m3machineTemplateName := fmt.Sprintf("%s-controlplane", clusterName)
 	newM3machineTemplateName := fmt.Sprintf("%s-new-controlplane", clusterName)
-	createNewM3machineTemplate(ctx, namespace, newM3machineTemplateName, m3machineTemplateName, clusterClient, imageURL, imageChecksum, "raw", "md5")
+	createNewM3machineTemplate(ctx, namespace, newM3machineTemplateName, m3machineTemplateName, clusterClient, imageURL, imageChecksum, "sha256", "raw")
 
 	Byf("Update KCP to upgrade k8s version and binaries from %s to %s", kubernetesVersion, upgradedK8sVersion)
 	kcpObj := framework.GetKubeadmControlPlaneByCluster(ctx, framework.GetKubeadmControlPlaneByClusterInput{
@@ -182,7 +182,7 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	By("Create new Metal3MachineTemplate for MD with upgraded image to boot")
 	m3machineTemplateName = fmt.Sprintf("%s-workers", clusterName)
 	newM3machineTemplateName = fmt.Sprintf("%s-new-workers", clusterName)
-	createNewM3machineTemplate(ctx, namespace, newM3machineTemplateName, m3machineTemplateName, clusterClient, imageURL, imageChecksum, "raw", "md5")
+	createNewM3machineTemplate(ctx, namespace, newM3machineTemplateName, m3machineTemplateName, clusterClient, imageURL, imageChecksum, "sha256", "raw")
 
 	Byf("Update MD to upgrade k8s version and binaries from %s to %s", kubernetesVersion, upgradedK8sVersion)
 	helper, err = patch.NewHelper(machineDeploy, clusterClient)
