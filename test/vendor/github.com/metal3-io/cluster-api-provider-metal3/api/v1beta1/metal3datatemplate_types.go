@@ -191,6 +191,16 @@ type MetaData struct {
 	FromAnnotations []MetaDataFromAnnotation `json:"fromAnnotations,omitempty"`
 }
 
+// NetworkLinkEthernetMacFromAnnotation contains the information to fetch an annotation
+// content, if the label does not exist, it is rendered as empty string.
+type NetworkLinkEthernetMacFromAnnotation struct {
+	// +kubebuilder:validation:Enum=machine;metal3machine;baremetalhost
+	// Object is the type of the object from which we retrieve the name
+	Object string `json:"object"`
+	// Annotation is the key of the Annotation to fetch
+	Annotation string `json:"annotation"`
+}
+
 // NetworkLinkEthernetMac represents the Mac address content.
 type NetworkLinkEthernetMac struct {
 	// String contains the MAC address given as a string
@@ -201,6 +211,11 @@ type NetworkLinkEthernetMac struct {
 	// Introspection details from which to fetch the MAC address
 	// +optional
 	FromHostInterface *string `json:"fromHostInterface,omitempty"`
+
+	// FromAnnotation references an object Annotation to retrieve the
+	// MAC address from
+	// +optional
+	FromAnnotation *NetworkLinkEthernetMacFromAnnotation `json:"fromAnnotation,omitempty"`
 }
 
 // NetworkDataLinkEthernet represents an ethernet link object.
@@ -231,6 +246,11 @@ type NetworkDataLinkBond struct {
 	// balance-rr, active-backup, balance-xor, broadcast, balance-tlb, balance-alb, 802.3ad
 	BondMode string `json:"bondMode"`
 
+	// +kubebuilder:validation:Enum="layer2";"layer3+4";"layer2+3"
+	// Selects the transmit hash policy used for port selection in balance-xor and 802.3ad modes
+	// +optional
+	BondXmitHashPolicy string `json:"bondXmitHashPolicy"`
+
 	// Id is the ID of the interface (used for naming)
 	Id string `json:"id"` //nolint:revive,stylecheck
 
@@ -245,6 +265,7 @@ type NetworkDataLinkBond struct {
 	MACAddress *NetworkLinkEthernetMac `json:"macAddress"`
 
 	// BondLinks is the list of links that are part of the bond.
+	// +optional
 	BondLinks []string `json:"bondLinks"`
 }
 
@@ -555,5 +576,5 @@ type Metal3DataTemplateList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Metal3DataTemplate{}, &Metal3DataTemplateList{})
+	objectTypes = append(objectTypes, &Metal3DataTemplate{}, &Metal3DataTemplateList{})
 }

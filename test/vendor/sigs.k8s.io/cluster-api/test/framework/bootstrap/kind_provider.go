@@ -37,7 +37,7 @@ const (
 	DefaultNodeImageRepository = "kindest/node"
 
 	// DefaultNodeImageVersion is the default Kubernetes version to be used for creating a kind cluster.
-	DefaultNodeImageVersion = "v1.27.0"
+	DefaultNodeImageVersion = "v1.29.0@sha256:eaa1450915475849a73a9227b8f201df25e55e268e5d619312131292e324d570"
 )
 
 // KindClusterOption is a NewKindClusterProvider option.
@@ -71,6 +71,14 @@ func WithDockerSockMount() KindClusterOption {
 func WithIPv6Family() KindClusterOption {
 	return kindClusterOptionAdapter(func(k *KindClusterProvider) {
 		k.ipFamily = clusterv1.IPv6IPFamily
+	})
+}
+
+// WithDualStackFamily implements a New Option that instruct the kindClusterProvider to set the IPFamily to dual in
+// the new kind cluster.
+func WithDualStackFamily() KindClusterOption {
+	return kindClusterOptionAdapter(func(k *KindClusterProvider) {
+		k.ipFamily = clusterv1.DualStackIPFamily
 	})
 }
 
@@ -135,6 +143,9 @@ func (k *KindClusterProvider) createKindCluster() {
 
 	if k.ipFamily == clusterv1.IPv6IPFamily {
 		cfg.Networking.IPFamily = kindv1.IPv6Family
+	}
+	if k.ipFamily == clusterv1.DualStackIPFamily {
+		cfg.Networking.IPFamily = kindv1.DualStackFamily
 	}
 	kindv1.SetDefaultsCluster(cfg)
 
