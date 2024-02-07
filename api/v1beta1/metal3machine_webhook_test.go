@@ -21,7 +21,7 @@ import (
 	"k8s.io/utils/pointer"
 )
 
-func TestMetal3MachineDefault(t *testing.T) {
+func TestMetal3MachineDefault(_ *testing.T) {
 	// No-op because we do not default anything in M3M yet
 	c := &Metal3Machine{
 		ObjectMeta: metav1.ObjectMeta{
@@ -86,11 +86,15 @@ func TestMetal3MachineValidation(t *testing.T) {
 			g := NewWithT(t)
 
 			if tt.expectErr {
-				g.Expect(tt.c.ValidateCreate()).NotTo(Succeed())
-				g.Expect(tt.c.ValidateUpdate(nil)).NotTo(Succeed())
+				_, err := tt.c.ValidateCreate()
+				g.Expect(err).To(HaveOccurred())
+				_, err = tt.c.ValidateUpdate(nil)
+				g.Expect(err).To(HaveOccurred())
 			} else {
-				g.Expect(tt.c.ValidateCreate()).To(Succeed())
-				g.Expect(tt.c.ValidateUpdate(nil)).To(Succeed())
+				_, err := tt.c.ValidateCreate()
+				g.Expect(err).NotTo(HaveOccurred())
+				_, err = tt.c.ValidateUpdate(nil)
+				g.Expect(err).NotTo(HaveOccurred())
 			}
 		})
 	}

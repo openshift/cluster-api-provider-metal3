@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-type Metal3RemediationInput struct {
+type NodeDeletionRemediation struct {
 	E2EConfig             *clusterctl.E2EConfig
 	BootstrapClusterProxy framework.ClusterProxy
 	TargetCluster         framework.ClusterProxy
@@ -27,8 +27,34 @@ type Metal3RemediationInput struct {
 	Namespace             string
 }
 
-func metal3remediation(ctx context.Context, inputGetter func() Metal3RemediationInput) {
-	Logf("Starting metal3 remediation tests")
+/*
+ * Node Deletion Remediation Test
+ *
+ * This test evaluates node deletion in reboot remediation feature added to CAPM3 Remediation Controller.
+ * issue #392: Reboot remediation is incomplete
+ * PR #668: Fix reboot remediation by adding node deletion
+ * This test evaluates the reboot remediation strategy with an enhancement of node deletion in the CAPM3 (Cluster API Provider for Metal3) Remediation Controller.
+ *
+ * Tested Feature:
+ * - Delete Node in Reboot Remediation
+ *
+ * Workflow:
+ * 1. Retrieve the Metal3Machines associated with the worker nodes in the cluster.
+ * 2. Identify the target worker machine node its associated BMH object corresponding to the Metal3Machine.
+ * 3. Create a Metal3Remediation resource, specifying the remediation strategy as "Reboot" with a retry limit and timeout.
+ * 4. Wait for the VM (Virtual Machine) associated with target BMH to power off.
+ * 5. Wait for the target worker node to be deleted from the cluster.
+ * 6. Wait for the VMs to power on.
+ * 7. Verify that the target worker node becomes ready.
+ * 8. Verify that the Metal3Remediation resource is successfully delete
+ *
+ * Metal3Remediation test ensures that Metal3 Remediation Controller can effectively remediate worker nodes by orchestrating
+ * the reboot process and validating the successful recovery of the nodes. It helps ensure the stability and
+ * resiliency of the cluster by allowing workloads to be seamlessly migrated from unhealthy nodes to healthy node
+ */
+
+func nodeDeletionRemediation(ctx context.Context, inputGetter func() NodeDeletionRemediation) {
+	Logf("Starting node deletion remediation tests")
 	input := inputGetter()
 	bootstrapClient := input.BootstrapClusterProxy.GetClient()
 	targetClient := input.TargetCluster.GetClient()
@@ -100,7 +126,7 @@ func metal3remediation(ctx context.Context, inputGetter func() Metal3Remediation
 		return apierrors.IsNotFound(err)
 	}, 2*time.Minute, 10*time.Second).Should(BeTrue(), "Metal3Remediation should have been deleted")
 
-	By("METAL3REMEDIATION TESTS PASSED!")
+	By("NODE DELETION TESTS PASSED!")
 }
 
 func waitForNodeDeletion(ctx context.Context, cl client.Client, name string, intervals ...interface{}) {

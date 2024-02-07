@@ -19,7 +19,7 @@ set -o nounset
 set -o pipefail
 
 GOPATH_BIN="$(go env GOPATH)/bin/"
-MINIMUM_KUBECTL_VERSION=v1.19.0
+MINIMUM_KUBECTL_VERSION=${KUBERNETES_VERSION:-"v1.29.0"}
 
 # Ensure the kubectl tool exists and is a viable version, or installs it
 verify_kubectl_version()
@@ -31,7 +31,7 @@ verify_kubectl_version()
                 mkdir -p "${GOPATH_BIN}"
             fi
             echo 'kubectl not found, installing'
-            curl -sLo "${GOPATH_BIN}/kubectl" https://storage.googleapis.com/kubernetes-release/release/${MINIMUM_KUBECTL_VERSION}/bin/linux/amd64/kubectl
+            curl -sLo "${GOPATH_BIN}/kubectl" https://storage.googleapis.com/kubernetes-release/release/"${MINIMUM_KUBECTL_VERSION}"/bin/linux/amd64/kubectl
             chmod +x "${GOPATH_BIN}/kubectl"
         else
             echo "Missing required binary in path: kubectl"
@@ -40,7 +40,7 @@ verify_kubectl_version()
     fi
 
     local kubectl_version
-    IFS=" " read -ra kubectl_version <<< "$(kubectl version --client --short)"
+    IFS=" " read -ra kubectl_version <<< "$(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null)"
     if [[ "${MINIMUM_KUBECTL_VERSION}" != $(echo -e "${MINIMUM_KUBECTL_VERSION}\n${kubectl_version[2]}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) ]]; then
         cat << EOF
 Detected kubectl version: ${kubectl_version[2]}.

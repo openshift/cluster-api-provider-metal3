@@ -15,7 +15,7 @@ settings = {
     "kind_cluster_name": "capm3",
     "capi_version": "$CAPIRELEASE",
     "kubernetes_version": "$KUBERNETES_VERSION",
-    "cert_manager_version": "v1.11.1",
+    "cert_manager_version": "v1.13.0",
     "enable_providers": [],
 }
 
@@ -129,11 +129,12 @@ def fixup_yaml_empty_arrays(yaml_str):
 
 tilt_helper_dockerfile_header = """
 # Tilt image
-FROM golang:1.19 as tilt-helper
+FROM golang:1.21 as tilt-helper
 # Support live reloading with Tilt
 RUN wget --output-document /restart.sh --quiet https://raw.githubusercontent.com/windmilleng/rerun-process-wrapper/master/restart.sh  && \
     wget --output-document /start.sh --quiet https://raw.githubusercontent.com/windmilleng/rerun-process-wrapper/master/start.sh && \
-    chmod +x /start.sh && chmod +x /restart.sh
+    chmod +x /start.sh && chmod +x /restart.sh && \
+    touch /process.txt && chmod 0777 /process.txt
 """
 
 tilt_dockerfile_header = """
@@ -141,6 +142,7 @@ FROM gcr.io/distroless/base:debug as tilt
 WORKDIR /
 COPY --from=tilt-helper /start.sh .
 COPY --from=tilt-helper /restart.sh .
+COPY --from=tilt-helper /process.txt .
 COPY manager .
 """
 

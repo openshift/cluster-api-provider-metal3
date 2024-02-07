@@ -8,6 +8,21 @@ export CAPM3PATH="${REPO_ROOT}"
 export WORKING_DIR=/opt/metal3-dev-env
 FORCE_REPO_UPDATE="${FORCE_REPO_UPDATE:-false}"
 
+export CAPM3RELEASEBRANCH="${CAPM3RELEASEBRANCH:-main}"
+
+# Starting from CAPI v1.5.0 version cluster-api config folder location has changed
+# to XDG_CONFIG_HOME folder. Following code defines the cluster-api config folder
+# location according to CAPM3(since CAPM3 minor versions are aligned to CAPI
+# minors versions) release branch
+
+if [[ ${CAPM3RELEASEBRANCH} == "release-1.4" ]]; then
+    export CAPI_CONFIG_FOLDER="${HOME}/.cluster-api"
+else
+    # Default CAPI_CONFIG_FOLDER to $HOME/.config folder if XDG_CONFIG_HOME not set
+    CONFIG_FOLDER="${XDG_CONFIG_HOME:-$HOME/.config}"
+    export CAPI_CONFIG_FOLDER="${CONFIG_FOLDER}/cluster-api"
+fi
+
 # shellcheck source=./scripts/environment.sh
 source "${REPO_ROOT}/scripts/environment.sh"
 
@@ -25,12 +40,13 @@ export CAPI_VERSION=${CAPI_VERSION:-"v1beta1"}
 export CAPM3_VERSION=${CAPM3_VERSION:-"v1beta1"}
 export NUM_NODES=${NUM_NODES:-"4"}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
+export KUBECTL_SHA256=${KUBECTL_SHA256}
 export IMAGE_OS=${IMAGE_OS}
 export FORCE_REPO_UPDATE="false"
 EOF
 if [[ ${GINKGO_FOCUS:-} == "features" ]]; then
-    mkdir "${HOME}/.cluster-api/"
-    echo "enableBMHNameBasedPreallocation: true" >"${HOME}/.cluster-api/clusterctl.yaml"
+    mkdir -p "$CAPI_CONFIG_FOLDER"
+    echo "enableBMHNameBasedPreallocation: true" >"$CAPI_CONFIG_FOLDER/clusterctl.yaml"
 fi
 # Run make devenv to boot the source cluster
 pushd "${M3_DEV_ENV_PATH}" || exit 1
@@ -48,8 +64,8 @@ source "${REPO_ROOT}/hack/ensure-go.sh"
 source "${REPO_ROOT}/hack/ensure-kind.sh"
 # shellcheck source=./hack/ensure-kubectl.sh
 source "${REPO_ROOT}/hack/ensure-kubectl.sh"
-# shellcheck source=./hack/ensure-kustomize.sh
-source "${REPO_ROOT}/hack/ensure-kustomize.sh"
+# Ensure kustomize
+make kustomize
 
 # shellcheck disable=SC1091,SC1090
 source "${M3_DEV_ENV_PATH}/lib/images.sh"
@@ -81,19 +97,27 @@ export CAPI_TO_RELEASE="${CAPIRELEASE}"
 case ${CAPI_FROM_RELEASE} in
 v0.4*)
     export CONTRACT_FROM="v1alpha4"
-    export INIT_WITH_KUBERNETES_VERSION="v1.23.8"
+    export INIT_WITH_KUBERNETES_VERSION="v1.23.17"
     ;;
 v1.2*)
     export CONTRACT_FROM="v1beta1"
-    export INIT_WITH_KUBERNETES_VERSION="v1.26.4"
+    export INIT_WITH_KUBERNETES_VERSION="v1.27.4"
     ;;
 v1.3*)
     export CONTRACT_FROM="v1beta1"
-    export INIT_WITH_KUBERNETES_VERSION="v1.26.4"
+    export INIT_WITH_KUBERNETES_VERSION="v1.27.4"
     ;;
 v1.4*)
     export CONTRACT_FROM="v1beta1"
-    export INIT_WITH_KUBERNETES_VERSION="v1.27.1"
+    export INIT_WITH_KUBERNETES_VERSION="v1.29.0"
+    ;;
+v1.5*)
+    export CONTRACT_FROM="v1beta1"
+    export INIT_WITH_KUBERNETES_VERSION="v1.29.0"
+    ;;
+v1.6*)
+    export CONTRACT_FROM="v1beta1"
+    export INIT_WITH_KUBERNETES_VERSION="v1.29.0"
     ;;
 *)
     echo "UNKNOWN CAPI_FROM_RELEASE !"

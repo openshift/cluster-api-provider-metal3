@@ -1,30 +1,37 @@
 package e2e
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/crypto/ssh"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/utils/pointer"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
+	expv1 "sigs.k8s.io/cluster-api/exp/api/v1beta1"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -105,6 +112,8 @@ func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, clusterPr
 	Expect(os.RemoveAll(clusterctlLogFolder)).Should(Succeed())
 	client := clusterProxy.GetClient()
 
+	clusterProxy.CollectWorkloadClusterLogs(ctx, namespace, clusterName, artifactFolder)
+
 	// Dumps all the resources in the spec namespace, then cleanups the cluster object and the spec namespace itself.
 	By(fmt.Sprintf("Dumping all the Cluster API resources in the %q namespace", namespace))
 	// Dump all Cluster API related resources to artifacts before deleting them.
@@ -154,7 +163,7 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 		sha256sum, err := getSha256Hash(rawImagePath)
 		Expect(err).To(BeNil())
 		formattedSha256sum := fmt.Sprintf("%x", sha256sum)
-		err = os.WriteFile(fmt.Sprintf("%s/%s.sha256sum", ironicImageDir, rawImageName), []byte(formattedSha256sum), 0544)
+		err = os.WriteFile(fmt.Sprintf("%s/%s.sha256sum", ironicImageDir, rawImageName), []byte(formattedSha256sum), 0544) //#nosec G306:gosec
 		Expect(err).To(BeNil())
 		Logf("Image: %v downloaded", rawImagePath)
 	} else {
@@ -167,7 +176,8 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 // DownloadFile will download a url and store it in local filepath.
 func DownloadFile(filePath string, url string) error {
 	// Get the data
-	resp, err := http.Get(url)
+	/* #nosec G107 */
+	resp, err := http.Get(url) //nolint:noctx
 	if err != nil {
 		return err
 	}
@@ -448,7 +458,7 @@ func GetMachine(ctx context.Context, c client.Client, name client.ObjectKey) (re
 	return
 }
 
-func GetMetal3Machines(ctx context.Context, c client.Client, cluster, namespace string) ([]infrav1.Metal3Machine, []infrav1.Metal3Machine) {
+func GetMetal3Machines(ctx context.Context, c client.Client, _, namespace string) ([]infrav1.Metal3Machine, []infrav1.Metal3Machine) {
 	var controlplane, workers []infrav1.Metal3Machine
 	allMachines := &infrav1.Metal3MachineList{}
 	Expect(c.List(ctx, allMachines, client.InNamespace(namespace))).To(Succeed())
@@ -465,7 +475,7 @@ func GetMetal3Machines(ctx context.Context, c client.Client, cluster, namespace 
 }
 
 // GetIPPools return baremetal and provisioning IPPools.
-func GetIPPools(ctx context.Context, c client.Client, cluster, namespace string) ([]ipamv1.IPPool, []ipamv1.IPPool) {
+func GetIPPools(ctx context.Context, c client.Client, _, namespace string) ([]ipamv1.IPPool, []ipamv1.IPPool) {
 	var bmv4IPPool, provisioningIPPool []ipamv1.IPPool
 	allIPPools := &ipamv1.IPPoolList{}
 	Expect(c.List(ctx, allIPPools, client.InNamespace(namespace))).To(Succeed())
@@ -553,4 +563,215 @@ func Metal3MachineToBmhName(m3machine infrav1.Metal3Machine) string {
 // Derives the name of a VM created by metal3-dev-env from the name of a BareMetalHost object.
 func BmhToVMName(host bmov1alpha1.BareMetalHost) string {
 	return strings.ReplaceAll(host.Name, "-", "_")
+}
+
+func BmhNameToVMName(hostname string) string {
+	return strings.ReplaceAll(hostname, "-", "_")
+}
+
+func MachineToVMName(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
+	allMetal3Machines := &infrav1.Metal3MachineList{}
+	Expect(cli.List(ctx, allMetal3Machines, client.InNamespace(m.Namespace))).To(Succeed())
+	for _, machine := range allMetal3Machines.Items {
+		name, err := Metal3MachineToMachineName(machine)
+		if err != nil {
+			Logf("error getting Machine name from Metal3machine: %w", err)
+		} else if name == m.Name {
+			return BmhNameToVMName(Metal3MachineToBmhName(machine)), nil
+		}
+	}
+	return "", fmt.Errorf("no matching Metal3Machine found for current Machine")
+}
+
+// MachineTiIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
+func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
+	m3Machine := &infrav1.Metal3Machine{}
+	err := cli.Get(ctx, types.NamespacedName{
+		Namespace: m.Spec.InfrastructureRef.Namespace,
+		Name:      m.Spec.InfrastructureRef.Name},
+		m3Machine)
+
+	if err != nil {
+		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", m.Spec.InfrastructureRef.Namespace, m.Spec.InfrastructureRef.Name, err)
+	}
+	m3DataList := &infrav1.Metal3DataList{}
+	m3Data := &infrav1.Metal3Data{}
+	err = cli.List(ctx, m3DataList)
+	if err != nil {
+		return "", fmt.Errorf("coudln't list Metal3Data objects: %w", err)
+	}
+	for i, m3d := range m3DataList.Items {
+		for _, owner := range m3d.OwnerReferences {
+			if owner.Name == m3Machine.Name {
+				m3Data = &m3DataList.Items[i]
+			}
+		}
+	}
+	if m3Data.Name == "" {
+		return "", fmt.Errorf("couldn't find a matching Metal3Data object")
+	}
+
+	IPAddresses := &ipamv1.IPAddressList{}
+	IPAddress := &ipamv1.IPAddress{}
+	err = cli.List(ctx, IPAddresses)
+	if err != nil {
+		return "", fmt.Errorf("couldn't list IPAddress objects: %w", err)
+	}
+	for i, ip := range IPAddresses.Items {
+		for _, owner := range ip.OwnerReferences {
+			if owner.Name == m3Data.Name {
+				IPAddress = &IPAddresses.Items[i]
+			}
+		}
+	}
+	if IPAddress.Name == "" {
+		return "", fmt.Errorf("couldn't find a matching IPAddress object")
+	}
+
+	return string(IPAddress.Spec.Address), nil
+}
+
+// RunCommand runs a command via ssh. If logfolder is "", no logs are saved.
+func runCommand(logFolder, filename, machineIP, user, command string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not get home directory: %w", err)
+	}
+	keyPath := path.Join(filepath.Clean(home), ".ssh", "id_rsa")
+	privkey, err := os.ReadFile(keyPath) //#nosec G304:gosec
+	if err != nil {
+		return fmt.Errorf("couldn't read private key")
+	}
+	signer, err := ssh.ParsePrivateKey(privkey)
+	if err != nil {
+		return fmt.Errorf("couldn't form a signer from ssh key: %w", err)
+	}
+	cfg := &ssh.ClientConfig{
+		User: user,
+		Auth: []ssh.AuthMethod{
+			ssh.PublicKeys(signer),
+		},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error { return nil },
+		Timeout:         60 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", machineIP), cfg)
+	if err != nil {
+		return fmt.Errorf("couldn't dial the machinehost at %s : %w", machineIP, err)
+	}
+	defer client.Close()
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("couldn't open a new session: %w", err)
+	}
+	var stdoutBuf bytes.Buffer
+	var stderrBuf bytes.Buffer
+	session.Stdout = &stdoutBuf
+	session.Stderr = &stderrBuf
+	if err := session.Run("sudo " + command + "\n"); err != nil {
+		return fmt.Errorf("unable to send command %q: %w", "sudo "+command, err)
+	}
+	result := strings.TrimSuffix(stdoutBuf.String(), "\n") + "\n" + strings.TrimSuffix(stderrBuf.String(), "\n")
+	if logFolder != "" {
+		// Write logs is folder path is provided.
+		logFile := path.Join(logFolder, filename)
+		if err := os.WriteFile(logFile, []byte(result), 0400); err != nil {
+			return fmt.Errorf("error writing log file: %w", err)
+		}
+	}
+	return nil
+}
+
+type Metal3LogCollector struct{}
+
+// CollectMachineLog collects specific logs from machines.
+func (Metal3LogCollector) CollectMachineLog(ctx context.Context, cli client.Client, m *clusterv1.Machine, outputPath string) error {
+	VMName, err := MachineToVMName(ctx, cli, m)
+	if err != nil {
+		return fmt.Errorf("error while fetching the VM name: %w", err)
+	}
+
+	qemuFolder := path.Join(outputPath, VMName)
+	if err := os.MkdirAll(qemuFolder, 0o750); err != nil {
+		fmt.Fprintf(GinkgoWriter, "couldn't create directory %q : %s\n", qemuFolder, err)
+	}
+
+	serialLog := fmt.Sprintf("/var/log/libvirt/qemu/%s-serial0.log", VMName)
+	if _, err := os.Stat(serialLog); os.IsNotExist(err) {
+		return fmt.Errorf("error finding the serial log: %w", err)
+	}
+
+	copyCmd := fmt.Sprintf("sudo cp %s %s", serialLog, qemuFolder)
+	cmd := exec.Command("/bin/sh", "-c", copyCmd) // #nosec G204:gosec
+	if output, err := cmd.Output(); err != nil {
+		return fmt.Errorf("something went wrong when executing '%s': %w, output: %s", cmd.String(), err, output)
+	}
+	setPermsCmd := fmt.Sprintf("sudo chmod -v 777 %s", path.Join(qemuFolder, filepath.Base(serialLog)))
+	cmd = exec.Command("/bin/sh", "-c", setPermsCmd) // #nosec G204:gosec
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("error changing file permissions after copying: %w, output: %s", err, output)
+	}
+
+	kubeadmCP := framework.GetKubeadmControlPlaneByCluster(ctx, framework.GetKubeadmControlPlaneByClusterInput{
+		Lister:      cli,
+		ClusterName: m.Spec.ClusterName,
+		Namespace:   m.Namespace,
+	})
+
+	if len(kubeadmCP.Spec.KubeadmConfigSpec.Users) < 1 {
+		return fmt.Errorf("no valid credentials found: KubeadmConfigSpec.Users is empty")
+	}
+	creds := kubeadmCP.Spec.KubeadmConfigSpec.Users[0]
+
+	ip, err := MachineToIPAddress(ctx, cli, m)
+	if err != nil {
+		return fmt.Errorf("couldn't get IP address of machine: %w", err)
+	}
+
+	commands := map[string]string{
+		"cloud-final.log": "journalctl --no-pager -u cloud-final",
+		"kubelet.log":     "journalctl --no-pager -u kubelet.service",
+		"containerd.log":  "journalctl --no-pager -u containerd.service",
+	}
+
+	for title, cmd := range commands {
+		err = runCommand(outputPath, title, ip, creds.Name, cmd)
+		if err != nil {
+			return fmt.Errorf("couldn't gather logs: %w", err)
+		}
+	}
+
+	Logf("Successfully collected logs for machine %s", m.Name)
+	return nil
+}
+
+func (Metal3LogCollector) CollectMachinePoolLog(_ context.Context, _ client.Client, _ *expv1.MachinePool, _ string) error {
+	return fmt.Errorf("CollectMachinePoolLog not implemented")
+}
+
+func (Metal3LogCollector) CollectInfrastructureLogs(_ context.Context, _ client.Client, _ *clusterv1.Cluster, _ string) error {
+	return fmt.Errorf("CollectInfrastructureLogs not implemented")
+}
+
+// LabelCRD is adding the specified labels to the CRD crdName. Existing labels with matching keys will be overwritten.
+func LabelCRD(ctx context.Context, c client.Client, crdName string, labels map[string]string) error {
+	crd := &apiextensionsv1.CustomResourceDefinition{}
+	err := c.Get(ctx, client.ObjectKey{Name: crdName}, crd)
+	if err != nil {
+		return err
+	}
+	// Apply labels to the CRD
+	if crd.Labels == nil {
+		crd.Labels = make(map[string]string)
+	}
+	for key, value := range labels {
+		crd.Labels[key] = value
+	}
+	// Update the CRD
+	err = c.Update(ctx, crd)
+	if err != nil {
+		return err
+	}
+	Logf("CRD '%s' labeled successfully\n", crdName)
+	return nil
 }
