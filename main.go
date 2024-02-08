@@ -34,8 +34,11 @@ import (
 	"github.com/metal3-io/cluster-api-provider-metal3/controllers"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	"github.com/spf13/pflag"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -48,17 +51,19 @@ import (
 	"k8s.io/klog/v2/klogr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	caipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1alpha1"
+	"sigs.k8s.io/cluster-api/util/flags"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	// +kubebuilder:scaffold:imports
 )
 
-type TLSVersion string
-
 // Constants for TLS versions.
 const (
-	TLSVersion12 TLSVersion = "TLS12"
-	TLSVersion13 TLSVersion = "TLS13"
+	TLSVersion12 = "TLS12"
+	TLSVersion13 = "TLS13"
 )
 
 type TLSOptions struct {
@@ -71,7 +76,6 @@ var (
 	myscheme                         = runtime.NewScheme()
 	setupLog                         = ctrl.Log.WithName("setup")
 	waitForMetal3Controller          = false
-	metricsBindAddr                  string
 	enableLeaderElection             bool
 	leaderElectionLeaseDuration      time.Duration
 	leaderElectionRenewDeadline      time.Duration
@@ -94,7 +98,8 @@ var (
 	logOptions                       = logs.NewOptions()
 	enableBMHNameBasedPreallocation  bool
 	tlsOptions                       = TLSOptions{}
-	tlsSupportedVersions             = []string{"TLS12", "TLS13"}
+	diagnosticsOptions               = flags.DiagnosticsOptions{}
+	tlsSupportedVersions             = []string{TLSVersion12, TLSVersion13}
 )
 
 func init() {
@@ -105,8 +110,11 @@ func init() {
 	_ = infrav1alpha5.AddToScheme(myscheme)
 	_ = clusterv1.AddToScheme(myscheme)
 	_ = bmov1alpha1.AddToScheme(myscheme)
-	// +kubebuilder:scaffold:scheme
 }
+
+// Add RBAC for the authorized diagnostics endpoint.
+// +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
+// +kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
 
 func main() {
 	rand.Seed(time.Now().UnixNano())
@@ -130,21 +138,57 @@ func main() {
 		setupLog.Error(err, "unable to add TLS settings to the webhook server")
 		os.Exit(1)
 	}
+
+	diagnosticsOpts := flags.GetDiagnosticsOptions(diagnosticsOptions)
+
+	var watchNamespaces map[string]cache.Config
+	if watchNamespace != "" {
+		watchNamespaces = map[string]cache.Config{
+			watchNamespace: {},
+		}
+	}
+
+	req, _ := labels.NewRequirement(clusterv1.ClusterNameLabel, selection.Exists, nil)
+	clusterSecretCacheSelector := labels.NewSelector().Add(*req)
+
 	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                     myscheme,
-		MetricsBindAddress:         metricsBindAddr,
 		LeaseDuration:              &leaderElectionLeaseDuration,
 		RenewDeadline:              &leaderElectionRenewDeadline,
 		RetryPeriod:                &leaderElectionRetryPeriod,
 		LeaderElection:             enableLeaderElection,
 		LeaderElectionID:           "controller-leader-election-capm3",
 		LeaderElectionResourceLock: resourcelock.LeasesResourceLock,
-		SyncPeriod:                 &syncPeriod,
-		Port:                       webhookPort,
-		CertDir:                    webhookCertDir,
 		HealthProbeBindAddress:     healthAddr,
-		Namespace:                  watchNamespace,
-		TLSOpts:                    tlsOptionOverrides,
+		Metrics:                    diagnosticsOpts,
+		Cache: cache.Options{
+			DefaultNamespaces: watchNamespaces,
+			SyncPeriod:        &syncPeriod,
+			ByObject: map[client.Object]cache.ByObject{
+				// Note: Only Secrets with the cluster name label are cached.
+				// The default client of the manager won't use the cache for secrets at all (see Client.Cache.DisableFor).
+				// The cached secrets will only be used by the secretCachingClient we create below.
+				&corev1.Secret{}: {
+					Label: clusterSecretCacheSelector,
+				},
+			},
+		},
+		Client: client.Options{
+			Cache: &client.CacheOptions{
+				DisableFor: []client.Object{
+					&bmov1alpha1.BareMetalHost{},
+					&corev1.ConfigMap{},
+					&corev1.Secret{},
+				},
+			},
+		},
+		WebhookServer: webhook.NewServer(
+			webhook.Options{
+				Port:    webhookPort,
+				CertDir: webhookCertDir,
+				TLSOpts: tlsOptionOverrides,
+			},
+		),
 	})
 	if err != nil {
 		setupLog.Error(err, "unable to start manager")
@@ -162,9 +206,7 @@ func main() {
 	// Setup the context that's going to be used in controllers and for the manager.
 	ctx := ctrl.SetupSignalHandler()
 
-	if enableBMHNameBasedPreallocation {
-		baremetal.EnableBMHNameBasedPreallocation = enableBMHNameBasedPreallocation
-	}
+	baremetal.EnableBMHNameBasedPreallocation = enableBMHNameBasedPreallocation
 
 	setupChecks(mgr)
 	setupReconcilers(ctx, mgr)
@@ -181,13 +223,6 @@ func main() {
 func initFlags(fs *pflag.FlagSet) {
 	logs.AddFlags(fs, logs.SkipLoggingConfigurationFlags())
 	logsv1.AddFlags(logOptions, fs)
-
-	fs.StringVar(
-		&metricsBindAddr,
-		"metrics-bind-addr",
-		"localhost:8080",
-		"The address the metric endpoint binds to.",
-	)
 
 	fs.BoolVar(
 		&enableLeaderElection,
@@ -267,7 +302,7 @@ func initFlags(fs *pflag.FlagSet) {
 	)
 
 	fs.IntVar(&metal3MachineConcurrency, "metal3machine-concurrency", 10,
-		"Number of metal3machines to process simultaneously")
+		"Number of metal3machines to process simultaneously. WARNING! Currently not safe to set > 1.")
 
 	fs.IntVar(&metal3ClusterConcurrency, "metal3cluster-concurrency", 10,
 		"Number of metal3clusters to process simultaneously")
@@ -292,12 +327,12 @@ func initFlags(fs *pflag.FlagSet) {
 
 	fs.IntVar(&restConfigBurst, "kube-api-burst", 30,
 		"Maximum number of queries that should be allowed in one burst from the controller client to the Kubernetes API server. Default 30")
-	flag.StringVar(&tlsOptions.TLSMinVersion, "tls-min-version", "TLS12",
+	fs.StringVar(&tlsOptions.TLSMinVersion, "tls-min-version", TLSVersion12,
 		"The minimum TLS version in use by the webhook server.\n"+
 			fmt.Sprintf("Possible values are %s.", strings.Join(tlsSupportedVersions, ", ")),
 	)
 
-	fs.StringVar(&tlsOptions.TLSMaxVersion, "tls-max-version", "TLS13",
+	fs.StringVar(&tlsOptions.TLSMaxVersion, "tls-max-version", TLSVersion13,
 		"The maximum TLS version in use by the webhook server.\n"+
 			fmt.Sprintf("Possible values are %s.", strings.Join(tlsSupportedVersions, ", ")),
 	)
@@ -309,6 +344,8 @@ func initFlags(fs *pflag.FlagSet) {
 			"If omitted, the default Go cipher suites will be used. \n"+
 			"Preferred values: "+strings.Join(tlsCipherPreferredValues, ", ")+". \n"+
 			"Insecure values: "+strings.Join(tlsCipherInsecureValues, ", ")+".")
+
+	flags.AddDiagnosticsOptions(fs, &diagnosticsOptions)
 }
 
 func waitForAPIs(cfg *rest.Config) error {
@@ -493,8 +530,7 @@ func GetTLSOptionOverrideFuncs(options TLSOptions) ([]func(*tls.Config), error) 
 		cfg.MaxVersion = tlsMaxVersion
 	})
 	// Cipher suites should not be set if empty.
-	if options.TLSMinVersion == string(TLSVersion13) &&
-		options.TLSMaxVersion == string(TLSVersion13) &&
+	if tlsMinVersion >= tls.VersionTLS13 &&
 		options.TLSCipherSuites != "" {
 		setupLog.Info("warning: Cipher suites should not be set for TLS version 1.3. Ignoring ciphers")
 		options.TLSCipherSuites = ""
@@ -528,12 +564,12 @@ func GetTLSVersion(version string) (uint16, error) {
 	var v uint16
 
 	switch version {
-	case string(TLSVersion12):
+	case TLSVersion12:
 		v = tls.VersionTLS12
-	case string(TLSVersion13):
+	case TLSVersion13:
 		v = tls.VersionTLS13
 	default:
-		return 0, fmt.Errorf("unexpected TLS version %q (must be one of: TLS12, TLS13)", version)
+		return 0, fmt.Errorf("unexpected TLS version %q (must be one of: %s)", version, strings.Join(tlsSupportedVersions, ", "))
 	}
 	return v, nil
 }

@@ -328,7 +328,7 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 
 	// A machine bootstrap not ready case is caught in the controller
 	// ReconcileNormal function
-	err = m.getUserDataSecretName(ctx, host)
+	err = m.getUserDataSecretName(ctx)
 	if err != nil {
 		return err
 	}
@@ -415,10 +415,10 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 }
 
 // getUserDataSecretName gets the UserDataSecretName from the machine and exposes it as a secret
-// for the BareMetalHost. The UserDataSecretName might already be in a secret with
+// for the BareMetalHost through Metal3Machine. The UserDataSecretName might already be in a secret with
 // CABPK v0.3.0+, but if it is in a different namespace than the BareMetalHost,
 // then we need to create the secret.
-func (m *MachineManager) getUserDataSecretName(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) getUserDataSecretName(_ context.Context) error {
 	if m.Metal3Machine.Status.UserData != nil {
 		return nil
 	}
@@ -578,7 +578,7 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 			if m.Cluster.DeletionTimestamp.IsZero() {
 				// Fetch corresponding Metal3MachineTemplate, to see if nodeReuse
 				// feature is enabled. If set to true, check the machine role. In case
-				// machine role is ControlPlane, set nodeReuseLabelName to KubeadmControlPlane
+				// machine role is ControlPlane, set nodeReuseLabelName to ControlPlane
 				// name, otherwise to MachineDeployment name.
 				m.Log.Info("Getting Metal3MachineTemplate")
 				m3mt := &infrav1.Metal3MachineTemplate{}
@@ -609,15 +609,15 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 						}
 						// Check if machine is ControlPlane
 						if m.isControlPlane() {
-							// Fetch KubeadmControlPlane name for controlplane machine
-							m.Log.Info("Fetch KubeadmControlPlane name while deprovisioning host", "host", host.Name)
-							kcpName, err := m.getKubeadmControlPlaneName(ctx)
+							// Fetch ControlPlane name for controlplane machine
+							m.Log.Info("Fetch ControlPlane name while deprovisioning host", "host", host.Name)
+							cpName, err := m.getControlPlaneName(ctx)
 							if err != nil {
 								return err
 							}
-							// Set nodeReuseLabelName on the host to KubeadmControlPlane name
-							m.Log.Info("Setting nodeReuseLabelName in host to fetched KubeadmControlPlane", "host", host.Name, "kubeadmControlPlane", kcpName)
-							host.Labels[nodeReuseLabelName] = kcpName
+							// Set nodeReuseLabelName on the host to ControlPlane name
+							m.Log.Info("Setting nodeReuseLabelName in host to fetched ControlPlane", "host", host.Name, "controlPlane", cpName)
+							host.Labels[nodeReuseLabelName] = cpName
 						} else {
 							// Fetch MachineDeployment name for worker machine
 							m.Log.Info("Fetch MachineDeployment name while deprovisioning host", "host", host.Name)
@@ -949,7 +949,7 @@ func consumerRefMatches(consumer *corev1.ObjectReference, m3machine *infrav1.Met
 	return true
 }
 
-// nodeReuseLabelMatches returns true if nodeReuseLabelName matches KubeadmControlPlane or MachineDeployment name on the host.
+// nodeReuseLabelMatches returns true if nodeReuseLabelName matches ControlPlane or MachineDeployment name on the host.
 func (m *MachineManager) nodeReuseLabelMatches(ctx context.Context, host *bmov1alpha1.BareMetalHost) bool {
 	if host == nil {
 		return false
@@ -958,17 +958,17 @@ func (m *MachineManager) nodeReuseLabelMatches(ctx context.Context, host *bmov1a
 		return false
 	}
 	if m.isControlPlane() {
-		kcp, err := m.getKubeadmControlPlaneName(ctx)
+		cp, err := m.getControlPlaneName(ctx)
 		if err != nil {
 			return false
 		}
 		if host.Labels[nodeReuseLabelName] == "" {
 			return false
 		}
-		if host.Labels[nodeReuseLabelName] != kcp {
+		if host.Labels[nodeReuseLabelName] != cp {
 			return false
 		}
-		m.Log.Info("nodeReuseLabelName on the host matches KubeadmControlPlane name", "host", host.Name, "kubeadmControlPlane", kcp)
+		m.Log.Info("nodeReuseLabelName on the host matches ControlPlane name", "host", host.Name, "controlPlane", cp)
 		return true
 	}
 	md, err := m.getMachineDeploymentName(ctx)
@@ -986,7 +986,7 @@ func (m *MachineManager) nodeReuseLabelMatches(ctx context.Context, host *bmov1a
 }
 
 // nodeReuseLabelExists returns true if host contains nodeReuseLabelName label.
-func (m *MachineManager) nodeReuseLabelExists(ctx context.Context, host *bmov1alpha1.BareMetalHost) bool {
+func (m *MachineManager) nodeReuseLabelExists(_ context.Context, host *bmov1alpha1.BareMetalHost) bool {
 	if host == nil {
 		return false
 	}
@@ -1034,7 +1034,7 @@ func (m *MachineManager) setBMCSecretLabel(ctx context.Context, host *bmov1alpha
 }
 
 // setHostLabel will set the set cluster.x-k8s.io/cluster-name to bmh.
-func (m *MachineManager) setHostLabel(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) setHostLabel(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	if host.Labels == nil {
 		host.Labels = make(map[string]string)
 	}
@@ -1046,7 +1046,7 @@ func (m *MachineManager) setHostLabel(ctx context.Context, host *bmov1alpha1.Bar
 // setHostSpec will ensure the host's Spec is set according to the machine's
 // details. It will then update the host via the kube API. If UserData does not
 // include a Namespace, it will default to the Metal3Machine's namespace.
-func (m *MachineManager) setHostSpec(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) setHostSpec(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	// We only want to update the image setting if the host does not
 	// already have an image.
 	//
@@ -1098,7 +1098,7 @@ func (m *MachineManager) setHostSpec(ctx context.Context, host *bmov1alpha1.Bare
 
 // setHostConsumerRef will ensure the host's Spec is set to link to this
 // Metal3Machine.
-func (m *MachineManager) setHostConsumerRef(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) setHostConsumerRef(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	host.Spec.ConsumerRef = &corev1.ObjectReference{
 		Kind:       "Metal3Machine",
 		Name:       m.Metal3Machine.Name,
@@ -1129,7 +1129,7 @@ func (m *MachineManager) setHostConsumerRef(ctx context.Context, host *bmov1alph
 
 // ensureAnnotation makes sure the machine has an annotation that references the
 // host and uses the API to update the machine if necessary.
-func (m *MachineManager) ensureAnnotation(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) ensureAnnotation(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	annotations := m.Metal3Machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -1202,7 +1202,7 @@ func (m *MachineManager) clearError() {
 }
 
 // updateMachineStatus updates a Metal3Machine object's status.
-func (m *MachineManager) updateMachineStatus(ctx context.Context, host *bmov1alpha1.BareMetalHost) error {
+func (m *MachineManager) updateMachineStatus(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	addrs := m.nodeAddresses(host)
 
 	metal3MachineOld := m.Metal3Machine.DeepCopy()
@@ -1332,7 +1332,7 @@ func (m *MachineManager) SetNodeProviderID(ctx context.Context, providerIDOnM3M 
 	if countNodesWithLabel == 0 {
 		// The node could either be still running cloud-init or have been
 		// deleted manually. TODO: handle a manual deletion case.
-		errMessage := fmt.Sprint("requeuing, could not find node with label", "nodelabel", nodeLabel)
+		errMessage := fmt.Sprintf("requeuing, could not find node with label: %s", nodeLabel)
 		m.Log.Info(errMessage)
 		return WithTransientError(errors.New(errMessage), requeueAfter)
 	}
@@ -1650,9 +1650,9 @@ func (m *MachineManager) DissociateM3Metadata(ctx context.Context) error {
 	return deleteObject(ctx, m.client, metal3DataClaim)
 }
 
-// getKubeadmControlPlaneName retrieves the KubeadmControlPlane object corresponding to the CAPI machine.
-func (m *MachineManager) getKubeadmControlPlaneName(ctx context.Context) (string, error) {
-	m.Log.Info("Fetching KubeadmControlPlane name")
+// getControlPlaneName retrieves the ControlPlane object corresponding to the CAPI machine.
+func (m *MachineManager) getControlPlaneName(_ context.Context) (string, error) {
+	m.Log.Info("Fetching ControlPlane name")
 	if m.Machine == nil {
 		return "", errors.New("Could not find corresponding machine object")
 	}
@@ -1660,9 +1660,6 @@ func (m *MachineManager) getKubeadmControlPlaneName(ctx context.Context) (string
 		return "", errors.New("Machine owner reference is not populated")
 	}
 	for _, mOwnerRef := range m.Machine.ObjectMeta.OwnerReferences {
-		if mOwnerRef.Kind != "KubeadmControlPlane" {
-			continue
-		}
 		aGV, err := schema.ParseGroupVersion(mOwnerRef.APIVersion)
 		if err != nil {
 			return "", errors.New("Failed to parse the group and version")
@@ -1670,12 +1667,12 @@ func (m *MachineManager) getKubeadmControlPlaneName(ctx context.Context) (string
 		if aGV.Group != controlplanev1.GroupVersion.Group {
 			continue
 		}
-		// adding prefix to KubeadmControlPlane name in order to be able to differentiate
-		// KubeadmControlPlane and MachineDeployment in case they have the same names set in the cluster.
-		m.Log.Info("Fetched KubeadmControlPlane name", "kubeadmControlPlane", "kcp-"+mOwnerRef.Name)
-		return "kcp-" + mOwnerRef.Name, nil
+		// adding prefix to ControlPlane name in order to be able to differentiate
+		// ControlPlane and MachineDeployment in case they have the same names set in the cluster.
+		m.Log.Info("Fetched ControlPlane name", "controlPlane", "cp-"+mOwnerRef.Name)
+		return "cp-" + mOwnerRef.Name, nil
 	}
-	return "", errors.New("KubeadmControlPlane name is not found")
+	return "", errors.New("ControlPlane name is not found")
 }
 
 // getMachineDeploymentName retrieves the MachineDeployment object name corresponding to the MachineSet.
@@ -1704,7 +1701,7 @@ func (m *MachineManager) getMachineDeploymentName(ctx context.Context) (string, 
 			continue
 		}
 		// adding prefix to MachineDeployment name in order to be able to differentiate
-		// MachineDeployment and KubeadmControlPlane in case they have the same names set in the cluster.
+		// MachineDeployment and ControlPlane in case they have the same names set in the cluster.
 		m.Log.Info("Fetched MachineDeployment name", "machinedeployment", "md-"+msOwnerRef.Name)
 		return "md-" + msOwnerRef.Name, nil
 	}

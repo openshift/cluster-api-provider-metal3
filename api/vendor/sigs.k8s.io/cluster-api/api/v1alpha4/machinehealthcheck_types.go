@@ -125,6 +125,8 @@ type MachineHealthCheckStatus struct {
 // ANCHOR_END: MachineHealthCheckStatus
 
 // +kubebuilder:object:root=true
+// +kubebuilder:unservedversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:resource:path=machinehealthchecks,shortName=mhc;mhcs,scope=Namespaced,categories=cluster-api
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".spec.clusterName",description="Cluster"
@@ -169,5 +171,5 @@ type MachineHealthCheckList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&MachineHealthCheck{}, &MachineHealthCheckList{})
+	objectTypes = append(objectTypes, &MachineHealthCheck{}, &MachineHealthCheckList{})
 }

@@ -41,6 +41,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
+type testCaseEnsureM3Claim struct {
+	poolRef          corev1.TypedLocalObjectReference
+	ipClaim          *ipamv1.IPClaim
+	expectError      bool
+	expectFetchAgain bool
+	expectClaim      bool
+}
+
 var _ = Describe("Metal3Data manager", func() {
 	DescribeTable("Test Finalizers",
 		func(data *infrav1.Metal3Data) {
@@ -69,7 +77,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 	)
 
-	It("Test error handling", func() {
+	It("should be able to set and clear errors", func() {
 		data := &infrav1.Metal3Data{}
 		dataMgr, err := NewDataManager(nil, data,
 			logr.Discard(),
@@ -91,7 +99,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectedErrorSet bool
 	}
 
-	DescribeTable("Test CreateSecret",
+	DescribeTable("Test Reconcile",
 		func(tc testCaseReconcile) {
 			objects := []client.Object{}
 			if tc.m3dt != nil {
@@ -157,7 +165,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectedNetworkData *string
 	}
 
-	DescribeTable("Test CreateSecret",
+	DescribeTable("Test createSecrets",
 		func(tc testCaseCreateSecrets) {
 			objects := []client.Object{}
 			if tc.m3dt != nil {
@@ -345,7 +353,7 @@ var _ = Describe("Metal3Data manager", func() {
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: pointer.String("XX:XX:XX:XX:XX:XX"),
+										String: pointer.String("12:34:56:78:9A:BC"),
 									},
 								},
 							},
@@ -406,7 +414,7 @@ var _ = Describe("Metal3Data manager", func() {
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: pointer.String("XX:XX:XX:XX:XX:XX"),
+										String: pointer.String("12:34:56:78:9A:BC"),
 									},
 								},
 							},
@@ -446,7 +454,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectReady:         true,
 			expectedMetadata:    pointer.String(fmt.Sprintf("String-1: String-1\nproviderid: %s\n", providerid)),
-			expectedNetworkData: pointer.String("links:\n- ethernet_mac_address: XX:XX:XX:XX:XX:XX\n  id: eth0\n  mtu: 1500\n  type: phy\nnetworks: []\nservices: []\n"),
+			expectedNetworkData: pointer.String("links:\n- ethernet_mac_address: 12:34:56:78:9A:BC\n  id: eth0\n  mtu: 1500\n  type: phy\nnetworks: []\nservices: []\n"),
 		}),
 		Entry("No Machine OwnerRef on M3M", testCaseCreateSecrets{
 			m3d: &infrav1.Metal3Data{
@@ -475,7 +483,7 @@ var _ = Describe("Metal3Data manager", func() {
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: pointer.String("XX:XX:XX:XX:XX:XX"),
+										String: pointer.String("12:34:56:78:9A:BC"),
 									},
 								},
 							},
@@ -522,7 +530,7 @@ var _ = Describe("Metal3Data manager", func() {
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: pointer.String("XX:XX:XX:XX:XX:XX"),
+										String: pointer.String("12:34:56:78:9A:BC"),
 									},
 								},
 							},
@@ -624,21 +632,21 @@ var _ = Describe("Metal3Data manager", func() {
 		expectRequeue bool
 	}
 
-	DescribeTable("Test GetAddressesFromPool",
+	DescribeTable("Test getAddressesFromPool",
 		func(tc testCaseGetAddressesFromPool) {
 			objects := []client.Object{}
-			for _, poolName := range tc.m3IPClaims {
-				pool := &ipamv1.IPClaim{
-					ObjectMeta: testObjectMeta(metal3DataName+"-"+poolName, namespaceName, ""),
+			for _, claimName := range tc.m3IPClaims {
+				claim := &ipamv1.IPClaim{
+					ObjectMeta: testObjectMeta(metal3DataName+"-"+claimName, namespaceName, ""),
 					Spec: ipamv1.IPClaimSpec{
 						Pool: *testObjectReference("abc"),
 					},
 				}
-				objects = append(objects, pool)
+				objects = append(objects, claim)
 			}
-			for _, poolName := range tc.ipClaims {
+			for _, claimName := range tc.ipClaims {
 				claim := &caipamv1.IPAddressClaim{
-					ObjectMeta: testObjectMeta(metal3DataName+"-"+poolName, namespaceName, ""),
+					ObjectMeta: testObjectMeta(metal3DataName+"-"+claimName, namespaceName, ""),
 					Spec: caipamv1.IPAddressClaimSpec{
 						PoolRef: corev1.TypedLocalObjectReference{
 							Name:     "abc",
@@ -1003,7 +1011,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectRequeue bool
 	}
 
-	DescribeTable("Test ReleaseAddressesFromPool",
+	DescribeTable("Test releaseAddressesFromPool",
 		func(tc testCaseReleaseAddressesFromPool) {
 			objects := []client.Object{}
 			for _, poolName := range tc.m3IPClaims {
@@ -1217,7 +1225,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectClaim     bool
 	}
 
-	DescribeTable("Test GetAddressFromM3Claim",
+	DescribeTable("Test addressFromM3Claim",
 		func(tc testCaseAddressFromM3Claim) {
 			objects := []client.Object{}
 			if tc.ipAddress != nil {
@@ -1376,15 +1384,55 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectRequeue: false,
 		}),
+		Entry("Old IPClaim (wrong UID) without deletion timestamp", testCaseAddressFromM3Claim{
+			m3d: &infrav1.Metal3Data{
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "abc-def-ghi-jkl"),
+			},
+			poolName: testPoolName,
+			poolRef:  corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaim: &ipamv1.IPClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       metal3DataName + "-" + testPoolName,
+					Namespace:  namespaceName,
+					Finalizers: []string{"ipclaim.ipam.metal3.io"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind: "Metal3Data",
+							Name: metal3DataName,
+							UID:  "not-the-same",
+						},
+					},
+				},
+				Status: ipamv1.IPClaimStatus{
+					Address: &corev1.ObjectReference{
+						Name:      "abc-192.168.0.10",
+						Namespace: namespaceName,
+					},
+				},
+			},
+			expectRequeue: true,
+			expectError:   false,
+		}),
 		Entry("IPPool with allocation error", testCaseAddressFromM3Claim{
 			m3d: &infrav1.Metal3Data{
-				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "123-456-789"),
 			},
 			poolName:        testPoolName,
 			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
 			expectedAddress: addressFromPool{},
 			ipClaim: &ipamv1.IPClaim{
-				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       metal3DataName + "-" + testPoolName,
+					Namespace:  namespaceName,
+					Finalizers: []string{"ipclaim.ipam.metal3.io"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind: "Metal3Data",
+							Name: metal3DataName,
+							UID:  "123-456-789",
+						},
+					},
+				},
 				Status: ipamv1.IPClaimStatus{
 					ErrorMessage: pointer.String("Error happened"),
 				},
@@ -1419,7 +1467,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("IPAddress found", testCaseAddressFromM3Claim{
 			m3d: &infrav1.Metal3Data{
-				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "123-456-789"),
 				Spec: infrav1.Metal3DataSpec{
 					Template: *testObjectReference(metal3DataTemplateName),
 				},
@@ -1435,7 +1483,18 @@ var _ = Describe("Metal3Data manager", func() {
 				},
 			},
 			ipClaim: &ipamv1.IPClaim{
-				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       metal3DataName + "-" + testPoolName,
+					Namespace:  namespaceName,
+					Finalizers: []string{"ipclaim.ipam.metal3.io"},
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							Kind: "Metal3Data",
+							Name: metal3DataName,
+							UID:  "123-456-789",
+						},
+					},
+				},
 				Status: ipamv1.IPClaimStatus{
 					Address: &corev1.ObjectReference{
 						Name:      "abc-192.168.0.10",
@@ -1546,6 +1605,293 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 	)
 
+	type testCaseMultiReleaseAddressFromM3Pool struct {
+		m3d      *infrav1.Metal3Data
+		poolRef  corev1.TypedLocalObjectReference
+		ipClaims []ipamv1.IPClaim
+	}
+
+	DescribeTable("Test releaseAddressFromM3Pool with multiple namespaces",
+		func(tc testCaseMultiReleaseAddressFromM3Pool) {
+			objects := []client.Object{}
+			for i := range tc.ipClaims {
+				// To make the test entries a bit smaller, we add the
+				// .spec.pool here based on the labels.
+				tc.ipClaims[i].Spec.Pool.Name = tc.ipClaims[i].Labels[PoolLabelName]
+				objects = append(objects, &tc.ipClaims[i])
+			}
+			fake := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
+			dataMgr, err := NewDataManager(fake, tc.m3d,
+				logr.Discard(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			err = dataMgr.releaseAddressFromM3Pool(
+				context.TODO(), tc.poolRef,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			for i := range tc.ipClaims {
+				capm3IPClaim := &ipamv1.IPClaim{}
+				claimNamespacedName := types.NamespacedName{
+					Name:      tc.ipClaims[i].Name,
+					Namespace: tc.ipClaims[i].Namespace,
+				}
+
+				err = dataMgr.client.Get(context.TODO(), claimNamespacedName, capm3IPClaim)
+				if tc.ipClaims[i].Namespace != dataMgr.Data.Namespace {
+					// We should not touch other namespaces!
+					Expect(err).To(BeNil())
+				} else if tc.ipClaims[i].Spec.Pool.Name != tc.poolRef.Name {
+					// We should not touch other pools!
+					Expect(err).To(BeNil())
+				} else {
+					Expect(err).To(HaveOccurred())
+					Expect(apierrors.IsNotFound(err)).To(BeTrue())
+				}
+			}
+		},
+		Entry("Singe IPClaim deleted", testCaseMultiReleaseAddressFromM3Pool{
+			m3d: &infrav1.Metal3Data{
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Metal3Data",
+					APIVersion: infrav1.GroupVersion.String(),
+				},
+			},
+			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaims: []ipamv1.IPClaim{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "host-0-" + testPoolName,
+					Namespace: namespaceName,
+					Labels: map[string]string{
+						DataLabelName: metal3DataName,
+						PoolLabelName: testPoolName,
+					},
+				},
+			}},
+		}),
+		Entry("Multiple IPClaims related to the same M3D", testCaseMultiReleaseAddressFromM3Pool{
+			m3d: &infrav1.Metal3Data{
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Metal3Data",
+					APIVersion: infrav1.GroupVersion.String(),
+				},
+			},
+			poolRef: corev1.TypedLocalObjectReference{Name: "first-pool"},
+			ipClaims: []ipamv1.IPClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-0-" + "first-pool",
+						Namespace: namespaceName,
+						Labels: map[string]string{
+							DataLabelName: metal3DataName,
+							PoolLabelName: "first-pool",
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-0-" + "second-pool",
+						Namespace: namespaceName,
+						Labels: map[string]string{
+							DataLabelName: metal3DataName,
+							PoolLabelName: "second-pool",
+						},
+					},
+				},
+			},
+		}),
+		Entry("Multiple IPClaims in different namespaces exists with different labels", testCaseMultiReleaseAddressFromM3Pool{
+			m3d: &infrav1.Metal3Data{
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Metal3Data",
+					APIVersion: infrav1.GroupVersion.String(),
+				},
+			},
+			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaims: []ipamv1.IPClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-0-" + testPoolName,
+						Namespace: namespaceName,
+						Labels: map[string]string{
+							DataLabelName: metal3DataName,
+							PoolLabelName: testPoolName,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-1-" + testPoolName,
+						Namespace: "other-namespace",
+						Labels: map[string]string{
+							DataLabelName: "different-dataname",
+							PoolLabelName: testPoolName,
+						},
+					},
+				},
+			},
+		}),
+		Entry("Multiple IPClaims in different namespaces exists with same labels", testCaseMultiReleaseAddressFromM3Pool{
+			m3d: &infrav1.Metal3Data{
+				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "Metal3Data",
+					APIVersion: infrav1.GroupVersion.String(),
+				},
+			},
+			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaims: []ipamv1.IPClaim{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-0-" + testPoolName,
+						Namespace: namespaceName,
+						Labels: map[string]string{
+							DataLabelName: metal3DataName,
+							PoolLabelName: testPoolName,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "host-1-" + testPoolName,
+						Namespace: "other-namespace",
+						Labels: map[string]string{
+							DataLabelName: metal3DataName,
+							PoolLabelName: testPoolName,
+						},
+					},
+				},
+			},
+		}),
+	)
+
+	DescribeTable("ensureM3IPClaim", func(tc testCaseEnsureM3Claim) {
+		bmh := &bmov1alpha1.BareMetalHost{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "host-0",
+				Namespace: namespaceName,
+			},
+		}
+		m3m := &infrav1.Metal3Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3machineName,
+				Namespace: namespaceName,
+				Annotations: map[string]string{
+					HostAnnotation: namespaceName + "/" + bmh.Name,
+				},
+			},
+			Spec: infrav1.Metal3MachineSpec{
+				DataTemplate: &corev1.ObjectReference{
+					Name:      metal3DataTemplateName,
+					Namespace: namespaceName,
+				},
+			},
+		}
+		m3dt := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataTemplateName,
+				Namespace: namespaceName,
+			},
+		}
+		m3dc := &infrav1.Metal3DataClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataClaimName,
+				Namespace: namespaceName,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+						Kind:       "Metal3Machine",
+						Name:       m3m.Name,
+					},
+				},
+			},
+		}
+		m3d := &infrav1.Metal3Data{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+				Kind:       "Metal3Data",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataName,
+				Namespace: namespaceName,
+			},
+			Spec: infrav1.Metal3DataSpec{
+				Template: corev1.ObjectReference{
+					Name:      m3dt.Name,
+					Namespace: m3dt.Namespace,
+				},
+				Claim: corev1.ObjectReference{
+					Namespace: namespaceName,
+					Name:      metal3DataClaimName,
+				},
+			},
+		}
+
+		// Setup fake client with objects
+		objects := []client.Object{bmh, m3m, m3d, m3dt, m3dc}
+		if tc.ipClaim != nil {
+			objects = append(objects, tc.ipClaim)
+		}
+		fc := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
+		dataMgr, err := NewDataManager(fc, m3d, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+
+		rc, err := dataMgr.ensureM3IPClaim(context.Background(), tc.poolRef)
+
+		if tc.expectError {
+			Expect(err).To(HaveOccurred())
+		} else {
+			Expect(err).ToNot(HaveOccurred())
+		}
+		Expect(rc.fetchAgain).To(Equal(tc.expectFetchAgain))
+		if tc.expectClaim {
+			Expect(rc.m3Claim).NotTo(BeNil())
+			claim := &ipamv1.IPClaim{}
+			nn := types.NamespacedName{
+				Name:      m3d.Name + "-" + tc.poolRef.Name,
+				Namespace: m3d.Namespace,
+			}
+			err = fc.Get(context.Background(), nn, claim)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err := findOwnerRefFromList(claim.OwnerReferences,
+				m3d.TypeMeta, m3d.ObjectMeta)
+			Expect(err).NotTo(HaveOccurred())
+		} else {
+			Expect(tc.ipClaim).To(BeNil())
+		}
+	},
+		Entry("should create claim if missing", testCaseEnsureM3Claim{
+			poolRef:          corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaim:          nil,
+			expectError:      false,
+			expectFetchAgain: true,
+			expectClaim:      true,
+		}),
+		Entry("should do nothing when claim exists", testCaseEnsureM3Claim{
+			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaim: &ipamv1.IPClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      metal3DataName + "-" + testPoolName,
+					Namespace: namespaceName,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+							Kind:       "Metal3Data",
+							Name:       metal3DataName,
+							Controller: pointer.Bool(true),
+						},
+					}},
+			},
+			expectError:      false,
+			expectFetchAgain: false,
+			expectClaim:      true,
+		}),
+	)
+
 	type testCaseEnsureClaim struct {
 		poolRef          corev1.TypedLocalObjectReference
 		ipClaim          *caipamv1.IPAddressClaim
@@ -1604,7 +1950,7 @@ var _ = Describe("Metal3Data manager", func() {
 						{
 							APIVersion: "/",
 							Name:       metal3DataName,
-							Controller: pointer.BoolPtr(true),
+							Controller: pointer.Bool(true),
 						},
 					}},
 			},
@@ -1627,7 +1973,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectClaim     bool
 	}
 
-	DescribeTable("Test GetAddressFromClaim",
+	DescribeTable("Test addressFromClaim",
 		func(tc testCaseAddressFromClaim) {
 			objects := []client.Object{}
 			if tc.ipAddress != nil {
@@ -1822,8 +2168,9 @@ var _ = Describe("Metal3Data manager", func() {
 	)
 
 	type testCaseRenderNetworkData struct {
-		m3d            *infrav1.Metal3Data
 		m3dt           *infrav1.Metal3DataTemplate
+		m3m            *infrav1.Metal3Machine
+		machine        *clusterv1.Machine
 		bmh            *bmov1alpha1.BareMetalHost
 		poolAddresses  map[string]addressFromPool
 		expectError    bool
@@ -1832,7 +2179,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	DescribeTable("Test renderNetworkData",
 		func(tc testCaseRenderNetworkData) {
-			result, err := renderNetworkData(tc.m3dt, tc.bmh, tc.poolAddresses)
+			result, err := renderNetworkData(tc.m3dt, tc.m3m, tc.machine, tc.bmh, tc.poolAddresses)
 			if tc.expectError {
 				Expect(err).To(HaveOccurred())
 				return
@@ -1844,11 +2191,6 @@ var _ = Describe("Metal3Data manager", func() {
 			Expect(output).To(Equal(tc.expectedOutput))
 		},
 		Entry("Full example", testCaseRenderNetworkData{
-			m3d: &infrav1.Metal3Data{
-				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
-				},
-			},
 			m3dt: &infrav1.Metal3DataTemplate{
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
@@ -1859,7 +2201,7 @@ var _ = Describe("Metal3Data manager", func() {
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: pointer.String("XX:XX:XX:XX:XX:XX"),
+										String: pointer.String("12:34:56:78:9A:BC"),
 									},
 								},
 							},
@@ -1918,7 +2260,7 @@ var _ = Describe("Metal3Data manager", func() {
 						"type":                 "phy",
 						"id":                   "eth0",
 						"mtu":                  1500,
-						"ethernet_mac_address": "XX:XX:XX:XX:XX:XX",
+						"ethernet_mac_address": "12:34:56:78:9A:BC",
 					},
 				},
 				"networks": {
@@ -1967,11 +2309,6 @@ var _ = Describe("Metal3Data manager", func() {
 			expectError: true,
 		}),
 		Entry("Address error", testCaseRenderNetworkData{
-			m3d: &infrav1.Metal3Data{
-				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
-				},
-			},
 			m3dt: &infrav1.Metal3DataTemplate{
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
@@ -2067,6 +2404,8 @@ var _ = Describe("Metal3Data manager", func() {
 	)
 	type testCaseRenderNetworkLinks struct {
 		links          infrav1.NetworkDataLink
+		m3m            *infrav1.Metal3Machine
+		machine        *clusterv1.Machine
 		bmh            *bmov1alpha1.BareMetalHost
 		expectError    bool
 		expectedOutput []interface{}
@@ -2074,7 +2413,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	DescribeTable("Test renderNetworkLinks",
 		func(tc testCaseRenderNetworkLinks) {
-			result, err := renderNetworkLinks(tc.links, tc.bmh)
+			result, err := renderNetworkLinks(tc.links, tc.m3m, tc.machine, tc.bmh)
 			if tc.expectError {
 				Expect(err).To(HaveOccurred())
 				return
@@ -2090,7 +2429,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:   "eth0",
 						MTU:  1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: pointer.String("XX:XX:XX:XX:XX:XX"),
+							String: pointer.String("12:34:56:78:9A:BC"),
 						},
 					},
 				},
@@ -2100,7 +2439,7 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":                 "phy",
 					"id":                   "eth0",
 					"mtu":                  1500,
-					"ethernet_mac_address": "XX:XX:XX:XX:XX:XX",
+					"ethernet_mac_address": "12:34:56:78:9A:BC",
 				},
 			},
 		}),
@@ -2127,11 +2466,12 @@ var _ = Describe("Metal3Data manager", func() {
 			links: infrav1.NetworkDataLink{
 				Bonds: []infrav1.NetworkDataLinkBond{
 					{
-						BondMode: "802.3ad",
-						Id:       "bond0",
-						MTU:      1500,
+						BondMode:           "802.3ad",
+						BondXmitHashPolicy: "layer3+4",
+						Id:                 "bond0",
+						MTU:                1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: pointer.String("XX:XX:XX:XX:XX:XX"),
+							String: pointer.String("12:34:56:78:9A:BC"),
 						},
 						BondLinks: []string{"eth0"},
 					},
@@ -2139,12 +2479,13 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectedOutput: []interface{}{
 				map[string]interface{}{
-					"type":                 "bond",
-					"id":                   "bond0",
-					"mtu":                  1500,
-					"ethernet_mac_address": "XX:XX:XX:XX:XX:XX",
-					"bond_mode":            "802.3ad",
-					"bond_links":           []string{"eth0"},
+					"type":                  "bond",
+					"id":                    "bond0",
+					"mtu":                   1500,
+					"ethernet_mac_address":  "12:34:56:78:9A:BC",
+					"bond_mode":             "802.3ad",
+					"bond_xmit_hash_policy": "layer3+4",
+					"bond_links":            []string{"eth0"},
 				},
 			},
 		}),
@@ -2176,7 +2517,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:     "bond0",
 						MTU:    1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: pointer.String("XX:XX:XX:XX:XX:XX"),
+							String: pointer.String("12:34:56:78:9A:BC"),
 						},
 						VlanLink: "eth0",
 					},
@@ -2184,7 +2525,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectedOutput: []interface{}{
 				map[string]interface{}{
-					"vlan_mac_address": "XX:XX:XX:XX:XX:XX",
+					"vlan_mac_address": "12:34:56:78:9A:BC",
 					"vlan_id":          2222,
 					"vlan_link":        "eth0",
 					"type":             "vlan",
@@ -2694,6 +3035,8 @@ var _ = Describe("Metal3Data manager", func() {
 
 	type testCaseGetLinkMacAddress struct {
 		mac         *infrav1.NetworkLinkEthernetMac
+		m3m         *infrav1.Metal3Machine
+		machine     *clusterv1.Machine
 		bmh         *bmov1alpha1.BareMetalHost
 		expectError bool
 		expectedMAC string
@@ -2701,7 +3044,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	DescribeTable("Test getLinkMacAddress",
 		func(tc testCaseGetLinkMacAddress) {
-			result, err := getLinkMacAddress(tc.mac, tc.bmh)
+			result, err := getLinkMacAddress(tc.mac, tc.m3m, tc.machine, tc.bmh)
 			if tc.expectError {
 				Expect(err).To(HaveOccurred())
 				return
@@ -2709,11 +3052,11 @@ var _ = Describe("Metal3Data manager", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(Equal(tc.expectedMAC))
 		},
-		Entry("String", testCaseGetLinkMacAddress{
+		Entry("string", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				String: pointer.String("XX:XX:XX:XX:XX:XX"),
+				String: pointer.String("12:34:56:78:9A:BC"),
 			},
-			expectedMAC: "XX:XX:XX:XX:XX:XX",
+			expectedMAC: "12:34:56:78:9A:BC",
 		}),
 		Entry("from host interface", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
@@ -2726,19 +3069,19 @@ var _ = Describe("Metal3Data manager", func() {
 						NIC: []bmov1alpha1.NIC{
 							{
 								Name: "eth0",
-								MAC:  "XX:XX:XX:XX:XX:XX",
+								MAC:  "12:34:56:78:9A:BC",
 							},
 							// Check if empty value cause failure
 							{},
 							{
 								Name: "eth1",
-								MAC:  "XX:XX:XX:XX:XX:YY",
+								MAC:  "DE:F0:12:34:56:78",
 							},
 						},
 					},
 				},
 			},
-			expectedMAC: "XX:XX:XX:XX:XX:YY",
+			expectedMAC: "DE:F0:12:34:56:78",
 		}),
 		Entry("from host interface not found", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
@@ -2751,15 +3094,113 @@ var _ = Describe("Metal3Data manager", func() {
 						NIC: []bmov1alpha1.NIC{
 							{
 								Name: "eth0",
-								MAC:  "XX:XX:XX:XX:XX:XX",
+								MAC:  "12:34:56:78:9A:BC",
 							},
 							// Check if empty value cause failure
 							{},
 							{
 								Name: "eth1",
-								MAC:  "XX:XX:XX:XX:XX:YY",
+								MAC:  "DE:F0:12:34:56:78",
 							},
 						},
+					},
+				},
+			},
+			expectError: true,
+		}),
+		Entry("from machine annotation", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "machine",
+					Annotation: "mac-address",
+				},
+			},
+			machine: &clusterv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: machineName,
+					Annotations: map[string]string{
+						"mac-address": "12:34:56:78:9A:BD",
+					},
+				},
+			},
+			expectedMAC: "12:34:56:78:9A:BD",
+		}),
+		Entry("from metal3machine annotation", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "metal3machine",
+					Annotation: "mac-address",
+				},
+			},
+			m3m: &infrav1.Metal3Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      metal3machineName,
+					Namespace: namespaceName,
+					UID:       m3muid,
+					Annotations: map[string]string{
+						"mac-address": "12:34:56:78:9A:BD",
+					},
+				},
+			},
+			expectedMAC: "12:34:56:78:9A:BD",
+		}),
+		Entry("from baremetalhost annotation", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "baremetalhost",
+					Annotation: "mac-address",
+				},
+			},
+			bmh: &bmov1alpha1.BareMetalHost{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      baremetalhostName,
+					Namespace: namespaceName,
+					UID:       "",
+					Annotations: map[string]string{
+						"mac-address": "12:34:56:78:9A:BD",
+					},
+				},
+			},
+			expectedMAC: "12:34:56:78:9A:BD",
+		}),
+		Entry("from annotation on unknown object", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "wrflbrmpfd",
+					Annotation: "mac-address",
+				},
+			},
+			expectError: true,
+		}),
+		Entry("from unknown annotation", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "machine",
+					Annotation: "wrflbrmpfd",
+				},
+			},
+			machine: &clusterv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: machineName,
+					Annotations: map[string]string{
+						"mac-address": "12:34:56:78:9A:BD",
+					},
+				},
+			},
+			expectError: true,
+		}),
+		Entry("ill-formed MAC address", testCaseGetLinkMacAddress{
+			mac: &infrav1.NetworkLinkEthernetMac{
+				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+					Object:     "machine",
+					Annotation: "mac-address",
+				},
+			},
+			machine: &clusterv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: machineName,
+					Annotations: map[string]string{
+						"mac-address": "XX:XX:XX:XX:XX:XX",
 					},
 				},
 			},
@@ -3611,4 +4052,141 @@ var _ = Describe("poolRefs map", func() {
 			Expect(refs["foo"]).To(Equal(existing))
 		})
 	})
+})
+
+var _ = Describe("When using BMH name based pre-allocation", func() {
+	var bmhName = "host-0"
+
+	BeforeEach(func() {
+		EnableBMHNameBasedPreallocation = true
+	})
+
+	AfterEach(func() {
+		EnableBMHNameBasedPreallocation = false
+	})
+
+	DescribeTable("ensureM3IPClaim", func(tc testCaseEnsureM3Claim) {
+		bmh := &bmov1alpha1.BareMetalHost{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      bmhName,
+				Namespace: namespaceName,
+			},
+		}
+		m3m := &infrav1.Metal3Machine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3machineName,
+				Namespace: namespaceName,
+				Annotations: map[string]string{
+					HostAnnotation: namespaceName + "/" + bmh.Name,
+				},
+			},
+			Spec: infrav1.Metal3MachineSpec{
+				DataTemplate: &corev1.ObjectReference{
+					Name:      metal3DataTemplateName,
+					Namespace: namespaceName,
+				},
+			},
+		}
+		m3dt := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataTemplateName,
+				Namespace: namespaceName,
+			},
+		}
+		m3dc := &infrav1.Metal3DataClaim{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataClaimName,
+				Namespace: namespaceName,
+				OwnerReferences: []metav1.OwnerReference{
+					{
+						APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+						Kind:       "Metal3Machine",
+						Name:       m3m.Name,
+					},
+				},
+			},
+		}
+		m3d := &infrav1.Metal3Data{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+				Kind:       "Metal3Data",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      metal3DataName,
+				Namespace: namespaceName,
+			},
+			Spec: infrav1.Metal3DataSpec{
+				Template: corev1.ObjectReference{
+					Name:      m3dt.Name,
+					Namespace: m3dt.Namespace,
+				},
+				Claim: corev1.ObjectReference{
+					Namespace: namespaceName,
+					Name:      metal3DataClaimName,
+				},
+			},
+		}
+
+		// Setup fake client with objects
+		objects := []client.Object{bmh, m3m, m3d, m3dt, m3dc}
+		if tc.ipClaim != nil {
+			objects = append(objects, tc.ipClaim)
+		}
+		fc := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
+		dataMgr, err := NewDataManager(fc, m3d, logr.Discard())
+		Expect(err).NotTo(HaveOccurred())
+
+		rc, err := dataMgr.ensureM3IPClaim(context.Background(), tc.poolRef)
+
+		if tc.expectError {
+			Expect(err).To(HaveOccurred())
+		} else {
+			Expect(err).ToNot(HaveOccurred())
+		}
+		Expect(rc.fetchAgain).To(Equal(tc.expectFetchAgain))
+		if tc.expectClaim {
+			Expect(rc.m3Claim).NotTo(BeNil())
+			claim := &ipamv1.IPClaim{}
+			nn := types.NamespacedName{
+				Name:      bmh.Name + "-" + tc.poolRef.Name,
+				Namespace: bmh.Namespace,
+			}
+			err = fc.Get(context.Background(), nn, claim)
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err := findOwnerRefFromList(claim.OwnerReferences,
+				m3d.TypeMeta, m3d.ObjectMeta)
+			Expect(err).NotTo(HaveOccurred())
+		} else {
+			Expect(tc.ipClaim).To(BeNil())
+		}
+	},
+		Entry("should create claim if missing", testCaseEnsureM3Claim{
+			poolRef:          corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaim:          nil,
+			expectError:      false,
+			expectFetchAgain: true,
+			expectClaim:      true,
+		}),
+		Entry("should do nothing when claim exists", testCaseEnsureM3Claim{
+			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			ipClaim: &ipamv1.IPClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      bmhName + "-" + testPoolName,
+					Namespace: namespaceName,
+					OwnerReferences: []metav1.OwnerReference{
+						{
+							APIVersion: infrav1.GroupVersion.Group + "/" + infrav1.GroupVersion.Version,
+							Kind:       "Metal3Data",
+							Name:       metal3DataName,
+							Controller: pointer.Bool(true),
+						},
+					}},
+			},
+			expectError:      false,
+			expectFetchAgain: false,
+			expectClaim:      true,
+		}),
+	)
+
 })

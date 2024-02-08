@@ -245,6 +245,27 @@ type Files struct {
 	TargetName string `json:"targetName,omitempty"`
 }
 
+func (c *E2EConfig) DeepCopy() *E2EConfig {
+	if c == nil {
+		return nil
+	}
+	out := new(E2EConfig)
+	out.ManagementClusterName = c.ManagementClusterName
+	out.Images = make([]ContainerImage, len(c.Images))
+	copy(out.Images, c.Images)
+	out.Providers = make([]ProviderConfig, len(c.Providers))
+	copy(out.Providers, c.Providers)
+	out.Variables = make(map[string]string, len(c.Variables))
+	for key, val := range c.Variables {
+		out.Variables[key] = val
+	}
+	out.Intervals = make(map[string][]string, len(c.Intervals))
+	for key, val := range c.Intervals {
+		out.Intervals[key] = val
+	}
+	return out
+}
+
 // Defaults assigns default values to the object. More specifically:
 // - ManagementClusterName gets a default name if empty.
 // - Providers version gets type KustomizeSource if not otherwise specified.
@@ -401,6 +422,7 @@ func (c *E2EConfig) validateProviders() error {
 		clusterctlv1.InfrastructureProviderType:   nil,
 		clusterctlv1.IPAMProviderType:             nil,
 		clusterctlv1.RuntimeExtensionProviderType: nil,
+		clusterctlv1.AddonProviderType:            nil,
 	}
 	for i, providerConfig := range c.Providers {
 		// Providers name should not be empty.
@@ -410,7 +432,7 @@ func (c *E2EConfig) validateProviders() error {
 		// Providers type should be one of the know types.
 		providerType := clusterctlv1.ProviderType(providerConfig.Type)
 		switch providerType {
-		case clusterctlv1.CoreProviderType, clusterctlv1.BootstrapProviderType, clusterctlv1.ControlPlaneProviderType, clusterctlv1.InfrastructureProviderType, clusterctlv1.IPAMProviderType, clusterctlv1.RuntimeExtensionProviderType:
+		case clusterctlv1.CoreProviderType, clusterctlv1.BootstrapProviderType, clusterctlv1.ControlPlaneProviderType, clusterctlv1.InfrastructureProviderType, clusterctlv1.IPAMProviderType, clusterctlv1.RuntimeExtensionProviderType, clusterctlv1.AddonProviderType:
 			providersByType[providerType] = append(providersByType[providerType], providerConfig.Name)
 		default:
 			return errInvalidArg("Providers[%d].Type=%q", i, providerConfig.Type)
@@ -519,6 +541,11 @@ func (c *E2EConfig) RuntimeExtensionProviders() []string {
 	return c.getProviders(clusterctlv1.RuntimeExtensionProviderType)
 }
 
+// AddonProviders returns the add-on provider selected for running this E2E test.
+func (c *E2EConfig) AddonProviders() []string {
+	return c.getProviders(clusterctlv1.AddonProviderType)
+}
+
 func (c *E2EConfig) getProviders(t clusterctlv1.ProviderType) []string {
 	InfraProviders := []string{}
 	for _, provider := range c.Providers {
@@ -572,7 +599,7 @@ func (c *E2EConfig) GetVariable(varName string) string {
 	}
 
 	value, ok := c.Variables[varName]
-	Expect(ok).NotTo(BeFalse())
+	Expect(ok).To(BeTrue())
 	return value
 }
 
@@ -584,7 +611,7 @@ func (c *E2EConfig) GetInt64PtrVariable(varName string) *int64 {
 	}
 
 	wCount, err := strconv.ParseInt(wCountStr, 10, 64)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(err).ToNot(HaveOccurred())
 	return pointer.Int64(wCount)
 }
 
@@ -596,7 +623,7 @@ func (c *E2EConfig) GetInt32PtrVariable(varName string) *int32 {
 	}
 
 	wCount, err := strconv.ParseUint(wCountStr, 10, 32)
-	Expect(err).NotTo(HaveOccurred())
+	Expect(err).ToNot(HaveOccurred())
 	return pointer.Int32(int32(wCount))
 }
 
