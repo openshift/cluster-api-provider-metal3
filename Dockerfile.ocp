@@ -7,3 +7,5 @@ FROM registry.ci.openshift.org/ocp/4.17:base-rhel9
 COPY --from=builder /go/src/github.com/metal3-io/cluster-api-provider-metal3/bin/manager /
 
 ENTRYPOINT ["/manager"]
+
+LABEL io.openshift.release.operator true
