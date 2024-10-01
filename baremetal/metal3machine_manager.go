@@ -201,12 +201,14 @@ func (m *MachineManager) RemovePauseAnnotation(ctx context.Context) error {
 	}
 
 	if host == nil {
+		m.Log.Info("RemovePauseAnnotation no host, no error")
 		return nil
 	}
 
 	annotations := host.GetAnnotations()
 
 	if annotations != nil {
+		m.Log.Info("RemovePauseAnnotation annotations not nil")
 		if _, ok := annotations[bmov1alpha1.PausedAnnotation]; ok {
 			if m.Cluster.Name == host.Labels[clusterv1.ClusterNameLabel] && annotations[bmov1alpha1.PausedAnnotation] == PausedAnnotationKey {
 				// Removing BMH Paused Annotation Since Owner Cluster is not paused.
@@ -755,17 +757,21 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 ) (*bmov1alpha1.BareMetalHost, error) {
 	annotations := m3Machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
+		mLog.Info("getHost: unable to get annotations for machine", "machine", m3Machine.Name)
 		return nil, nil
 	}
 	hostKey, ok := annotations[HostAnnotation]
 	if !ok {
+		mLog.Info("getHost: no annotation on machine", "machine", m3Machine.Name)
 		return nil, nil
 	}
+	mLog.Info("getHost: have hostKey for machine", "machine", m3Machine.Name, "host key", hostKey)
 	hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
 	if err != nil {
 		mLog.Error(err, "Error parsing annotation value", "annotation key", hostKey)
 		return nil, err
 	}
+	mLog.Info("getHost: hostKey parsed", "machine", m3Machine.Name, "name", hostName, "namespace", hostNamespace)
 
 	host := bmov1alpha1.BareMetalHost{}
 	key := client.ObjectKey{
@@ -773,6 +779,7 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 		Namespace: hostNamespace,
 	}
 	err = cl.Get(ctx, key, &host)
+	mLog.Info("getHost: cl.Get", "machine", m3Machine.Name, "name", hostName, "namespace", hostNamespace, "err", err)
 	if apierrors.IsNotFound(err) {
 		mLog.Info("Annotated host not found", "host", hostKey)
 		return nil, nil
