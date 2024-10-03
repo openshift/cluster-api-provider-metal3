@@ -4954,6 +4954,17 @@ data:
               secretName: capm3-webhook-service-cert
     status: {}
     ---
+    apiVersion: v1
+    data:
+      CAPM3_FAST_TRACK: ${CAPM3_FAST_TRACK:='false'}
+    kind: ConfigMap
+    metadata:
+      labels:
+        cluster.x-k8s.io/provider: infrastructure-metal3
+        clusterctl.cluster.x-k8s.io: ""
+      name: capm3-capm3fasttrack-configmap
+      namespace: openshift-cluster-api
+    ---
     apiVersion: admissionregistration.k8s.io/v1
     kind: MutatingWebhookConfiguration
     metadata:
@@ -6331,6 +6342,71 @@ data:
         resources:
         - ippools
       sideEffects: None
+    ---
+    apiVersion: admissionregistration.k8s.io/v1beta1
+    kind: ValidatingAdmissionPolicy
+    metadata:
+      name: openshift-cluster-api-protect-metal3cluster
+    spec:
+      failurePolicy: Fail
+      matchConstraints:
+        resourceRules:
+        - apiGroups:
+          - infrastructure.cluster.x-k8s.io
+          apiVersions:
+          - '*'
+          operations:
+          - DELETE
+          resources:
+          - metal3clusters
+      paramKind:
+        apiVersion: config.openshift.io/v1
+        kind: Infrastructure
+      validations:
+      - expression: '!(oldObject.metadata.name == params.status.infrastructureName)'
+        message: InfraCluster resources with metadata.name corresponding to the cluster
+          infrastructureName cannot be deleted.
+    ---
+    apiVersion: admissionregistration.k8s.io/v1beta1
+    kind: ValidatingAdmissionPolicyBinding
+    metadata:
+      name: openshift-cluster-api-protect-metal3cluster
+    spec:
+      matchResources:
+        namespaceSelector:
+          matchLabels:
+            kubernetes.io/metadata.name: openshift-cluster-api
+      paramRef:
+        name: cluster
+        parameterNotFoundAction: Deny
+      policyName: openshift-cluster-api-protect-metal3cluster
+      validationActions:
+      - Deny
+  metadata: |
+    apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
+    kind: Metadata
+    releaseSeries:
+    - major: 1
+      minor: 6
+      contract: v1beta1
+    - major: 1
+      minor: 5
+      contract: v1beta1
+    - major: 1
+      minor: 4
+      contract: v1beta1
+    - major: 1
+      minor: 3
+      contract: v1beta1
+    - major: 1
+      minor: 2
+      contract: v1beta1
+    - major: 1
+      minor: 1
+      contract: v1beta1
+    - major: 0
+      minor: 5
+      contract: v1alpha4
 kind: ConfigMap
 metadata:
   annotations:
