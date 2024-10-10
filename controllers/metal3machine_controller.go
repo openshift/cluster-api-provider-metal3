@@ -152,6 +152,7 @@ func (r *Metal3MachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Check pause annotation on associated bmh (if any)
 	if !cluster.Spec.Paused {
+		machineLog.Info("cluster is not paused")
 		err := machineMgr.RemovePauseAnnotation(ctx)
 		if err != nil {
 			machineLog.Info("failed to check pause annotation on associated bmh")
@@ -177,10 +178,12 @@ func (r *Metal3MachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Handle deleted machines
 	if !capm3Machine.ObjectMeta.DeletionTimestamp.IsZero() {
+		machineLog.Info("reconcileDelete")
 		return r.reconcileDelete(ctx, machineMgr)
 	}
 
 	// Handle non-deleted machines
+	machineLog.Info("reconcileNormal")
 	return r.reconcileNormal(ctx, machineMgr)
 }
 
@@ -224,6 +227,7 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 	// Make sure bootstrap data is available and populated. If not, return, we
 	// will get an event from the machine update when the flag is set to true.
 	if !machineMgr.IsBootstrapReady() {
+		r.Log.Info("bootstrap is not ready, setting condition to false")
 		machineMgr.SetConditionMetal3MachineToFalse(infrav1.AssociateBMHCondition, infrav1.WaitingForBootstrapReadyReason, clusterv1.ConditionSeverityInfo, "")
 		return ctrl.Result{}, nil
 	}
@@ -232,6 +236,7 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 
 	// Check if the metal3machine was associated with a baremetalhost
 	if !machineMgr.HasAnnotation() {
+		r.Log.Info("machine has no annotation")
 		// Associate the baremetalhost hosting the machine
 		err := machineMgr.Associate(ctx)
 		if err != nil {
@@ -244,6 +249,7 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 	machineMgr.SetConditionMetal3MachineToTrue(infrav1.AssociateBMHCondition)
 
 	// Make sure that the metadata is ready if any
+	r.Log.Info("associate metadata")
 	err := machineMgr.AssociateM3Metadata(ctx)
 	if err != nil {
 		machineMgr.SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.AssociateM3MetaDataFailedReason, clusterv1.ConditionSeverityWarning, err.Error())
@@ -251,12 +257,14 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 			"Failed to get the Metal3Metadata", errType)
 	}
 
+	r.Log.Info("update machine")
 	err = machineMgr.Update(ctx)
 	if err != nil {
 		return checkMachineError(machineMgr, err,
 			"failed to update BareMetalHost", errType)
 	}
 
+	r.Log.Info("get provider id and bmh id")
 	providerID, bmhID := machineMgr.GetProviderIDAndBMHID()
 	if bmhID == nil {
 		bmhID, err = machineMgr.GetBaremetalHostID(ctx)
@@ -268,7 +276,10 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 		}
 	}
 	if providerID != "" || bmhID != nil {
+
+		r.Log.Info("provider id or bmh id not empty")
 		// Set the providerID on the node if no Cloud provider
+		r.Log.Info("set provider")
 		err = machineMgr.SetNodeProviderID(ctx, &providerID, r.CapiClientGetter)
 		if err != nil {
 			r.Log.Error(err, "Failed to set the target node providerID", "providerID", providerID)
@@ -280,6 +291,7 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 		machineMgr.SetProviderID(providerID)
 	}
 
+	r.Log.Info("normal reconcile finish")
 	return ctrl.Result{}, err
 }
 
