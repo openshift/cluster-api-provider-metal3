@@ -29,7 +29,6 @@ import (
 
 	// comment for go-lint.
 	"github.com/go-logr/logr"
-
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/pkg/errors"
@@ -45,7 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
@@ -196,10 +195,9 @@ func (m *MachineManager) RemovePauseAnnotation(ctx context.Context) error {
 	// look for associated BMH
 	host, helper, err := m.getHost(ctx)
 	if err != nil {
-		m.SetError("Failed to get a BaremetalHost for the Metal3Machine",
-			capierrors.CreateMachineError,
-		)
-		return err
+		errMessage := "Failed to get a BaremetalHost for the Metal3Machine, requeuing"
+		m.Log.Info(errMessage)
+		return WithTransientError(errors.New(errMessage), requeueAfter)
 	}
 
 	if host == nil {
@@ -227,10 +225,9 @@ func (m *MachineManager) SetPauseAnnotation(ctx context.Context) error {
 	// look for associated BMH
 	host, helper, err := m.getHost(ctx)
 	if err != nil {
-		m.SetError("Failed to get a BaremetalHost for the Metal3Machine",
-			capierrors.UpdateMachineError,
-		)
-		return err
+		errMessage := "Failed to get a BaremetalHost for the Metal3Machine, requeuing"
+		m.Log.Info(errMessage)
+		return WithTransientError(errors.New(errMessage), requeueAfter)
 	}
 	if host == nil {
 		return nil
@@ -262,7 +259,13 @@ func (m *MachineManager) SetPauseAnnotation(ctx context.Context) error {
 		return errors.Wrap(err, "failed to unmarshall status annotation")
 	}
 	delete(obj, "hardware")
-	newAnnotation, _ = json.Marshal(obj)
+	newAnnotation, err = json.Marshal(obj)
+	if err != nil {
+		m.SetError("Failed to marshal the BareMetalHost status",
+			capierrors.UpdateMachineError,
+		)
+		return errors.Wrap(err, "failed to marshall status annotation")
+	}
 	host.Annotations[bmov1alpha1.StatusAnnotation] = string(newAnnotation)
 	return helper.Patch(ctx, host)
 }
@@ -280,7 +283,7 @@ func (m *MachineManager) GetBaremetalHostID(ctx context.Context) (*string, error
 		return nil, WithTransientError(errors.New(errMessage), requeueAfter)
 	}
 	if host.Status.Provisioning.State == bmov1alpha1.StateProvisioned {
-		return pointer.String(string(host.ObjectMeta.UID)), nil
+		return ptr.To(string(host.ObjectMeta.UID)), nil
 	}
 	m.Log.Info("Provisioning BaremetalHost, requeuing")
 	// Do not requeue since BMH update will trigger a reconciliation
@@ -300,9 +303,6 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 		// Should have been picked earlier. Do not requeue
 		return nil
 	}
-
-	// clear an error if one was previously set
-	m.clearError()
 
 	// look for associated BMH
 	host, helper, err := m.getHost(ctx)
@@ -385,10 +385,9 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 		// specs
 		host, helper, err = m.getHost(ctx)
 		if err != nil {
-			m.SetError("Failed to get the BaremetalHost for the Metal3Machine",
-				capierrors.CreateMachineError,
-			)
-			return err
+			errMessage := "Failed to get BaremetalHost while setting Host Spec, requeuing"
+			m.Log.Info(errMessage)
+			return WithTransientError(errors.New(errMessage), requeueAfter)
 		}
 
 		if err = m.setHostSpec(ctx, host); err != nil {
@@ -448,9 +447,6 @@ func (m *MachineManager) getUserDataSecretName(_ context.Context) error {
 func (m *MachineManager) Delete(ctx context.Context) error {
 	m.Log.Info("Deleting metal3 machine", "metal3machine", m.Metal3Machine.Name)
 
-	// clear an error if one was previously set.
-	m.clearError()
-
 	if Capm3FastTrack == "" {
 		Capm3FastTrack = "false"
 		m.Log.Info("Capm3FastTrack is not set, setting it to default value false")
@@ -501,6 +497,10 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 
 		if host.Spec.Image != nil {
 			host.Spec.Image = nil
+			bmhUpdated = true
+		}
+		if host.Spec.CustomDeploy != nil {
+			host.Spec.CustomDeploy = nil
 			bmhUpdated = true
 		}
 		if m.Metal3Machine.Status.UserData != nil && host.Spec.UserData != nil {
@@ -679,10 +679,6 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 // Update updates a machine and is invoked by the Machine Controller.
 func (m *MachineManager) Update(ctx context.Context) error {
 	m.Log.Info("Updating machine")
-
-	// clear any error message that was previously set. This method doesn't set
-	// error messages yet, so we know that it's incorrect to have one here.
-	m.clearError()
 
 	host, helper, err := m.getHost(ctx)
 	if err != nil {
@@ -1050,20 +1046,27 @@ func (m *MachineManager) setHostSpec(_ context.Context, host *bmov1alpha1.BareMe
 	// We only want to update the image setting if the host does not
 	// already have an image.
 	//
-	// A host with an existing image is already provisioned and
-	// upgrades are not supported at this time. To re-provision a
+	// A host with an existing image or customDeploy is already provisioned
+	// and upgrades are not supported at this time. To re-provision a
 	// host, we must fully deprovision it and then provision it again.
 	// Not provisioning while we do not have the UserData.
-	if host.Spec.Image == nil && m.Metal3Machine.Status.UserData != nil {
+	if host.Spec.Image == nil && host.Spec.CustomDeploy == nil && m.Metal3Machine.Status.UserData != nil {
 		checksumType := ""
 		if m.Metal3Machine.Spec.Image.ChecksumType != nil {
 			checksumType = *m.Metal3Machine.Spec.Image.ChecksumType
 		}
-		host.Spec.Image = &bmov1alpha1.Image{
-			URL:          m.Metal3Machine.Spec.Image.URL,
-			Checksum:     m.Metal3Machine.Spec.Image.Checksum,
-			ChecksumType: bmov1alpha1.ChecksumType(checksumType),
-			DiskFormat:   m.Metal3Machine.Spec.Image.DiskFormat,
+		if m.Metal3Machine.Spec.Image.URL != "" {
+			host.Spec.Image = &bmov1alpha1.Image{
+				URL:          m.Metal3Machine.Spec.Image.URL,
+				Checksum:     m.Metal3Machine.Spec.Image.Checksum,
+				ChecksumType: bmov1alpha1.ChecksumType(checksumType),
+				DiskFormat:   m.Metal3Machine.Spec.Image.DiskFormat,
+			}
+		}
+		if m.Metal3Machine.Spec.CustomDeploy != nil {
+			host.Spec.CustomDeploy = &bmov1alpha1.CustomDeploy{
+				Method: m.Metal3Machine.Spec.CustomDeploy.Method,
+			}
 		}
 		host.Spec.UserData = m.Metal3Machine.Status.UserData
 		if host.Spec.UserData != nil && host.Spec.UserData.Namespace == "" {
@@ -1191,16 +1194,6 @@ func (m *MachineManager) SetConditionMetal3MachineToTrue(t clusterv1.ConditionTy
 	conditions.MarkTrue(m.Metal3Machine, t)
 }
 
-// clearError removes the ErrorMessage from the machine's Status if set. Returns
-// nil if ErrorMessage was already nil. Returns a Transient error if the
-// machine was updated.
-func (m *MachineManager) clearError() {
-	if m.Metal3Machine.Status.FailureMessage != nil || m.Metal3Machine.Status.FailureReason != nil {
-		m.Metal3Machine.Status.FailureMessage = nil
-		m.Metal3Machine.Status.FailureReason = nil
-	}
-}
-
 // updateMachineStatus updates a Metal3Machine object's status.
 func (m *MachineManager) updateMachineStatus(_ context.Context, host *bmov1alpha1.BareMetalHost) error {
 	addrs := m.nodeAddresses(host)
@@ -1270,7 +1263,7 @@ func (m *MachineManager) GetProviderIDAndBMHID() (string, *string) {
 		return *providerID, nil
 	}
 	m.Log.V(4).Info("ProviderID contains the BMH ID", "providerID", *providerID)
-	return *providerID, pointer.String(bmhID)
+	return *providerID, ptr.To(bmhID)
 }
 
 // ClientGetter prototype.
@@ -1443,13 +1436,13 @@ func setOwnerRefInList(refList []metav1.OwnerReference, controller bool,
 			Kind:       objType.Kind,
 			Name:       objMeta.Name,
 			UID:        objMeta.UID,
-			Controller: pointer.Bool(controller),
+			Controller: ptr.To(controller),
 		})
 	} else {
 		// The UID and the APIVersion might change due to move or version upgrade.
 		refList[index].APIVersion = objType.APIVersion
 		refList[index].UID = objMeta.UID
-		refList[index].Controller = pointer.Bool(controller)
+		refList[index].Controller = ptr.To(controller)
 	}
 	return refList, nil
 }
@@ -1518,13 +1511,16 @@ func (m *MachineManager) AssociateM3Metadata(ctx context.Context) error {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      m.Metal3Machine.Name,
 			Namespace: m.Metal3Machine.Namespace,
+			Finalizers: []string{
+				infrav1.MachineFinalizer,
+			},
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: m.Metal3Machine.APIVersion,
 					Kind:       m.Metal3Machine.Kind,
 					Name:       m.Metal3Machine.Name,
 					UID:        m.Metal3Machine.UID,
-					Controller: pointer.Bool(true),
+					Controller: ptr.To(true),
 				},
 			},
 			Labels: m.Metal3Machine.Labels,
@@ -1645,6 +1641,15 @@ func (m *MachineManager) DissociateM3Metadata(ctx context.Context) error {
 	}
 	if metal3DataClaim == nil {
 		return nil
+	}
+
+	metal3DataClaim.Finalizers = Filter(metal3DataClaim.Finalizers,
+		infrav1.MachineFinalizer,
+	)
+	err = updateObject(ctx, m.client, metal3DataClaim)
+	if err != nil && !apierrors.IsNotFound(err) {
+		m.Log.Info("Unable to remove finalizers from Metal3DataClaim", "Metal3DataClaim", metal3DataClaim.Name)
+		return err
 	}
 
 	return deleteObject(ctx, m.client, metal3DataClaim)

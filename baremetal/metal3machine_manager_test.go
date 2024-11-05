@@ -24,12 +24,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -38,7 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientfake "k8s.io/client-go/kubernetes/fake"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
@@ -58,7 +56,7 @@ const (
 var Bmhuid = types.UID("4d25a2c2-46e4-11ec-81d3-0242ac130003")
 var ProviderID = fmt.Sprintf("metal3://%s", Bmhuid)
 
-var testImageDiskFormat = pointer.String("raw")
+var testImageDiskFormat = ptr.To("raw")
 
 func m3mSpec() *infrav1.Metal3MachineSpec {
 	return &infrav1.Metal3MachineSpec{
@@ -76,7 +74,7 @@ func m3mSpecAll() *infrav1.Metal3MachineSpec {
 		Image: infrav1.Image{
 			URL:          testImageURL,
 			Checksum:     testImageChecksumURL,
-			ChecksumType: pointer.String("sha512"),
+			ChecksumType: ptr.To("sha512"),
 			DiskFormat:   testImageDiskFormat,
 		},
 		HostSelector: infrav1.HostSelector{},
@@ -137,6 +135,12 @@ func expectedImgTest() *bmov1alpha1.Image {
 	}
 }
 
+func expectedCustomDeployTest() *bmov1alpha1.CustomDeploy {
+	return &bmov1alpha1.CustomDeploy{
+		Method: "test_test",
+	}
+}
+
 func bmhSpec() *bmov1alpha1.BareMetalHostSpec {
 	return &bmov1alpha1.BareMetalHostSpec{
 		ConsumerRef: consumerRef(),
@@ -161,6 +165,13 @@ func bmhSpecTestImg() *bmov1alpha1.BareMetalHostSpec {
 	return &bmov1alpha1.BareMetalHostSpec{
 		ConsumerRef: consumerRef(),
 		Image:       expectedImgTest(),
+	}
+}
+
+func bmhSpecTestCustomDeploy() *bmov1alpha1.BareMetalHostSpec {
+	return &bmov1alpha1.BareMetalHostSpec{
+		ConsumerRef:  consumerRef(),
+		CustomDeploy: expectedCustomDeployTest(),
 	}
 }
 
@@ -356,7 +367,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		Entry("no ProviderID", infrav1.Metal3Machine{}),
 		Entry("existing ProviderID", infrav1.Metal3Machine{
 			Spec: infrav1.Metal3MachineSpec{
-				ProviderID: pointer.String("wrong"),
+				ProviderID: ptr.To("wrong"),
 			},
 			Status: infrav1.Metal3MachineStatus{
 				Ready: true,
@@ -383,7 +394,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		Entry("provisioned", testCaseProvisioned{
 			M3Machine: infrav1.Metal3Machine{
 				Spec: infrav1.Metal3MachineSpec{
-					ProviderID: pointer.String("abc"),
+					ProviderID: ptr.To("abc"),
 				},
 				Status: infrav1.Metal3MachineStatus{
 					Ready: true,
@@ -394,7 +405,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		Entry("missing ready", testCaseProvisioned{
 			M3Machine: infrav1.Metal3Machine{
 				Spec: infrav1.Metal3MachineSpec{
-					ProviderID: pointer.String("abc"),
+					ProviderID: ptr.To("abc"),
 				},
 			},
 			ExpectTrue: false,
@@ -443,7 +454,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		}),
 	)
 
-	DescribeTable("Test setting and clearing errors",
+	DescribeTable("Test setting errors",
 		func(bmMachine infrav1.Metal3Machine) {
 			machineMgr, err := NewMachineManager(nil, nil, nil, nil, &bmMachine,
 				logr.Discard(),
@@ -456,16 +467,11 @@ var _ = Describe("Metal3Machine manager", func() {
 				capierrors.InvalidConfigurationMachineError,
 			))
 			Expect(*bmMachine.Status.FailureMessage).To(Equal("abc"))
-
-			machineMgr.clearError()
-
-			Expect(bmMachine.Status.FailureReason).To(BeNil())
-			Expect(bmMachine.Status.FailureMessage).To(BeNil())
 		},
 		Entry("No errors", infrav1.Metal3Machine{}),
 		Entry("Overwrite existing error message", infrav1.Metal3Machine{
 			Status: infrav1.Metal3MachineStatus{
-				FailureMessage: pointer.String("cba"),
+				FailureMessage: ptr.To("cba"),
 			},
 		}),
 	)
@@ -862,7 +868,7 @@ var _ = Describe("Metal3Machine manager", func() {
 			if tc.ExpectStatusPresent {
 				Expect(statusPresent).To(BeTrue())
 				annotation, err := json.Marshal(&tc.Host.Status)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				// (Note) manager code marshals the inspection data stored in annotation,
 				// which causes alphabetically reordering of keys. Since we are marshaling
 				// only the annotation, the status value here doesn't match the marshaled
@@ -871,7 +877,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				// also alphabetically reordered to match the annotation keys style..
 				obj := map[string]interface{}{}
 				err = json.Unmarshal(annotation, &obj)
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				annotation, _ = json.Marshal(obj)
 				Expect(status).To(Equal(string(annotation)))
 			} else {
@@ -1038,9 +1044,11 @@ var _ = Describe("Metal3Machine manager", func() {
 
 	type testCaseSetHostSpec struct {
 		UserDataNamespace           string
+		UseCustomDeploy             *bmov1alpha1.CustomDeploy
 		ExpectedUserDataNamespace   string
 		Host                        *bmov1alpha1.BareMetalHost
 		ExpectedImage               *bmov1alpha1.Image
+		ExpectedCustomDeploy        *bmov1alpha1.CustomDeploy
 		ExpectUserData              bool
 		expectNodeReuseLabelDeleted bool
 	}
@@ -1052,6 +1060,12 @@ var _ = Describe("Metal3Machine manager", func() {
 			m3mconfig, infrastructureRef := newConfig(tc.UserDataNamespace,
 				map[string]string{}, []infrav1.HostSelectorRequirement{},
 			)
+			if tc.UseCustomDeploy != nil {
+				m3mconfig.Spec.Image = infrav1.Image{}
+				m3mconfig.Spec.CustomDeploy = &infrav1.CustomDeploy{
+					Method: tc.UseCustomDeploy.Method,
+				}
+			}
 			machine := newMachine(machineName, infrastructureRef)
 
 			machineMgr, err := NewMachineManager(fakeClient, nil, nil, machine, m3mconfig,
@@ -1068,6 +1082,11 @@ var _ = Describe("Metal3Machine manager", func() {
 				Expect(tc.Host.Spec.Image).To(BeNil())
 			} else {
 				Expect(*tc.Host.Spec.Image).To(Equal(*tc.ExpectedImage))
+			}
+			if tc.ExpectedCustomDeploy == nil {
+				Expect(tc.Host.Spec.CustomDeploy).To(BeNil())
+			} else {
+				Expect(*tc.Host.Spec.CustomDeploy).To(Equal(*tc.ExpectedCustomDeploy))
 			}
 			if tc.ExpectUserData {
 				Expect(tc.Host.Spec.UserData).NotTo(BeNil())
@@ -1121,6 +1140,15 @@ var _ = Describe("Metal3Machine manager", func() {
 			ExpectedImage:  expectedImg(),
 			ExpectUserData: true,
 		}),
+		Entry("Using custom deploy", testCaseSetHostSpec{
+			UseCustomDeploy:           expectedCustomDeployTest(),
+			ExpectedUserDataNamespace: namespaceName,
+			Host: newBareMetalHost("host2", nil, bmov1alpha1.StateNone,
+				nil, false, "metadata", false, "",
+			),
+			ExpectedCustomDeploy: expectedCustomDeployTest(),
+			ExpectUserData:       true,
+		}),
 		Entry("Previously provisioned, different image",
 			testCaseSetHostSpec{
 				UserDataNamespace:         "",
@@ -1130,6 +1158,17 @@ var _ = Describe("Metal3Machine manager", func() {
 				),
 				ExpectedImage:  expectedImgTest(),
 				ExpectUserData: false,
+			},
+		),
+		Entry("Previously provisioned, different custom deploy",
+			testCaseSetHostSpec{
+				UserDataNamespace:         "",
+				ExpectedUserDataNamespace: namespaceName,
+				Host: newBareMetalHost("host2", bmhSpecTestCustomDeploy(),
+					bmov1alpha1.StateNone, nil, false, "metadata", false, "",
+				),
+				ExpectedCustomDeploy: expectedCustomDeployTest(),
+				ExpectUserData:       false,
 			},
 		),
 	)
@@ -1200,6 +1239,17 @@ var _ = Describe("Metal3Machine manager", func() {
 				),
 				ExpectedImage:  expectedImgTest(),
 				ExpectUserData: false,
+			},
+		),
+		Entry("Previously provisioned, different custom deploy",
+			testCaseSetHostSpec{
+				UserDataNamespace:         "",
+				ExpectedUserDataNamespace: namespaceName,
+				Host: newBareMetalHost("host2", bmhSpecTestCustomDeploy(),
+					bmov1alpha1.StateNone, nil, false, "metadata", false, "",
+				),
+				ExpectedCustomDeploy: expectedCustomDeployTest(),
+				ExpectUserData:       false,
 			},
 		),
 	)
@@ -1834,7 +1884,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				},
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String("Foobar"),
+						DataSecretName: ptr.To("Foobar"),
 					},
 				},
 			},
@@ -1883,7 +1933,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				ObjectMeta: testObjectMeta("", namespaceName, ""),
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String(metal3machineName + "-user-data"),
+						DataSecretName: ptr.To(metal3machineName + "-user-data"),
 					},
 				},
 			},
@@ -2044,7 +2094,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				},
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String(metal3machineName + "-user-data")},
+						DataSecretName: ptr.To(metal3machineName + "-user-data")},
 				},
 			},
 			MachineSet: &clusterv1.MachineSet{
@@ -2107,7 +2157,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				Spec: infrav1.Metal3MachineTemplateSpec{
 					Template: infrav1.Metal3MachineTemplateResource{
 						Spec: infrav1.Metal3MachineSpec{
-							AutomatedCleaningMode: pointer.String(infrav1.CleaningModeDisabled),
+							AutomatedCleaningMode: ptr.To(infrav1.CleaningModeDisabled),
 						},
 					},
 					NodeReuse: true,
@@ -2143,7 +2193,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				},
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String(metal3machineName + "-user-data")},
+						DataSecretName: ptr.To(metal3machineName + "-user-data")},
 				},
 			},
 			M3Machine: newMetal3Machine(metal3machineName, nil, m3mSecretStatus(),
@@ -2188,7 +2238,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				Spec: infrav1.Metal3MachineTemplateSpec{
 					Template: infrav1.Metal3MachineTemplateResource{
 						Spec: infrav1.Metal3MachineSpec{
-							AutomatedCleaningMode: pointer.String(infrav1.CleaningModeDisabled),
+							AutomatedCleaningMode: ptr.To(infrav1.CleaningModeDisabled),
 						},
 					},
 					NodeReuse: true,
@@ -2523,7 +2573,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		},
 		Entry("Empty providerID", testCaseGetProviderIDAndBMHID{}),
 		Entry("Provider ID set", testCaseGetProviderIDAndBMHID{
-			providerID:    pointer.String(ProviderID),
+			providerID:    ptr.To(ProviderID),
 			expectedBMHID: string(Bmhuid),
 		}),
 	)
@@ -2552,7 +2602,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				BMHHost := newBareMetalHost(baremetalhostName, nil, bmov1alpha1.StateNone, nil, false, "metadata", false, tc.HostID)
 				fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(BMHHost).Build()
 				corev1Client := clientfake.NewSimpleClientset(tc.TargetObjects...).CoreV1()
-				m := func(ctx context.Context, client client.Client, cluster *clusterv1.Cluster) (
+				m := func(_ context.Context, _ client.Client, _ *clusterv1.Cluster) (
 					clientcorev1.CoreV1Interface, error,
 				) {
 					return corev1Client, nil
@@ -2669,7 +2719,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				BMHHost := newBareMetalHost(baremetalhostName, nil, bmov1alpha1.StateNone, nil, false, "metadata", false, tc.HostID)
 				fakeClient := fake.NewClientBuilder().WithScheme(s).WithObjects(BMHHost).Build()
 				corev1Client := clientfake.NewSimpleClientset(tc.TargetObjects...).CoreV1()
-				m := func(ctx context.Context, client client.Client, cluster *clusterv1.Cluster) (
+				m := func(_ context.Context, _ client.Client, _ *clusterv1.Cluster) (
 					clientcorev1.CoreV1Interface, error,
 				) {
 					return corev1Client, nil
@@ -2859,7 +2909,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				ObjectMeta: testObjectMeta("", namespaceName, ""),
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String("Foobar"),
+						DataSecretName: ptr.To("Foobar"),
 					},
 				},
 			},
@@ -2887,7 +2937,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				},
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String("Foobar"),
+						DataSecretName: ptr.To("Foobar"),
 					},
 				},
 			},
@@ -2919,7 +2969,7 @@ var _ = Describe("Metal3Machine manager", func() {
 							Name:      "abc",
 							Namespace: "def",
 						},
-						DataSecretName: pointer.String("Foobar"),
+						DataSecretName: ptr.To("Foobar"),
 					},
 				},
 			},
@@ -2932,7 +2982,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				ObjectMeta: testObjectMeta("", namespaceName, ""),
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String("test-data-secret-name"),
+						DataSecretName: ptr.To("test-data-secret-name"),
 					},
 				},
 			},
@@ -2944,7 +2994,7 @@ var _ = Describe("Metal3Machine manager", func() {
 				ObjectMeta: testObjectMeta("", namespaceName, ""),
 				Spec: clusterv1.MachineSpec{
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: pointer.String("test-data-secret-name"),
+						DataSecretName: ptr.To("test-data-secret-name"),
 					},
 				},
 			},
@@ -3234,10 +3284,10 @@ var _ = Describe("Metal3Machine manager", func() {
 
 			index, err := machineMgr.FindOwnerRef(tc.OwnerRefs)
 			if tc.ExpectError {
-				Expect(err).NotTo(BeNil())
+				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(&NotFoundError{}))
 			} else {
-				Expect(err).To(BeNil())
+				Expect(err).ToNot(HaveOccurred())
 				Expect(index).To(BeEquivalentTo(tc.ExpectedIndex))
 			}
 		},
@@ -3349,9 +3399,9 @@ var _ = Describe("Metal3Machine manager", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			refList, err := machineMgr.DeleteOwnerRef(tc.OwnerRefs)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 			_, err = machineMgr.FindOwnerRef(refList)
-			Expect(err).NotTo(BeNil())
+			Expect(err).To(HaveOccurred())
 		},
 		Entry("Empty list", testCaseOwnerRef{
 			M3Machine: *newMetal3Machine("myName", nil, nil, nil),
@@ -3423,9 +3473,9 @@ var _ = Describe("Metal3Machine manager", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			refList, err := machineMgr.SetOwnerRef(tc.OwnerRefs, tc.Controller)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 			index, err := machineMgr.FindOwnerRef(refList)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 			Expect(*refList[index].Controller).To(BeEquivalentTo(tc.Controller))
 		},
 		Entry("Empty list", testCaseOwnerRef{
@@ -3654,7 +3704,7 @@ var _ = Describe("Metal3Machine manager", func() {
 					Expect(metal3DataReadyCondition[0].Status).To(Equal(corev1.ConditionFalse))
 				}
 			} else {
-				Expect(metal3DataReadyCondition).To(HaveLen(0))
+				Expect(metal3DataReadyCondition).To(BeEmpty())
 			}
 			if tc.ExpectSecretStatus {
 				if tc.Data.Spec.MetaData != nil {
@@ -4656,6 +4706,130 @@ var _ = Describe("Metal3Machine manager", func() {
 			},
 			expectedMachineSet: nil,
 			expectError:        true,
+		}),
+	)
+
+	type testCaseDuplicateProviderIDsExist struct {
+		Machine          *clusterv1.Machine
+		validNodes       map[string][]string
+		providerIDLegacy string
+		providerIDNew    string
+		expectError      bool
+	}
+
+	DescribeTable("Test duplicateProviderIDsExist",
+		func(tc testCaseDuplicateProviderIDsExist) {
+			machineMgr, err := NewMachineManager(nil, nil, nil, tc.Machine,
+				nil, logr.Discard(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			err = machineMgr.duplicateProviderIDsExist(tc.validNodes, tc.providerIDLegacy, tc.providerIDNew)
+			if tc.expectError {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+		},
+		Entry("Should find duplicates if both providerIDNew and providerIDLegacy are in use by multiple nodes", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1"},
+				"metal3://metal3/node-0/test-controlplane-xyz":  {"test2"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-xyz",
+			expectError:      true,
+		}),
+		Entry("Should find duplicates if validNodes node count is more than 1 for a providerID", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1", "test2"},
+			},
+			providerIDLegacy: "",
+			providerIDNew:    "",
+			expectError:      true,
+		}),
+		Entry("Should not find duplicates if ether providerIDNew or providerIDLegacy are in use by single node", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-xyz",
+			expectError:      false,
+		}),
+		Entry("Should not find duplicates if both providerIDNew and providerIDLegacy are in use by single node", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://metal3/node-0/test-controlplane-xyz": {"test1"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-xyz",
+			expectError:      false,
+		}),
+		Entry("Should not find duplicates if validNodes is nil", testCaseDuplicateProviderIDsExist{
+			validNodes:       nil,
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-xyz",
+			expectError:      false,
+		}),
+		Entry("Should find duplicates if providerIDNew's common prefix metal3://<namespace>/<bmh>/  is a substring of multible validNodes providerIDs", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://metal3/node-0/test-controlplane-xyz": {"test1"},
+				"metal3://metal3/node-0/test-controlplane-123": {"test2"},
+			},
+			providerIDLegacy: "",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-000",
+			expectError:      true,
+		}),
+		Entry("Should find duplicates if providerIDNew's common prefix metal3://<namespace>/<bmh>/  is a substring of validNodes providerID and providerIDLegacy is used", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1"},
+				"metal3://metal3/node-0/test-controlplane-123":  {"test2"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-000",
+			expectError:      true,
+		}),
+		Entry("Should not find duplicates if there are overlapping names of validNodes providerID in the legacy format", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1"},
+				"metal3://d668eb95-5df6-4c10-a01a":              {"test2"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a",
+			providerIDNew:    "metal3://metal3/node-0/test-controlplane-000",
+			expectError:      false,
+		}),
+		Entry("Should find duplicates if there are overlapping names of validNodes providerID in the 'new' format without common prefix", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://worker-1":  {"test1"},
+				"metal3://worker-10": {"test2"},
+			},
+			providerIDLegacy: "",
+			providerIDNew:    "metal3://worker-1",
+			expectError:      true,
+		}),
+		Entry("Should find duplicates when providerIDNew is empty, validNodes length is more than 1 and legacy format is used", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6": {"test1"},
+				"metal3://d668eb95-5df6-4c10-a01a":              {"test2"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a",
+			providerIDNew:    "",
+			expectError:      true,
+		}),
+		Entry("Should not find duplicates when providerIDNew is empty and validNodes length is 1", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a": {"test1"},
+			},
+			providerIDLegacy: "metal3://d668eb95-5df6-4c10-a01a",
+			providerIDNew:    "",
+			expectError:      false,
+		}),
+		Entry("Should not find duplicates when providerIDNew and providerIDLegacy are empty and validNodes length is 1", testCaseDuplicateProviderIDsExist{
+			validNodes: map[string][]string{
+				"metal3://d668eb95-5df6-4c10-a01a": {"test1"},
+			},
+			providerIDLegacy: "",
+			providerIDNew:    "",
+			expectError:      false,
 		}),
 	)
 })

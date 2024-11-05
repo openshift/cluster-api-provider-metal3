@@ -21,11 +21,9 @@ import (
 	"strconv"
 
 	"github.com/go-logr/logr"
-
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -258,7 +256,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			nbIndexes, err := templateMgr.UpdateDatas(context.TODO())
+			hasData, _, err := templateMgr.UpdateDatas(context.TODO())
 			if tc.expectRequeue || tc.expectError {
 				Expect(err).To(HaveOccurred())
 				if tc.expectRequeue {
@@ -269,7 +267,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			} else {
 				Expect(err).NotTo(HaveOccurred())
 			}
-			Expect(nbIndexes).To(Equal(tc.expectedNbIndexes))
+			Expect(hasData).To(Equal(tc.expectedNbIndexes > 0))
 			Expect(tc.template.Status.LastUpdated.IsZero()).To(BeFalse())
 			Expect(tc.template.Status.Indexes).To(Equal(tc.expectedIndexes))
 
@@ -301,24 +299,24 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			dataClaims: []*infrav1.Metal3DataClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "abc",
+						Name:      "claim-without-status",
 						Namespace: namespaceName,
 					},
 					Spec: infrav1.Metal3DataClaimSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 					},
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "abcd",
+						Name:      "orphaned-claim",
 						Namespace: namespaceName,
 					},
 					Spec: infrav1.Metal3DataClaimSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abcd",
+							Name:      "other-template",
 							Namespace: namespaceName,
 						},
 					},
@@ -331,12 +329,12 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "abce",
+						Name:      "claim-with-status",
 						Namespace: namespaceName,
 					},
 					Spec: infrav1.Metal3DataClaimSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 					},
@@ -349,14 +347,14 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:              "abcf",
+						Name:              "deleting-claim",
 						Namespace:         namespaceName,
 						DeletionTimestamp: &timeNow,
 						Finalizers:        []string{"ipclaim.ipam.metal3.io"},
 					},
 					Spec: infrav1.Metal3DataClaimSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 					},
@@ -376,11 +374,11 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 					},
 					Spec: infrav1.Metal3DataSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 						Claim: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      "claim-without-status",
 							Namespace: namespaceName,
 						},
 						Index: 0,
@@ -393,11 +391,11 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 					},
 					Spec: infrav1.Metal3DataSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 						Claim: corev1.ObjectReference{
-							Name:      "abce",
+							Name:      "claim-with-status",
 							Namespace: namespaceName,
 						},
 						Index: 1,
@@ -405,16 +403,16 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "abc-3",
+						Name:      "data-to-delete",
 						Namespace: namespaceName,
 					},
 					Spec: infrav1.Metal3DataSpec{
 						Template: corev1.ObjectReference{
-							Name:      "abc",
+							Name:      templateMeta.Name,
 							Namespace: namespaceName,
 						},
 						Claim: corev1.ObjectReference{
-							Name:      "abcf",
+							Name:      "deleting-claim",
 							Namespace: namespaceName,
 						},
 						Index: 3,
@@ -422,8 +420,8 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				},
 			},
 			expectedIndexes: map[string]int{
-				"abc":  0,
-				"abce": 1,
+				"claim-without-status": 0,
+				"claim-with-status":    1,
 			},
 			expectedNbIndexes: 2,
 		}),
@@ -465,9 +463,9 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			err = fakeClient.List(context.TODO(), &dataObjects, opts)
 			Expect(err).NotTo(HaveOccurred())
 			if tc.dataObject != nil {
-				Expect(len(dataObjects.Items)).To(Equal(2))
+				Expect(dataObjects.Items).To(HaveLen(2))
 			} else {
-				Expect(len(dataObjects.Items)).To(Equal(1))
+				Expect(dataObjects.Items).To(HaveLen(1))
 			}
 
 			if tc.expectTemplateReference {
@@ -639,13 +637,13 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			err = fakeClient.List(context.TODO(), &dataObjects, opts)
 			Expect(err).NotTo(HaveOccurred())
 
-			Expect(len(tc.expectedDatas)).To(Equal(len(dataObjects.Items)))
+			Expect(tc.expectedDatas).To(HaveLen(len(dataObjects.Items)))
 			// Iterate over the Metal3Data objects to find all indexes and objects
 			for _, address := range dataObjects.Items {
 				Expect(tc.expectedDatas).To(ContainElement(address.Name))
 				// TODO add further testing later
 			}
-			Expect(len(tc.dataClaim.Finalizers)).To(Equal(1))
+			Expect(tc.dataClaim.Finalizers).To(HaveLen(1))
 
 			Expect(allocatedMap).To(Equal(tc.expectedMap))
 			Expect(tc.template.Status.Indexes).To(Equal(tc.expectedIndexes))
@@ -780,12 +778,12 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			opts := &client.ListOptions{}
 			err = fakeClient.List(context.TODO(), &dataObjects, opts)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(dataObjects.Items)).To(Equal(0))
+			Expect(dataObjects.Items).To(BeEmpty())
 
 			Expect(tc.template.Status.LastUpdated.IsZero()).To(BeFalse())
 			Expect(allocatedMap).To(Equal(tc.expectedMap))
 			Expect(tc.template.Status.Indexes).To(Equal(tc.expectedIndexes))
-			Expect(len(tc.dataClaim.Finalizers)).To(Equal(0))
+			Expect(tc.dataClaim.Finalizers).To(BeEmpty())
 		},
 		Entry("Empty Template", testCaseDeleteDatas{
 			template: &infrav1.Metal3DataTemplate{},

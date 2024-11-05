@@ -21,14 +21,12 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	"github.com/golang/mock/gomock"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	baremetal_mocks "github.com/metal3-io/cluster-api-provider-metal3/baremetal/mocks"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -85,9 +83,9 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				}
 			}
 			if tc.m3dt != nil && !tc.m3dt.DeletionTimestamp.IsZero() && tc.reconcileDeleteError {
-				m.EXPECT().UpdateDatas(context.Background()).Return(0, errors.New(""))
+				m.EXPECT().UpdateDatas(context.Background()).Return(false, false, errors.New(""))
 			} else if tc.m3dt != nil && !tc.m3dt.DeletionTimestamp.IsZero() {
-				m.EXPECT().UpdateDatas(context.Background()).Return(0, nil)
+				m.EXPECT().UpdateDatas(context.Background()).Return(false, false, nil)
 				m.EXPECT().UnsetFinalizer()
 			}
 
@@ -95,9 +93,9 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				tc.reconcileNormal {
 				m.EXPECT().SetFinalizer()
 				if tc.reconcileNormalError {
-					m.EXPECT().UpdateDatas(context.Background()).Return(0, errors.New(""))
+					m.EXPECT().UpdateDatas(context.Background()).Return(false, false, errors.New(""))
 				} else {
-					m.EXPECT().UpdateDatas(context.Background()).Return(1, nil)
+					m.EXPECT().UpdateDatas(context.Background()).Return(true, true, nil)
 				}
 			}
 
@@ -234,9 +232,9 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			m.EXPECT().SetFinalizer()
 
 			if !tc.UpdateError {
-				m.EXPECT().UpdateDatas(context.TODO()).Return(1, nil)
+				m.EXPECT().UpdateDatas(context.TODO()).Return(true, true, nil)
 			} else {
-				m.EXPECT().UpdateDatas(context.TODO()).Return(0, errors.New(""))
+				m.EXPECT().UpdateDatas(context.TODO()).Return(false, false, errors.New(""))
 			}
 
 			res, err := r.reconcileNormal(context.TODO(), m)
@@ -286,12 +284,12 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			m := baremetal_mocks.NewMockDataTemplateManagerInterface(gomockCtrl)
 
 			if !tc.DeleteError && tc.DeleteReady {
-				m.EXPECT().UpdateDatas(context.TODO()).Return(0, nil)
+				m.EXPECT().UpdateDatas(context.TODO()).Return(false, false, nil)
 				m.EXPECT().UnsetFinalizer()
 			} else if !tc.DeleteError {
-				m.EXPECT().UpdateDatas(context.TODO()).Return(1, nil)
+				m.EXPECT().UpdateDatas(context.TODO()).Return(true, true, nil)
 			} else {
-				m.EXPECT().UpdateDatas(context.TODO()).Return(0, errors.New(""))
+				m.EXPECT().UpdateDatas(context.TODO()).Return(false, false, errors.New(""))
 			}
 
 			res, err := r.reconcileDelete(context.TODO(), m)
@@ -337,8 +335,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			reqs := r.Metal3DataClaimToMetal3DataTemplate(context.Background(), obj)
 
 			if tc.ExpectRequest {
-				Expect(len(reqs)).To(Equal(1), "Expected 1 request, found %d", len(reqs))
-
+				Expect(reqs).To(HaveLen(1), "Expected 1 request, found %d", len(reqs))
 				req := reqs[0]
 				Expect(req.NamespacedName.Name).To(Equal(tc.DataClaim.Spec.Template.Name),
 					"Expected name %s, found %s", tc.DataClaim.Spec.Template.Name, req.NamespacedName.Name)
@@ -352,8 +349,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				}
 
 			} else {
-				Expect(len(reqs)).To(Equal(0), "Expected 0 request, found %d", len(reqs))
-
+				Expect(reqs).To(BeEmpty(), "Expected 0 request, found %d", len(reqs))
 			}
 		},
 		Entry("No Metal3DataTemplate in Spec",

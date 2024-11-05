@@ -18,7 +18,6 @@ package baremetal
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/go-logr/logr"
@@ -29,7 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +39,9 @@ type DataTemplateManagerInterface interface {
 	SetFinalizer()
 	UnsetFinalizer()
 	SetClusterOwnerRef(*clusterv1.Cluster) error
-	UpdateDatas(context.Context) (int, error)
+	// UpdateDatas handles the Metal3DataClaims and creates or deletes Metal3Data accordingly.
+	// It returns if there are still Data object and undeleted DataClaims objects.
+	UpdateDatas(context.Context) (bool, bool, error)
 }
 
 // DataTemplateManager is responsible for performing machine reconciliation.
@@ -134,12 +135,7 @@ func (m *DataTemplateManager) getIndexes(ctx context.Context) (map[int]string, e
 			continue
 		}
 
-		// Get the claim Name, if unset use empty string, to still record the
-		// index being used, to avoid conflicts
-		claimName := ""
-		if dataObject.Spec.Claim.Name != "" {
-			claimName = dataObject.Spec.Claim.Name
-		}
+		claimName := dataObject.Spec.Claim.Name
 		m.DataTemplate.Status.Indexes[claimName] = dataObject.Spec.Index
 		indexes[dataObject.Spec.Index] = claimName
 	}
@@ -168,13 +164,14 @@ func (m *DataTemplateManager) updateStatusTimestamp() {
 	m.DataTemplate.Status.LastUpdated = &now
 }
 
-// UpdateDatas manages the claims and creates or deletes Metal3Data accordingly.
-// It returns the number of current allocations.
-func (m *DataTemplateManager) UpdateDatas(ctx context.Context) (int, error) {
+// UpdateDatas handles the Metal3DataClaims and creates or deletes Metal3Data accordingly.
+// It returns if there are still Data object and undeleted DataClaims objects.
+func (m *DataTemplateManager) UpdateDatas(ctx context.Context) (bool, bool, error) {
 	indexes, err := m.getIndexes(ctx)
 	if err != nil {
-		return 0, err
+		return false, false, err
 	}
+	hasData := len(indexes) > 0
 
 	// get list of Metal3DataClaim objects
 	dataClaimObjects := infrav1.Metal3DataClaimList{}
@@ -185,9 +182,10 @@ func (m *DataTemplateManager) UpdateDatas(ctx context.Context) (int, error) {
 
 	err = m.client.List(ctx, &dataClaimObjects, opts)
 	if err != nil {
-		return 0, err
+		return false, false, err
 	}
 
+	hasClaims := false
 	// Iterate over the Metal3Data objects to find all indexes and objects
 	for _, dataClaim := range dataClaimObjects.Items {
 		dataClaim := dataClaim
@@ -195,18 +193,20 @@ func (m *DataTemplateManager) UpdateDatas(ctx context.Context) (int, error) {
 		if dataClaim.Spec.Template.Name != m.DataTemplate.Name {
 			continue
 		}
-
-		if dataClaim.Status.RenderedData != nil && dataClaim.DeletionTimestamp.IsZero() {
-			continue
+		if dataClaim.DeletionTimestamp.IsZero() {
+			hasClaims = true
+			if dataClaim.Status.RenderedData != nil {
+				continue
+			}
 		}
 
 		indexes, err = m.updateData(ctx, &dataClaim, indexes)
 		if err != nil {
-			return 0, err
+			return false, false, err
 		}
 	}
 	m.updateStatusTimestamp()
-	return len(indexes), nil
+	return hasData, hasClaims, nil
 }
 
 func (m *DataTemplateManager) updateData(ctx context.Context,
@@ -272,7 +272,7 @@ func (m *DataTemplateManager) createData(ctx context.Context,
 		if err != nil {
 			return indexes, err
 		}
-		if ownerRef.Kind == "Metal3Machine" &&
+		if ownerRef.Kind == metal3MachineKind &&
 			aGV.Group == infrav1.GroupVersion.Group {
 			m3mUID = ownerRef.UID
 			m3mName = ownerRef.Name
@@ -306,19 +306,20 @@ func (m *DataTemplateManager) createData(ctx context.Context,
 	m.Log.Info("Index", "Claim", dataClaim.Name, "index", claimIndex)
 
 	// Create the Metal3Data object, with an Owner ref to the Metal3Machine
-	// (curOwnerRef) and to the Metal3DataTemplate
+	// (curOwnerRef) and to the Metal3DataTemplate. Also add a finalizer.
 	dataObject := &infrav1.Metal3Data{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Metal3Data",
 			APIVersion: infrav1.GroupVersion.String(),
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      dataName,
-			Namespace: m.DataTemplate.Namespace,
-			Labels:    dataClaim.Labels,
+			Name:       dataName,
+			Namespace:  m.DataTemplate.Namespace,
+			Finalizers: []string{infrav1.DataClaimFinalizer},
+			Labels:     dataClaim.Labels,
 			OwnerReferences: []metav1.OwnerReference{
 				{
-					Controller: pointer.Bool(true),
+					Controller: ptr.To(true),
 					APIVersion: m.DataTemplate.APIVersion,
 					Kind:       m.DataTemplate.Kind,
 					Name:       m.DataTemplate.Name,
@@ -332,7 +333,7 @@ func (m *DataTemplateManager) createData(ctx context.Context,
 				},
 				{
 					APIVersion: dataClaim.APIVersion,
-					Kind:       "Metal3Machine",
+					Kind:       metal3MachineKind,
 					Name:       m3mName,
 					UID:        m3mUID,
 				},
@@ -358,7 +359,7 @@ func (m *DataTemplateManager) createData(ctx context.Context,
 	if err := createObject(ctx, m.client, dataObject); err != nil {
 		var reconcileError ReconcileError
 		if !(errors.As(err, &reconcileError) && reconcileError.IsTransient()) {
-			dataClaim.Status.ErrorMessage = pointer.String("Failed to create associated Metal3Data object")
+			dataClaim.Status.ErrorMessage = ptr.To("Failed to create associated Metal3Data object")
 		}
 		return indexes, err
 	}
@@ -374,18 +375,18 @@ func (m *DataTemplateManager) createData(ctx context.Context,
 	return indexes, nil
 }
 
-// DeleteDatas deletes old secrets.
+// deleteData deletes the Metal3DataClaim and marks the Metal3Data for deletion.
 func (m *DataTemplateManager) deleteData(ctx context.Context,
 	dataClaim *infrav1.Metal3DataClaim, indexes map[int]string,
 ) (map[int]string, error) {
-	var dataName string
-	m.Log.Info("Deleting Claim", "Metal3DataClaim", dataClaim.Name)
+	m.Log.Info("Deleting Metal3DataClaim", "Metal3DataClaim", dataClaim.Name)
 
 	dataClaimIndex, ok := m.DataTemplate.Status.Indexes[dataClaim.Name]
 	if ok {
 		// Try to get the Metal3Data. if it succeeds, delete it
 		tmpM3Data := &infrav1.Metal3Data{}
 
+		var dataName string
 		if m.DataTemplate.Spec.TemplateReference != "" {
 			dataName = m.DataTemplate.Spec.TemplateReference + "-" + strconv.Itoa(dataClaimIndex)
 		} else {
@@ -398,29 +399,39 @@ func (m *DataTemplateManager) deleteData(ctx context.Context,
 		}
 		err := m.client.Get(ctx, key, tmpM3Data)
 		if err != nil && !apierrors.IsNotFound(err) {
-			dataClaim.Status.ErrorMessage = pointer.String("Failed to get associated Metal3Data object")
+			dataClaim.Status.ErrorMessage = ptr.To("Failed to get associated Metal3Data object")
 			return indexes, err
 		} else if err == nil {
-			// Delete the secret with metadata
-			fmt.Println(tmpM3Data.Name)
-			err = m.client.Delete(ctx, tmpM3Data)
+			// Remove the finalizer
+			tmpM3Data.Finalizers = Filter(tmpM3Data.Finalizers,
+				infrav1.DataClaimFinalizer,
+			)
+			err = updateObject(ctx, m.client, tmpM3Data)
 			if err != nil && !apierrors.IsNotFound(err) {
-				dataClaim.Status.ErrorMessage = pointer.String("Failed to delete associated Metal3Data object")
+				m.Log.Info("Unable to remove finalizer from Metal3Data", "Metal3Data", tmpM3Data.Name)
 				return indexes, err
 			}
+			// Delete the Metal3Data
+			err = deleteObject(ctx, m.client, tmpM3Data)
+			if err != nil && !apierrors.IsNotFound(err) {
+				dataClaim.Status.ErrorMessage = ptr.To("Failed to delete associated Metal3Data object")
+				return indexes, err
+			}
+			m.Log.Info("Deleted Metal3Data", "Metal3Data", tmpM3Data.Name)
 		}
 	}
+
 	dataClaim.Status.RenderedData = nil
 	dataClaim.Finalizers = Filter(dataClaim.Finalizers,
 		infrav1.DataClaimFinalizer,
 	)
 
-	m.Log.Info("Deleted Claim", "Metal3DataClaim", dataClaim.Name)
-
 	if ok {
 		delete(m.DataTemplate.Status.Indexes, dataClaim.Name)
 		delete(indexes, dataClaimIndex)
 	}
+
+	m.Log.Info("Deleted Metal3DataClaim", "Metal3DataClaim", dataClaim.Name)
 	m.updateStatusTimestamp()
 	return indexes, nil
 }

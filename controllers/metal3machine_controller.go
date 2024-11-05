@@ -27,8 +27,9 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -50,6 +51,7 @@ const (
 type Metal3MachineReconciler struct {
 	Client           client.Client
 	ManagerFactory   baremetal.ManagerFactoryInterface
+	Tracker          *remote.ClusterCacheTracker
 	Log              logr.Logger
 	CapiClientGetter baremetal.ClientGetter
 	WatchFilterValue string
@@ -94,10 +96,9 @@ func (r *Metal3MachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	defer func() {
 		if err := patchMetal3Machine(ctx, patchHelper, capm3Machine); err != nil {
 			machineLog.Error(err, "failed to Patch metal3Machine")
+			rerr = err
 		}
 	}()
-	// clear an error if one was previously set
-	clearErrorM3Machine(capm3Machine)
 
 	// Fetch the Machine.
 	capiMachine, err := util.GetOwnerMachine(ctx, r.Client, capm3Machine.ObjectMeta)
@@ -513,16 +514,8 @@ func (r *Metal3MachineReconciler) Metal3DataToMetal3Machines(_ context.Context, 
 
 // setErrorM3Machine sets the ErrorMessage and ErrorReason fields on the metal3machine.
 func setErrorM3Machine(m3m *infrav1.Metal3Machine, message string, reason capierrors.MachineStatusError) {
-	m3m.Status.FailureMessage = pointer.String(message)
+	m3m.Status.FailureMessage = ptr.To(message)
 	m3m.Status.FailureReason = &reason
-}
-
-// clearError removes the ErrorMessage from the metal3machine's Status if set.
-func clearErrorM3Machine(m3m *infrav1.Metal3Machine) {
-	if m3m.Status.FailureMessage != nil || m3m.Status.FailureReason != nil {
-		m3m.Status.FailureMessage = nil
-		m3m.Status.FailureReason = nil
-	}
 }
 
 func checkMachineError(machineMgr baremetal.MachineManagerInterface, err error,

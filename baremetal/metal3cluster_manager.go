@@ -21,12 +21,8 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
-
-	// TODO Why blank import ?
-	_ "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
@@ -101,10 +97,6 @@ func (s *ClusterManager) Create(_ context.Context) error {
 		s.setError("Invalid Metal3Cluster provided", capierrors.InvalidConfigurationClusterError)
 		return err
 	}
-
-	// clear an error if one was previously set.
-	s.clearError()
-
 	return nil
 }
 
@@ -159,15 +151,6 @@ func (s *ClusterManager) UpdateClusterStatus() error {
 func (s *ClusterManager) setError(message string, reason capierrors.ClusterStatusError) {
 	s.Metal3Cluster.Status.FailureMessage = &message
 	s.Metal3Cluster.Status.FailureReason = &reason
-}
-
-// clearError removes the ErrorMessage from the metal3Cluster Status if set. Returns
-// nil if ErrorMessage was already nil.
-func (s *ClusterManager) clearError() {
-	if s.Metal3Cluster.Status.FailureMessage != nil || s.Metal3Cluster.Status.FailureReason != nil {
-		s.Metal3Cluster.Status.FailureMessage = nil
-		s.Metal3Cluster.Status.FailureReason = nil
-	}
 }
 
 // CountDescendants will return the number of descendants objects of the

@@ -39,7 +39,7 @@ set +o pipefail
 
 # enable support for **/go.mod, and make it ignore hack/tools/go.mod
 shopt -s globstar
-GLOBIGNORE=./hack/tools/go.mod
+GLOBIGNORE=./hack/tools/go.mod:./hack/fake-apiserver/go.mod
 
 # user input
 VERSION="${1:?release version missing, provide without leading v. Example: 1.5.0}"
@@ -90,7 +90,6 @@ declare -a release_note_strings=(
 # required strings that are postfixed with correct release number
 declare -a release_note_tag_strings=(
     "The image for this release is: v${VERSION}"
-    "Ironic image tag is capm3-v${VERSION}"
     "Mariadb image tag is capm3-v${VERSION}"
 )
 
@@ -105,7 +104,6 @@ declare -a release_artefacts=(
 # quay images
 declare -a container_images=(
     "${ORG}/cluster-api-provider-metal3:v${VERSION}"
-    "${ORG}/ironic:capm3-v${VERSION}"
     "${ORG}/mariadb:capm3-v${VERSION}"
 )
 
@@ -148,10 +146,13 @@ if [[ -n "${CONTAINER_RUNTIME}" ]]; then
     )
     declare -a GCRANE_CMD=(
         "${CONTAINER_RUNTIME}" run --rm
+        --pull always
         gcr.io/go-containerregistry/gcrane:latest
     )
     declare -a OSVSCANNER_CMD=(
-        "${CONTAINER_RUNTIME}" run --rm -v "${PWD}":/src -w /src
+        "${CONTAINER_RUNTIME}" run --rm
+        -v "${PWD}":/src -w /src
+        --pull always
         ghcr.io/google/osv-scanner:latest
     )
 else
@@ -186,12 +187,44 @@ trap cleanup EXIT
 #
 # pre-requisites
 #
+_version_check()
+{
+    # check version of the tool, return failure if smaller
+    local min_version version
+
+    min_version="$1"
+    version="$2"
+
+    [[ "${min_version}" == $(echo -e "${min_version}\n${version}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) ]]
+}
+
 check_tools()
 {
+    # check that all tools are present, and pass version check too
+    # TODO: if more tools need versioning, add the version info directly to the
+    # array defining required tools
+    local min_version version
+
     echo "Checking required tools ..."
 
     for tool in "${required_tools[@]}"; do
         type "${tool}" &>/dev/null || { echo "FATAL: need ${tool} to be installed"; exit 1; }
+        case "${tool}" in
+            osv-scanner)
+                version=$("${OSVSCANNER_CMD[@]}" -v | grep version | cut -f3 -d" ")
+                min_version="1.5.0"
+                ;;
+            *)
+                # dummy values here for other tools
+                version="1.0.0"
+                min_version="1.0.0"
+                ;;
+        esac
+
+        # shellcheck disable=SC2310
+        if ! _version_check "${min_version}" "${version}"; then
+            echo "WARNING: tool ${tool} is version ${version}, should be >= ${min_version}"
+        fi
     done
 
     echo -e "Done\n"
@@ -394,7 +427,7 @@ verify_container_images()
     # if tag doesn't appear, the build trigger might've been disabled
     local image tag
 
-    echo "Verifying container images ..."
+    echo "Verifying container images are built and tagged ..."
 
     for image_and_tag in "${container_images[@]}"; do
         image="${image_and_tag/:*}"
@@ -410,6 +443,48 @@ verify_container_images()
             echo "ERROR: container image tag ${image_and_tag} not found at ${REGISTRY}"
         fi
     done
+
+    echo -e "Done\n"
+}
+
+_get_golang_version_from_dockerfile()
+{
+    # read golang version from Dockerfile and return
+    local image_and_tag image image_and_tag_without_sha tag tag_minor
+
+    image_and_tag="$(grep "^ARG BUILD_IMAGE=" Dockerfile | cut -f2 -d=)"
+    image="${image_and_tag/:*}"
+    image_and_tag_without_sha="${image_and_tag/@sha256:*}"
+    tag="${image_and_tag_without_sha/*:}"
+    tag_minor="${tag%.*}"
+
+    echo "${image_and_tag} ${image} ${image_and_tag_without_sha} ${tag} ${tag_minor}"
+}
+
+verify_container_base_image()
+{
+    # check if the golang used for container image build is latest of its minor
+    local image_and_tag image image_and_tag_without_sha tag tag_minor
+
+    echo "Verifying container base images are up to date ..."
+
+    read -r image_and_tag image image_and_tag_without_sha tag tag_minor < \
+        <(_get_golang_version_from_dockerfile)
+
+    # quay paginates 50 items at a time, so it is simpler to use gcrane
+    # to list all the tags, than DIY parse the pagination logic
+    if ! "${GCRANE_CMD[@]}" ls --platform "linux/amd64" "${image}" 2>/dev/null > "${TAG_LOG}"; then
+        echo "ERROR: cannot list container tags for ${image}"
+        return 1
+    fi
+    latest_minor="$(sort -rV < "${TAG_LOG}" | cut -f2 -d: | grep -E "^v?${tag_minor/./\\.}\.[[:digit:]]+$" | head -1)"
+
+    if [[ -z "${latest_minor}" ]]; then
+        echo "WARNING: could not find any minor releases of ${image_and_tag_without_sha}"
+    elif [[ "${latest_minor}" != "${tag}" ]]; then
+        echo "WARNING: container base image ${image_and_tag_without_sha} is not the latest minor"
+        echo "WARNING: latest minor ${latest_minor} != ${tag}, needs a bump"
+    fi
 
     echo -e "Done\n"
 }
@@ -454,7 +529,7 @@ _module_get_latest_patch_release()
 {
     # get latest patch release from given version
     # module needs to contain full module url
-    # version is minor release prefix, like v1.4.
+    # version is minor release prefix, like v1.7.
     local repo="$1"
     local version="$2"
 
@@ -480,7 +555,7 @@ verify_module_versions()
 {
     # verify all dependencies are using the same version across all go.mod
     # in the repository. Ignore indirect ones.
-    echo "Verify all go.mod dependencies are the same across go.mods ..."
+    echo "Verify all go.mod direct dependencies are the same across go.mods ..."
 
     # shellcheck disable=SC2119
     _module_direct_dependencies | while read -r module version; do
@@ -585,15 +660,42 @@ verify_ipam_manifests()
     echo -e "Done\n"
 }
 
+_mutate_gomod_files_for_osv_scanner()
+{
+    # mutate go.mod files to include go directive with exact patch version
+    # from main Dockerfile for correct golang stdlib vulnerability information
+    local image_and_tag image image_and_tag_without_sha tag tag_minor
+
+    read -r image_and_tag image image_and_tag_without_sha tag tag_minor < \
+        <(_get_golang_version_from_dockerfile)
+
+    for modfile in **/go.mod; do
+        sed -i.bak -e "s/^go .*$/go ${tag}/" "${modfile}"
+    done
+}
+
+_restore_mutated_gomod_files()
+{
+    # restore mutated gomod files to original state
+    for bakfile in **/go.mod.bak; do
+        modfile="${bakfile/.bak}"
+        mv "${bakfile}" "${modfile}"
+    done
+}
+
 verify_vulnerabilities()
 {
     # run osv-scanner to verify if we have open vulnerabilities in deps
     echo "Verifying vulnerabilities ..."
 
-    "${OSVSCANNER_CMD[@]}" -r . > "${SCAN_LOG}" || true
+    _mutate_gomod_files_for_osv_scanner
+
+    "${OSVSCANNER_CMD[@]}" --skip-git -r . > "${SCAN_LOG}" || true
     if ! grep -q "No vulnerabilities found" "${SCAN_LOG}"; then
         cat "${SCAN_LOG}"
     fi
+
+    _restore_mutated_gomod_files
 
     echo -e "Done\n"
 }
@@ -621,6 +723,7 @@ if [[ -n "${TAG_EXISTS}" ]]; then
 fi
 
 # always verified
+verify_container_base_image
 verify_module_versions
 verify_module_group_versions
 verify_module_releases

@@ -22,13 +22,13 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
-
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
+	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -54,6 +54,7 @@ const (
 // Metal3ClusterReconciler reconciles a Metal3Cluster object.
 type Metal3ClusterReconciler struct {
 	Client           client.Client
+	Tracker          *remote.ClusterCacheTracker
 	ManagerFactory   baremetal.ManagerFactoryInterface
 	Log              logr.Logger
 	WatchFilterValue string
@@ -87,6 +88,7 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	defer func() {
 		if err := patchMetal3Cluster(ctx, patchHelper, metal3Cluster); err != nil {
 			clusterLog.Error(err, "failed to Patch metal3Cluster")
+			rerr = err
 		}
 	}()
 
@@ -95,7 +97,7 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		invalidConfigError := capierrors.InvalidConfigurationClusterError
 		metal3Cluster.Status.FailureReason = &invalidConfigError
-		metal3Cluster.Status.FailureMessage = pointer.String("Unable to get owner cluster")
+		metal3Cluster.Status.FailureMessage = ptr.To("Unable to get owner cluster")
 		conditions.MarkFalse(metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.InternalFailureReason, clusterv1.ConditionSeverityError, err.Error())
 		return ctrl.Result{}, err
 	}
@@ -125,11 +127,25 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Handle deleted clusters
 	if !metal3Cluster.DeletionTimestamp.IsZero() {
-		return reconcileDelete(ctx, clusterMgr)
+		res, err := reconcileDelete(ctx, clusterMgr)
+		// Requeue if the reconcile failed because the ClusterCacheTracker was locked for
+		// the current cluster because of concurrent access.
+		if errors.Is(err, remote.ErrClusterLocked) {
+			clusterLog.Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
+			return ctrl.Result{Requeue: true}, nil
+		}
+		return res, err
 	}
 
 	// Handle non-deleted clusters
-	return reconcileNormal(ctx, clusterMgr)
+	res, err := reconcileNormal(ctx, clusterMgr)
+	// Requeue if the reconcile failed because the ClusterCacheTracker was locked for
+	// the current cluster because of concurrent access.
+	if errors.Is(err, remote.ErrClusterLocked) {
+		clusterLog.Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
+		return ctrl.Result{Requeue: true}, nil
+	}
+	return res, err
 }
 
 func patchMetal3Cluster(ctx context.Context, patchHelper *patch.Helper, metal3Cluster *infrav1.Metal3Cluster, options ...patch.Option) error {
@@ -151,7 +167,7 @@ func patchMetal3Cluster(ctx context.Context, patchHelper *patch.Helper, metal3Cl
 	return patchHelper.Patch(ctx, metal3Cluster, options...)
 }
 
-func reconcileNormal(ctx context.Context, clusterMgr baremetal.ClusterManagerInterface) (ctrl.Result, error) {
+func reconcileNormal(ctx context.Context, clusterMgr baremetal.ClusterManagerInterface) (ctrl.Result, error) { //nolint:unparam
 	// If the Metal3Cluster doesn't have finalizer, add it.
 	clusterMgr.SetFinalizer()
 

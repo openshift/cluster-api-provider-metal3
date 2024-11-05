@@ -20,7 +20,7 @@ SHELL:=/usr/bin/env bash
 
 .DEFAULT_GOAL:=help
 
-GO_VERSION ?= 1.21.6
+GO_VERSION ?= 1.22.8
 GO := $(shell type -P go)
 # Use GOPROXY environment variable if set
 GOPROXY := $(shell $(GO) env GOPROXY)
@@ -40,6 +40,7 @@ APIS_DIR := api
 TEST_DIR := test
 BIN_DIR := bin
 TOOLS_BIN_DIR :=  $(abspath $(TOOLS_DIR)/$(BIN_DIR))
+FAKE_APISERVER_DIR := hack/fake-apiserver
 
 # Set --output-base for conversion-gen if we are not within GOPATH
 ifneq ($(abspath $(ROOT_DIR)),$(shell $(GO) env GOPATH)/src/github.com/metal3-io/cluster-api-provider-metal3)
@@ -57,7 +58,10 @@ KUSTOMIZE_BIN := kustomize
 KUSTOMIZE := $(TOOLS_BIN_DIR)/$(KUSTOMIZE_BIN)
 ENVSUBST_BIN := envsubst
 ENVSUBST := $(TOOLS_BIN_DIR)/$(ENVSUBST_BIN)-drone
-SETUP_ENVTEST = $(TOOLS_BIN_DIR)/setup-envtest
+SETUP_ENVTEST_BIN := setup-envtest
+SETUP_ENVTEST = $(abspath $(TOOLS_BIN_DIR)/$(SETUP_ENVTEST_BIN))
+SETUP_ENVTEST_VER := release-0.19
+SETUP_ENVTEST_PKG := sigs.k8s.io/controller-runtime/tools/setup-envtest
 GINKGO_BIN := ginkgo
 GINKGO := $(TOOLS_BIN_DIR)/$(GINKGO_BIN)
 GINKGO_PKG := github.com/onsi/ginkgo/v2/ginkgo
@@ -65,7 +69,7 @@ GINKGO_PKG := github.com/onsi/ginkgo/v2/ginkgo
 # Helper function to get dependency version from go.mod
 get_go_version = $(shell $(GO) list -m $1 | awk '{print $$2}')
 GINGKO_VER := $(call get_go_version,github.com/onsi/ginkgo/v2)
-ENVTEST_K8S_VERSION := 1.29.x
+ENVTEST_K8S_VERSION := 1.31.x
 
 # Define Docker related variables. Releases should modify and double check these vars.
 # REGISTRY ?= gcr.io/$(shell gcloud config get-value project)
@@ -78,7 +82,7 @@ BMO_IMAGE_NAME ?= baremetal-operator
 BMO_CONTROLLER_IMG ?= $(REGISTRY)/$(BMO_IMAGE_NAME)
 TAG ?= v1beta1
 BMO_TAG ?= capm3-$(TAG)
-ARCH ?= amd64
+ARCH ?= $(shell go env GOARCH)
 ALL_ARCH = amd64 arm arm64 ppc64le s390x
 
 # Allow overriding manifest generation destination directory
@@ -96,7 +100,6 @@ ENVTEST_OS := linux
 ifeq ($(shell uname -s), Darwin)
 	ENVTEST_OS := darwin
 endif
-ARCH ?= amd64
 
 ## --------------------------------------
 ## Help
@@ -134,11 +137,15 @@ unit-cover-verbose:
 	GO_TEST_FLAGS=-v GINKGO_TEST_FLAGS=-ginkgo.v $(MAKE) unit-cover
 
 .PHONY: test
-test: fmt lint unit ## Run tests
+test: lint unit ## Run tests
 
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests with capi e2e testing framework
 	./scripts/ci-e2e.sh
+
+.PHONY: test-clusterclass-e2e
+test-clusterclass-e2e: ## Run e2e tests with capi e2e testing framework
+	CLUSTER_TOPOLOGY=true GINKGO_FOCUS=basic ./scripts/ci-e2e.sh
 
 GINKGO_NOCOLOR ?= false
 ARTIFACTS ?= $(ROOT_DIR)/_artifacts
@@ -148,7 +155,6 @@ E2E_CONF_FILE_ENVSUBST ?= $(E2E_OUT_DIR)/$(notdir $(E2E_CONF_FILE))
 E2E_CONTAINERS ?= quay.io/metal3-io/cluster-api-provider-metal3 quay.io/metal3-io/baremetal-operator quay.io/metal3-io/ip-address-manager
 
 SKIP_CLEANUP ?= false
-KEEP_TEST_ENV ?= false
 EPHEMERAL_TEST ?= false
 SKIP_CREATE_MGMT_CLUSTER ?= true
 
@@ -168,6 +174,16 @@ cluster-templates: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/cluster-template-ubuntu > $(E2E_OUT_DIR)/cluster-template-ubuntu.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/cluster-template-centos > $(E2E_OUT_DIR)/cluster-template-centos.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/cluster-template-upgrade-workload > $(E2E_OUT_DIR)/cluster-template-upgrade-workload.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/cluster-template-centos-md-remediation.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/cluster-template-ubuntu-md-remediation.yaml
+	touch $(E2E_OUT_DIR)/clusterclass.yaml
+
+.PHONY: clusterclass-templates
+clusterclass-templates: $(KUSTOMIZE) ## Generate cluster templates
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/clusterclass-template-ubuntu > $(E2E_OUT_DIR)/cluster-template-ubuntu.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/clusterclass-template-centos > $(E2E_OUT_DIR)/cluster-template-centos.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/cluster-template-upgrade-workload.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/clusterclass > $(E2E_OUT_DIR)/clusterclass.yaml
 
 ## --------------------------------------
 ## E2E Testing
@@ -183,7 +199,7 @@ endif
 
 .PHONY: e2e-tests
 e2e-tests: CONTAINER_RUNTIME?=docker # Env variable can override this default
-export CONTAINER_RUNTIME 
+export CONTAINER_RUNTIME
 
 e2e-tests: $(GINKGO) e2e-substitutions cluster-templates # This target should be called from scripts/ci-e2e.sh
 	for image in $(E2E_CONTAINERS); do \
@@ -192,13 +208,32 @@ e2e-tests: $(GINKGO) e2e-substitutions cluster-templates # This target should be
 
 	$(GINKGO) --timeout=$(GINKGO_TIMEOUT) -v --trace --tags=e2e  \
 		--show-node-events --no-color=$(GINKGO_NOCOLOR) \
-		--fail-fast="$(KEEP_TEST_ENV)" \
 		--junit-report="junit.e2e_suite.1.xml" \
 		--focus="$(GINKGO_FOCUS)" $(_SKIP_ARGS) "$(ROOT_DIR)/$(TEST_DIR)/e2e/" -- \
 		-e2e.artifacts-folder="$(ARTIFACTS)" \
 		-e2e.config="$(E2E_CONF_FILE_ENVSUBST)" \
 		-e2e.skip-resource-cleanup=$(SKIP_CLEANUP) \
-		-e2e.keep-test-environment=$(KEEP_TEST_ENV) \
+		-e2e.trigger-ephemeral-test=$(EPHEMERAL_TEST) \
+		-e2e.use-existing-cluster=$(SKIP_CREATE_MGMT_CLUSTER)
+
+	rm $(E2E_CONF_FILE_ENVSUBST)
+
+.PHONY: e2e-clusterclass-tests
+e2e-clusterclass-tests: CONTAINER_RUNTIME?=docker # Env variable can override this default
+export CONTAINER_RUNTIME
+
+e2e-clusterclass-tests: $(GINKGO) e2e-substitutions clusterclass-templates # This target should be called from scripts/ci-e2e.sh
+	for image in $(E2E_CONTAINERS); do \
+		$(CONTAINER_RUNTIME) pull $$image; \
+	done
+
+	$(GINKGO) --timeout=$(GINKGO_TIMEOUT) -v --trace --tags=e2e  \
+		--show-node-events --no-color=$(GINKGO_NOCOLOR) \
+		--junit-report="junit.e2e_suite.1.xml" \
+		--focus="$(GINKGO_FOCUS)" $(_SKIP_ARGS) "$(ROOT_DIR)/$(TEST_DIR)/e2e/" -- \
+		-e2e.artifacts-folder="$(ARTIFACTS)" \
+		-e2e.config="$(E2E_CONF_FILE_ENVSUBST)" \
+		-e2e.skip-resource-cleanup=$(SKIP_CLEANUP) \
 		-e2e.trigger-ephemeral-test=$(EPHEMERAL_TEST) \
 		-e2e.use-existing-cluster=$(SKIP_CREATE_MGMT_CLUSTER)
 
@@ -226,7 +261,7 @@ build-api: ## Builds api directory.
 .PHONY: build-e2e
 build-e2e: ## Builds test directory.
 	cd $(TEST_DIR) && $(GO) build ./...
-	
+
 ## --------------------------------------
 ## Tooling Binaries
 ## --------------------------------------
@@ -250,9 +285,8 @@ $(CONVERSION_GEN): $(TOOLS_DIR)/go.mod
 $(KUBEBUILDER): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR) && ./install_kubebuilder.sh
 
-$(SETUP_ENVTEST): $(TOOLS_DIR)/go.mod
-	cd $(TOOLS_DIR) && \
-	$(GO) build -tags=tools -o $(BIN_DIR)/setup-envtest sigs.k8s.io/controller-runtime/tools/setup-envtest
+$(SETUP_ENVTEST):
+	GOBIN=$(TOOLS_BIN_DIR) $(GO) install $(SETUP_ENVTEST_PKG)@$(SETUP_ENVTEST_VER)
 
 .PHONY: $(GINKGO_BIN)
 $(GINKGO_BIN): $(GINKGO) ## Build a local copy of ginkgo.
@@ -270,7 +304,7 @@ $(ENVSUBST):
 $(KUSTOMIZE_BIN): $(KUSTOMIZE) ## Build a local copy of kustomize.
 
 .PHONY: $(KUSTOMIZE)
-$(KUSTOMIZE): $(TOOLS_DIR)/go.mod 
+$(KUSTOMIZE): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR) && $(GO) build -tags=tools -o $(BIN_DIR)/$(KUSTOMIZE_BIN) sigs.k8s.io/kustomize/kustomize/v5
 
 .PHONY: $(ENVSUBST_BIN)
@@ -283,26 +317,18 @@ $(ENVSUBST_BIN): $(ENVSUBST) ## Build envsubst from tools folder.
 
 .PHONY: lint
 lint: $(GOLANGCI_LINT) ## Lint codebase
-	$(GOLANGCI_LINT) run -v --timeout=10m
-	cd $(APIS_DIR) && $(GOLANGCI_LINT) run -v --timeout=10m
-	cd $(TEST_DIR) && $(GOLANGCI_LINT) run -v --timeout=10m
+	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
+	cd $(APIS_DIR) && $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
+	cd $(TEST_DIR) && $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
+
+.PHONY: lint-fix
+lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported by the linter
+	GOLANGCI_LINT_EXTRA_ARGS=--fix $(MAKE) lint
 
 lint-full: $(GOLANGCI_LINT) ## Run slower linters to detect possible issues
 	$(GOLANGCI_LINT) run -v --fast=false --timeout=30m
 	cd $(APIS_DIR) && $(GOLANGCI_LINT) run -v --fast=false --timeout=30m
 	cd $(TEST_DIR) && $(GOLANGCI_LINT) run -v --fast=false --timeout=30m
-
-# Run go fmt against code
-fmt:
-	$(GO) fmt ./controllers/... ./baremetal/... .
-	cd $(APIS_DIR) && $(GO) fmt  ./...
-	cd $(TEST_DIR) && $(GO) fmt  ./...
-
-# Run go vet against code
-vet:
-	$(GO) vet ./controllers/... ./baremetal/... .
-	cd $(APIS_DIR) && $(GO) vet  ./...
-	cd $(TEST_DIR) && $(GO) fmt  ./...
 
 # Run manifest validation
 .PHONY: manifest-lint
@@ -324,6 +350,8 @@ modules: ## Runs go mod to ensure proper vendoring.
 	cd $(APIS_DIR) && $(GO) mod verify
 	cd $(TEST_DIR) && $(GO) mod tidy
 	cd $(TEST_DIR) && $(GO) mod verify
+	cd $(FAKE_APISERVER_DIR) && $(GO) mod tidy
+	cd $(FAKE_APISERVER_DIR) && $(GO) mod verify
 
 .PHONY: vendor
 vendor: ## Runs go mod to ensure proper vendoring.
@@ -395,11 +423,6 @@ generate-go: $(CONTROLLER_GEN) $(MOCKGEN) $(CONVERSION_GEN) $(KUBEBUILDER) $(KUS
 		-copyright_file=./hack/boilerplate/boilerplate.generatego.txt \
 		ManagerFactoryInterface
 
-	$(CONVERSION_GEN) \
-		--input-dirs=./api/v1alpha5 \
-		--output-file-base=zz_generated.conversion  $(CONVERSION_GEN_OUTPUT_BASE) \
-		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt
-
 .PHONY: generate-manifests
 generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 	$(CONTROLLER_GEN) \
@@ -417,6 +440,10 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 generate-examples: $(KUSTOMIZE) clean-examples ## Generate examples configurations to run a cluster.
 	./examples/generate.sh
 
+.PHONY: generate-examples-clusterclass
+generate-examples-clusterclass: $(KUSTOMIZE) clean-examples ## Generate examples configurations to run a cluster.
+	CLUSTER_TOPOLOGY=true ./examples/generate.sh
+
 ## --------------------------------------
 ## Docker
 ## --------------------------------------
@@ -431,6 +458,14 @@ docker-build: ## Build the docker image for controller-manager
 .PHONY: docker-push
 docker-push: ## Push the docker image
 	docker push $(CONTROLLER_IMG)-$(ARCH):$(TAG)
+
+.PHONY: build-fkas
+# Allow overriding this by setting CONTAINER_RUNTIME var
+CONTAINER_RUNTIME := $(if $(CONTAINER_RUNTIME),$(CONTAINER_RUNTIME),docker)
+export CONTAINER_RUNTIME
+
+build-fkas:
+	cd $(FAKE_APISERVER_DIR) && $(CONTAINER_RUNTIME) build --build-arg ARCH=$(ARCH) -t "quay.io/metal3-io/metal3-fkas:latest" .
 
 ## --------------------------------------
 ## Docker — All ARCH
@@ -494,11 +529,24 @@ deploy: generate-examples
 	kubectl apply -f examples/_out/provider-components.yaml
 	kubectl apply -f examples/_out/metal3crds.yaml
 
+deploy-clusterclass: generate-examples-clusterclass
+	kubectl apply -f examples/_out/cert-manager.yaml
+	kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment cert-manager
+	kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment cert-manager-cainjector
+	kubectl wait --for=condition=Available --timeout=300s -n cert-manager deployment cert-manager-webhook
+	kubectl apply -f examples/_out/provider-components.yaml
+	kubectl apply -f examples/_out/metal3crds.yaml
+
 deploy-examples:
 	kubectl apply -f ./examples/_out/metal3plane.yaml
 	kubectl apply -f ./examples/_out/cluster.yaml
 	kubectl apply -f ./examples/_out/machinedeployment.yaml
 	kubectl apply -f ./examples/_out/controlplane.yaml
+
+deploy-examples-clusterclass:
+	kubectl apply -f ./examples/_out/metal3plane.yaml
+	kubectl apply -f ./examples/_out/clusterclass.yaml
+	kubectl apply -f ./examples/_out/cluster.yaml
 
 delete-examples:
 	kubectl delete -f ./examples/_out/machinedeployment.yaml || true
@@ -506,19 +554,23 @@ delete-examples:
 	kubectl delete -f ./examples/_out/cluster.yaml || true
 	kubectl delete -f ./examples/_out/metal3plane.yaml || true
 
+delete-examples-clusterclass:
+	kubectl delete -f ./examples/_out/cluster.yaml || true
+	kubectl delete -f ./examples/_out/clusterclass.yaml || true
+	kubectl delete -f ./examples/_out/metal3plane.yaml || true
 
 ## --------------------------------------
 ## Release
 ## --------------------------------------
 ##@ release:
 
-## latest git tag for the commit, e.g., v1.4.0
+## latest git tag for the commit, e.g., v1.7.0
 RELEASE_TAG ?= $(shell git describe --abbrev=0 2>/dev/null)
 ifneq (,$(findstring -,$(RELEASE_TAG)))
     PRE_RELEASE=true
 endif
-# the previous release tag, e.g., v1.4.0, excluding pre-release tags
-PREVIOUS_TAG ?= $(shell git tag -l | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$$" | sort -V | grep -B1 $(RELEASE_TAG) | head -n 1 2>/dev/null)
+# the previous release tag, e.g., v1.7.0, excluding pre-release tags
+PREVIOUS_TAG ?= $(shell git tag -l | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+" | sort -V | grep -B1 $(RELEASE_TAG) | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$$" | head -n 1 2>/dev/null)
 RELEASE_DIR := out
 RELEASE_NOTES_DIR := releasenotes
 
@@ -537,11 +589,7 @@ release-manifests: $(KUSTOMIZE) $(RELEASE_DIR) ## Builds the manifests to publis
 
 .PHONY: release-notes
 release-notes: $(RELEASE_NOTES_DIR) $(RELEASE_NOTES)
-	if [ -n "${PRE_RELEASE}" ]; then \
-	echo ":rotating_light: This is a RELEASE CANDIDATE. Use it only for testing purposes. If you find any bugs, file an [issue](https://github.com/metal3-io/cluster-api-provider-metal3/issues/new/)." > $(RELEASE_NOTES_DIR)/$(RELEASE_TAG).md; \
-	else \
-	$(GO) run ./hack/tools/release/notes.go --from=$(PREVIOUS_TAG) > $(RELEASE_NOTES_DIR)/$(RELEASE_TAG).md; \
-	fi
+	$(GO) run ./hack/tools/release/notes.go --from=$(PREVIOUS_TAG) > $(RELEASE_NOTES_DIR)/$(RELEASE_TAG).md
 
 .PHONY: release
 release:
@@ -563,6 +611,10 @@ kind-create: ## create capm3 kind cluster if needed
 .PHONY: tilt-settings
 tilt-settings:
 	./hack/gen_tilt_settings.sh
+
+.PHONY: tilt-settings-clusterclass
+tilt-settings-clusterclass:
+	CLUSTER_TOPOLOGY=true ./hack/gen_tilt_settings.sh
 
 .PHONY: tilt-up
 tilt-up: $(ENVSUBST) $(KUSTOMIZE) kind-create ## start tilt and build kind cluster if needed
@@ -622,7 +674,8 @@ verify-boilerplate:
 
 .PHONY: verify-modules
 verify-modules: modules
-	@if !(git diff --quiet HEAD -- go.sum go.mod hack/tools/go.mod hack/tools/go.sum); then \
+	@if !(git diff --quiet HEAD -- go.sum go.mod hack/tools/go.mod hack/tools/go.sum \
+		hack/fake-apiserver/go.mod hack/fake-apiserver/go.sum); then \
 		echo "go module files are out of date"; exit 1; \
 	fi
 
