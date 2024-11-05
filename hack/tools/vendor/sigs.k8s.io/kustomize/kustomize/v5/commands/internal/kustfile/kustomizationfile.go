@@ -40,7 +40,6 @@ func determineFieldOrder() []string {
 
 	ordered := []string{
 		"MetaData",
-		"SortOptions",
 		"Resources",
 		"Bases",
 		"NamePrefix",
@@ -66,7 +65,6 @@ func determineFieldOrder() []string {
 		"Configurations",
 		"Generators",
 		"Transformers",
-		"Validators",
 		"Components",
 		"OpenAPI",
 		"BuildMetadata",
@@ -189,6 +187,16 @@ func (mf *kustomizationFile) Write(kustomization *types.Kustomization) error {
 		return err
 	}
 	return mf.fSys.WriteFile(mf.path, data)
+}
+
+// StringInSlice returns true if the string is in the slice.
+func StringInSlice(str string, list []string) bool {
+	for _, v := range list {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 func (mf *kustomizationFile) parseCommentedFields(content []byte) error {

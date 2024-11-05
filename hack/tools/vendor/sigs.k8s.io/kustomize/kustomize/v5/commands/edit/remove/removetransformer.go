@@ -5,7 +5,6 @@ package remove
 
 import (
 	"errors"
-	"slices"
 
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/kustomize/api/konfig"
@@ -73,7 +72,7 @@ func (o *removeTransformerOptions) RunRemoveTransformer(fSys filesys.FileSystem)
 
 	newTransformers := make([]string, 0, len(m.Transformers))
 	for _, transformer := range m.Transformers {
-		if slices.Contains(transformers, transformer) {
+		if kustfile.StringInSlice(transformer, transformers) {
 			continue
 		}
 		newTransformers = append(newTransformers, transformer)

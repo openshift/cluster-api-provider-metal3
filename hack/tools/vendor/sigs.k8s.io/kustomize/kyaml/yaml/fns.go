@@ -724,14 +724,8 @@ func (s FieldSetter) Filter(rn *RNode) (*RNode, error) {
 		return rn, nil
 	}
 
-	// Clearing nil fields:
-	//   1. Clear any fields with no value
-	//   2. Clear any "null" YAML fields unless we explicitly want to keep them
-	// This is to balance
-	//   1. Persisting 'null' values passed by the user (see issue #4628)
-	//   2. Avoiding producing noisy documents that add any field defaulting to
-	//   'nil' even if they weren't present in the source document
-	if s.Value == nil || (s.Value.IsTaggedNull() && !s.Value.ShouldKeep) {
+	// Clear the field if it is empty, or explicitly null
+	if s.Value == nil || s.Value.IsTaggedNull() {
 		return rn.Pipe(Clear(s.Name))
 	}
 

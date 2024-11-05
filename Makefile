@@ -286,7 +286,7 @@ $(KUBEBUILDER): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR) && ./install_kubebuilder.sh
 
 $(SETUP_ENVTEST):
-	GOBIN=$(TOOLS_BIN_DIR) $(GO) install $(SETUP_ENVTEST_PKG)@$(SETUP_ENVTEST_VER)
+	cd $(TOOLS_DIR) && $(GO) build -o $(SETUP_ENVTEST) ./vendor/sigs.k8s.io/controller-runtime/tools/setup-envtest/main.go
 
 .PHONY: $(GINKGO_BIN)
 $(GINKGO_BIN): $(GINKGO) ## Build a local copy of ginkgo.

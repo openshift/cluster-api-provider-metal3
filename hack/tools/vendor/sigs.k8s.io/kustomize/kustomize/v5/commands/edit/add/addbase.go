@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	"slices"
-
 	"github.com/spf13/cobra"
 	"sigs.k8s.io/kustomize/kustomize/v5/commands/internal/kustfile"
 	"sigs.k8s.io/kustomize/kyaml/filesys"
@@ -66,7 +64,7 @@ func (o *addBaseOptions) RunAddBase(fSys filesys.FileSystem) error {
 		if !fSys.Exists(path) {
 			return errors.New(path + " does not exist")
 		}
-		if slices.Contains(m.Resources, path) {
+		if kustfile.StringInSlice(path, m.Resources) {
 			return fmt.Errorf("base %s already in kustomization file", path)
 		}
 		m.Resources = append(m.Resources, path)

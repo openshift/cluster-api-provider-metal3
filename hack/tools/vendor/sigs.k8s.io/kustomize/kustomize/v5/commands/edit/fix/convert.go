@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"fmt"
 	"path"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -56,11 +55,11 @@ func filesTouchedByKustomize(k *types.Kustomization, filepath string, fSys files
 		files, err := fSys.ReadDir(r)
 		if err == nil && len(files) > 0 {
 			for _, file := range files {
-				if !slices.Contains([]string{
+				if !stringInSlice(file, []string{
 					"kustomization.yaml",
 					"kustomization.yml",
 					"Kustomization",
-				}, file) {
+				}) {
 					continue
 				}
 
@@ -224,7 +223,7 @@ func constructFieldOptions(value string, varString string) ([]*types.FieldOption
 			return nil, fmt.Errorf("cannot convert all vars to replacements; %s is not delimited", varString)
 		}
 		delimiter = pre
-		index = slices.Index(strings.Split(value, delimiter), varString)
+		index = indexOf(varString, strings.Split(value, delimiter))
 		if index == -1 {
 			// this should never happen
 			return nil, fmt.Errorf("internal error: could not get index of var %s", varString)
@@ -327,4 +326,22 @@ func setPlaceholderValue(varName string, files []string, fSys filesys.FileSystem
 		}
 	}
 	return nil
+}
+
+func stringInSlice(elem string, slice []string) bool {
+	for i := range slice {
+		if slice[i] == elem {
+			return true
+		}
+	}
+	return false
+}
+
+func indexOf(varName string, slice []string) int {
+	for i := range slice {
+		if slice[i] == varName {
+			return i
+		}
+	}
+	return -1
 }
