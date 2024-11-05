@@ -10,7 +10,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("When testing ip reuse [ip-reuse] [features]", func() {
+var _ = Describe("When testing ip reuse [ip-reuse] [features]", Label("ip-reuse", "features"), func() {
 
 	BeforeEach(func() {
 		osType := strings.ToLower(os.Getenv("OS"))
@@ -18,7 +18,7 @@ var _ = Describe("When testing ip reuse [ip-reuse] [features]", func() {
 		validateGlobals(specName)
 
 		// We need to override clusterctl apply log folder to avoid getting our credentials exposed.
-		clusterctlLogFolder = filepath.Join(os.TempDir(), "clusters", bootstrapClusterProxy.GetName())
+		clusterctlLogFolder = filepath.Join(os.TempDir(), "target_cluster_logs", bootstrapClusterProxy.GetName())
 	})
 	It("Should create a workload cluster then verify ip allocation reuse while upgrading k8s", func() {
 		IPReuse(ctx, func() IPReuseInput {
@@ -39,12 +39,6 @@ var _ = Describe("When testing ip reuse [ip-reuse] [features]", func() {
 		ListMetal3Machines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMachines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListNodes(ctx, targetCluster.GetClient())
-		// Abort the test in case of failure and keepTestEnv is true during keep VM trigger
-		if CurrentSpecReport().Failed() {
-			if keepTestEnv {
-				AbortSuite("e2e test aborted and skip cleaning the VM", 4)
-			}
-		}
-		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
+		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
 	})
 })

@@ -23,6 +23,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/cluster-api/util/predicates"
@@ -45,6 +46,7 @@ const (
 // Metal3MachineTemplateReconciler reconciles a Metal3MachineTemplate object.
 type Metal3MachineTemplateReconciler struct {
 	Client           client.Client
+	Tracker          *remote.ClusterCacheTracker
 	ManagerFactory   baremetal.ManagerFactoryInterface
 	Log              logr.Logger
 	WatchFilterValue string
@@ -75,6 +77,7 @@ func (r *Metal3MachineTemplateReconciler) Reconcile(ctx context.Context, req ctr
 		err := helper.Patch(ctx, metal3MachineTemplate)
 		if err != nil {
 			m3templateLog.Info("failed to patch Metal3MachineTemplate")
+			rerr = err
 		}
 	}()
 
@@ -103,7 +106,7 @@ func (r *Metal3MachineTemplateReconciler) Reconcile(ctx context.Context, req ctr
 
 func (r *Metal3MachineTemplateReconciler) reconcileNormal(ctx context.Context,
 	templateMgr baremetal.TemplateManagerInterface,
-) (ctrl.Result, error) {
+) (ctrl.Result, error) { //nolint:unparam
 	// Find the Metal3Machines with clonedFromName annotation referencing
 	// to the same Metal3MachineTemplate
 	if err := templateMgr.UpdateAutomatedCleaningMode(ctx); err != nil {

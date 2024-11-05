@@ -10,21 +10,20 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jinzhu/copier"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/runtime"
-	clusterv1alpha4 "sigs.k8s.io/cluster-api/api/v1alpha4"
-
-	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v3"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
-
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/bootstrap"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const (
@@ -50,9 +49,6 @@ var (
 
 	// ephemeralTest triggers only e2e test in ephemeral cluster if true.
 	ephemeralTest bool
-
-	// keepTestEnv keeps the test environment by aborting the test suite when e2e test fails.
-	keepTestEnv bool
 )
 
 // Test suite global vars.
@@ -64,7 +60,7 @@ var (
 	// with the providers specified in the configPath.
 	clusterctlConfigPath string
 
-	// bootstrapClusterProvider manages provisioning of the the bootstrap cluster to be used for the e2e tests.
+	// bootstrapClusterProvider manages provisioning of the bootstrap cluster to be used for the e2e tests.
 	// Please note that provisioning will be skipped if e2e.use-existing-cluster is provided.
 	bootstrapClusterProvider bootstrap.ClusterProvider
 
@@ -85,7 +81,6 @@ func init() {
 	flag.StringVar(&configPath, "e2e.config", "", "path to the e2e config file")
 	flag.StringVar(&artifactFolder, "e2e.artifacts-folder", "", "folder where e2e test artifact should be stored")
 	flag.BoolVar(&skipCleanup, "e2e.skip-resource-cleanup", false, "if true, the resource cleanup after tests will be skipped")
-	flag.BoolVar(&keepTestEnv, "e2e.keep-test-environment", false, "if true, the test aborts when failed, keeping all the environment")
 	flag.BoolVar(&upgradeTest, "e2e.trigger-upgrade-test", false, "if true, the e2e upgrade test will be triggered and other tests will be skipped")
 	flag.BoolVar(&ephemeralTest, "e2e.trigger-ephemeral-test", false, "if true, all e2e tests run in the ephemeral cluster without pivoting to the target cluster")
 	flag.BoolVar(&useExistingCluster, "e2e.use-existing-cluster", true, "if true, the test uses the current cluster instead of creating a new one (default discovery rules apply)")
@@ -111,6 +106,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	By("Initializing a runtime.Scheme with all the GVK relevant for this test")
 	scheme := initScheme()
+	ctrl.SetLogger(klog.Background())
 
 	By(fmt.Sprintf("Loading the e2e test configuration from %q", configPath))
 	e2eConfig = loadE2EConfig(configPath)
@@ -166,7 +162,6 @@ var _ = SynchronizedAfterSuite(func() {
 func initScheme() *runtime.Scheme {
 	sc := runtime.NewScheme()
 	framework.TryAddDefaultSchemes(sc)
-	Expect(clusterv1alpha4.AddToScheme(sc))
 	Expect(bmov1alpha1.AddToScheme(sc)).To(Succeed())
 	Expect(infrav1.AddToScheme(sc)).To(Succeed())
 	Expect(ipamv1.AddToScheme(sc)).To(Succeed())
@@ -263,9 +258,9 @@ func validateGlobals(specName string) {
 func updateCalico(config *clusterctl.E2EConfig, calicoYaml, calicoInterface string) {
 	calicoManifestURL := fmt.Sprintf("https://raw.githubusercontent.com/projectcalico/calico/%s/manifests/calico.yaml", config.GetVariable("CALICO_PATCH_RELEASE"))
 	err := DownloadFile(calicoYaml, calicoManifestURL)
-	Expect(err).To(BeNil(), "Unable to download Calico manifest")
+	Expect(err).ToNot(HaveOccurred(), "Unable to download Calico manifest")
 	cniYaml, err := os.ReadFile(calicoYaml)
-	Expect(err).To(BeNil(), "Unable to read Calico manifest")
+	Expect(err).ToNot(HaveOccurred(), "Unable to read Calico manifest")
 
 	Logf("Replace the default CIDR with the one set in $POD_CIDR")
 	podCIDR := config.GetVariable("POD_CIDR")
@@ -274,22 +269,22 @@ func updateCalico(config *clusterctl.E2EConfig, calicoYaml, calicoInterface stri
 	cniYaml = []byte(strings.Replace(string(cniYaml), "docker.io", calicoContainerRegistry, -1))
 
 	yamlDocuments, err := splitYAML(cniYaml)
-	Expect(err).To(BeNil(), "Cannot unmarshal the calico yaml elements to golang objects")
+	Expect(err).ToNot(HaveOccurred(), "Cannot unmarshal the calico yaml elements to golang objects")
 	calicoNodes, err := yamlContainKeyValue(yamlDocuments, "calico-node", "metadata", "labels", "k8s-app")
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 	for _, calicoNode := range calicoNodes {
 		calicoNodeSpecTemplateSpec, err := yamlFindByValue(calicoNode, "spec", "template", "spec", "containers")
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		calicoNodeContainers, err := yamlContainKeyValue(calicoNodeSpecTemplateSpec.Content, "calico-node", "name")
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		// Since we find the container by name, we expect to get only one container.
-		Expect(len(calicoNodeContainers) == 1).To(BeTrue(), "Found 0 or more than 1 container with name `calico-node`")
+		Expect(calicoNodeContainers).To(HaveLen(1), "Found 0 or more than 1 container with name `calico-node`")
 		calicoNodeContainer := calicoNodeContainers[0]
 		calicoNodeContainerEnvs, err := yamlFindByValue(calicoNodeContainer, "env")
-		Expect(err).To(BeNil())
+		Expect(err).ToNot(HaveOccurred())
 		addItem := &yaml.Node{}
 		err = copier.CopyWithOption(addItem, calicoNodeContainerEnvs.Content[0], copier.Option{IgnoreEmpty: true, DeepCopy: true})
-		Expect(err).To(BeNil(), "Cannot copy this object")
+		Expect(err).ToNot(HaveOccurred())
 		addItem.Content[1].SetString("IP_AUTODETECTION_METHOD")
 		addItem.Content[3].SetString("interface=" + calicoInterface)
 		addItem.HeadComment = "Start section modified by CAPM3 e2e test framework"
@@ -298,7 +293,7 @@ func updateCalico(config *clusterctl.E2EConfig, calicoYaml, calicoInterface stri
 	}
 
 	yamlOut, err := printYaml(yamlDocuments)
-	Expect(err).To(BeNil())
+	Expect(err).ToNot(HaveOccurred())
 	err = os.WriteFile(calicoYaml, yamlOut, 0600)
-	Expect(err).To(BeNil(), "Cannot print out the update to the file")
+	Expect(err).ToNot(HaveOccurred(), "Cannot print out the update to the file")
 }

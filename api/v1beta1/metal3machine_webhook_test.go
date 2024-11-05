@@ -18,7 +18,7 @@ import (
 
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func TestMetal3MachineDefault(_ *testing.T) {
@@ -52,7 +52,18 @@ func TestMetal3MachineValidation(t *testing.T) {
 
 	validIso := valid.DeepCopy()
 	validIso.Spec.Image.Checksum = ""
-	validIso.Spec.Image.DiskFormat = pointer.String(LiveISODiskFormat)
+	validIso.Spec.Image.DiskFormat = ptr.To(LiveISODiskFormat)
+
+	validCustomDeploy := &Metal3Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "foo",
+		},
+		Spec: Metal3MachineSpec{
+			CustomDeploy: &CustomDeploy{
+				Method: "install_great_stuff",
+			},
+		},
+	}
 
 	tests := []struct {
 		name      string
@@ -78,6 +89,11 @@ func TestMetal3MachineValidation(t *testing.T) {
 			name:      "should succeed when disk format is 'live-iso' even when checksum is empty",
 			expectErr: false,
 			c:         validIso,
+		},
+		{
+			name:      "should succeed with customDeploy",
+			expectErr: false,
+			c:         validCustomDeploy,
 		},
 	}
 

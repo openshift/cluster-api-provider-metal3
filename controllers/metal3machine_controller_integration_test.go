@@ -23,23 +23,20 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/utils/pointer"
-
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientfake "k8s.io/client-go/kubernetes/fake"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -200,7 +197,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 			oldProviderID := testBMmachine.Spec.ProviderID
 
 			fakeClient := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(tc.Objects...).WithStatusSubresource(tc.Objects...).Build()
-			mockCapiClientGetter := func(ctx context.Context, c client.Client, cluster *clusterv1.Cluster) (
+			mockCapiClientGetter := func(_ context.Context, _ client.Client, _ *clusterv1.Cluster) (
 				clientcorev1.CoreV1Interface, error,
 			) {
 				return clientfake.NewSimpleClientset(tc.TargetObjects...).CoreV1(), nil
@@ -231,13 +228,13 @@ var _ = Describe("Reconcile metal3machine", func() {
 			if tc.ErrorExpected {
 				Expect(err).To(HaveOccurred())
 				if tc.ErrorType != nil {
-					Expect(reflect.TypeOf(tc.ErrorType) == reflect.TypeOf(errors.Cause(err))).To(BeTrue())
+					Expect(reflect.TypeOf(tc.ErrorType)).To(BeIdenticalTo(reflect.TypeOf(errors.Cause(err))))
 				}
 			} else {
 				Expect(err).NotTo(HaveOccurred())
 			}
 			if tc.RequeueExpected {
-				Expect(res.Requeue).NotTo(BeFalse())
+				Expect(res.Requeue).To(BeTrue())
 				Expect(res.RequeueAfter).To(Equal(tc.ExpectedRequeueDuration))
 			} else {
 				Expect(res.Requeue).To(BeFalse())
@@ -269,10 +266,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 					Expect(testBMmachine.Spec.ProviderID).To(Equal(oldProviderID))
 				} else {
 					if tc.CheckBMProviderIDNew {
-						Expect(testBMmachine.Spec.ProviderID).To(Equal(pointer.String(fmt.Sprintf("%s%s/%s/%s", baremetal.ProviderIDPrefix,
+						Expect(testBMmachine.Spec.ProviderID).To(Equal(ptr.To(fmt.Sprintf("%s%s/%s/%s", baremetal.ProviderIDPrefix,
 							testBMHost.ObjectMeta.Namespace, testBMHost.ObjectMeta.Name, testBMmachine.ObjectMeta.Name))))
 					} else {
-						Expect(testBMmachine.Spec.ProviderID).To(Equal(pointer.String(fmt.Sprintf("%s%s", baremetal.ProviderIDPrefix,
+						Expect(testBMmachine.Spec.ProviderID).To(Equal(ptr.To(fmt.Sprintf("%s%s", baremetal.ProviderIDPrefix,
 							string(testBMHost.ObjectMeta.UID)))))
 					}
 				}
@@ -528,8 +525,8 @@ var _ = Describe("Reconcile metal3machine", func() {
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 								// Checking the pointers,
 								// CheckBMHostProvisioned is true
-								ChecksumType: pointer.String("sha512"),
-								DiskFormat:   pointer.String("raw"),
+								ChecksumType: ptr.To("sha512"),
+								DiskFormat:   ptr.To("raw"),
 							},
 						}, nil, false,
 					),
@@ -648,7 +645,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 					newMetal3Machine(
 						metal3machineName, m3mMetaWithAnnotation(),
 						&infrav1.Metal3MachineSpec{
-							ProviderID: pointer.String(providerID),
+							ProviderID: ptr.To(providerID),
 							Image: infrav1.Image{
 								Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",

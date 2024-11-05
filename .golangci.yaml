@@ -8,27 +8,37 @@ run:
 linters:
   disable-all: true
   enable:
+  - asasalint
   - asciicheck
+  - bidichk
   - bodyclose
+  - containedctx
   - dogsled
+  - dupword
+  - durationcheck
   - errcheck
-  - errorlint
+  - errchkjson
   - exportloopref
+  - gci
+  - ginkgolinter
   - goconst
   - gocritic
   - godot
   - gofmt
   - goimports
+  - goprintffuncname
+  - gosec
   - gosimple
   - govet
   - importas
-  - gosec
   - ineffassign
+  - loggercheck
   - misspell
   - nakedret
   - nilerr
   - noctx
   - nolintlint
+  - nosprintfhostport
   - prealloc
   - predeclared
   - revive
@@ -38,14 +48,16 @@ linters:
   - thelper
   - typecheck
   - unconvert
+  - unparam
   - unused
+  - usestdlibvars
   - whitespace
   # Run with --fast=false for more extensive checks
   fast: true
 
 linters-settings:
   gosec:
-    go: "1.21"
+    go: "1.22"
     severity: medium
     confidence: medium
     concurrency: 8
@@ -79,8 +91,6 @@ linters-settings:
     - pkg: sigs.k8s.io/cluster-api/api/v1beta1
       alias: clusterv1
     # CAPM3
-    - pkg: github.com/metal3-io/cluster-api-provider-metal3/api/v1alpha5
-      alias: infrav1alpha5
     - pkg: github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1
       alias: infrav1
     # BMO
@@ -91,9 +101,9 @@ linters-settings:
     allow-leading-space: false
     require-specific: true
   staticcheck:
-    go: "1.21"
+    go: "1.22"
   stylecheck:
-    go: "1.21"
+    go: "1.22"
   gocritic:
     enabled-tags:
     - experimental
@@ -112,7 +122,7 @@ linters-settings:
     - whyNoLint
     - wrapperFunc
   unused:
-    go: "1.21"
+    go: "1.22"
 issues:
   exclude-rules:
   - path: test/e2e
@@ -121,6 +131,8 @@ issues:
   - path: _test\.go
     linters:
     - unused
+    - unparam
+    - goconst
   # Specific exclude rules for deprecated fields that are still part of the codebase.
   # These should be removed as the referenced deprecated item is removed from the project.
   - linters:

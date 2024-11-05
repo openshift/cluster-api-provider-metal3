@@ -56,14 +56,16 @@ sudo rm -rf /opt/metal3-dev-env/
 
 The e2e tests currently include three different sets:
 
-1. pivoting_based_feature_test
-1. remediation_based_feature_test
-1. upgrade_tests
-1. live_iso_tests
+1. Pivoting based feature tests
+1. Remediation based feature tests
+1. clusterctl upgrade tests
+1. K8s upgrade tests
 
-`pivoting_based_feature_tests`: Because these tests run mainly in the target
-cluster, they are dependent on the pivoting test and need to run in the
-following order:
+### Pivoting based feature tests
+
+Because these tests run mainly in the target cluster,
+they are dependent on the pivoting test and need to run in the following
+order:
 
 - Pivoting
 - Certificate rotation
@@ -73,8 +75,9 @@ following order:
 However, in case we need to run them in the ephemeral cluster pivoting and
 re-pivoting should be ignored.
 
-`remediation_feature_tests`: independent from the previous tests and can run
-independently includes:
+### Remediation based feature tests
+
+Independent from the previous tests and can run independently includes:
 
 - Remediation
 - Inspection¹
@@ -89,16 +92,50 @@ The ephemeral cluster is first launched using
 inspection and Metal3Remediation tests are then run with the controllers still
 in the ephemeral cluster either before pivoting or after re-pivoting.
 
-`upgrade_management_cluster_test`:
+### clusterctl upgrade tests
 
 - Upgrade BMO
 - Upgrade Ironic
 - Upgrade CAPI/CAPM3
 
-`live_iso_test`: independent from the previous tests and can run independently.
-This is testing the booting of target cluster's nodes with the live ISO.
+| tests         | CAPM3 from  | CAPM3 to  | CAPI from  | CAPI to         |
+| --------------| ----------- | --------- | ---------- |---------------- |
+| v1.7=>current | v1.7.0      | main      | v1.7.3     | latest release  |
+| v1.6=>current | v1.6.1      | main      | v1.6.3     | latest release  |
+| v1.5=>current | v1.5.3      | main      | v1.5.7     | latest release  |
 
-Guidelines to follow when adding new E2E tests:
+### K8s upgrade tests
+
+Kubernetes version upgrade in target nodes. We run three latest version
+upgrades in k8s-upgrade tests for main branch and one kubernetes upgrade
+version for each release branch. When a new Kubernetes minor release is
+available, we will try to support it in an upcoming CAPM3 patch release
+(only in the latest supported CAPM3 minor release).
+
+For example:
+
+Main branch k8s-upgrade tests:
+
+- `v1.27` => `v1.28`
+- `v1.28` => `v1.29`
+- `v1.29` => `v1.30`
+
+Release 1.7 branch k8s-upgrade test:
+
+- `v1.29` => `v1.30`
+
+Release 1.6 branch k8s-upgrade test:
+
+- `v1.28` => `v1.29`
+
+Release 1.5 branch k8s-upgrade test:
+
+- `v1.26` => `v1.27`
+
+When Kubernetes 1.31 is released, k8s-upgrade `v1.30` => `v1.31` will be
+supported in v1.7.x (but not in v1.6.x)
+
+## Guidelines to follow when adding new E2E tests
 
 - Tests should be defined in a new file and separate test spec, unless the new
   test depends on existing tests.
@@ -107,10 +144,10 @@ Guidelines to follow when adding new E2E tests:
   both of the `GINKGO_FOCUS` and `GINKGO_SKIP` env variables can be set. The
   labels are defined in the description of the `Describe` container between
   `[]`, for example:
-
-`[upgrade]` => runs only existing upgrade tests including CAPI, CAPM3, Ironic
-and Baremetal Operator. `[remediation]` => runs only remediation and inspection
-tests. `[live-iso]` => runs only live ISO test.
+   - `[clusterctl-upgrade]` => runs only existing upgrade tests including CAPI,
+CAPM3, Ironic and Baremetal Operator.
+   - `[remediation]` => runs only remediation and inspection tests.
+   - `[k8s-upgrade]` => runs only k8s upgrade tests.
 
 For instance, to skip the upgrade E2E tests set `GINKGO_SKIP="[upgrade]"`
 

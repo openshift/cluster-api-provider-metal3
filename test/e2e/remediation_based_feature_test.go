@@ -17,15 +17,19 @@ import (
  * These tests involve simulating failure scenarios, triggering the remediation process, and then verifying that the remediation actions successfully restore the nodes to the desired state.
  *
  * Test Types:
- * 1. Metal3Remediation Test: This test specifically evaluates the Metal3 Remediation Controller's node deletion feature in the reboot remediation strategy.
+ * 1. Metal3Remediation Test: This test specifically evaluates the Metal3 Remediation Controller's node management feature in the reboot remediation strategy.
  * 2. Remediation Test: This test focuses on verifying various annotations and actions related to remediation in the CAPM3 (Cluster API Provider for Metal3).
  *
- * NodeDeletionRemediation Test:
+ * NodeRemediation Test:
  * - Retrieve the list of Metal3 machines associated with the worker nodes.
  * - Identify the target worker Metal3Machine and its corresponding BareMetalHost (BMH) object.
  * - Create a Metal3Remediation resource with a remediation strategy of type "Reboot" and a specified timeout.
  * - Wait for the associated virtual machine (VM) to power off.
- * - Wait for the node (VM) to be deleted.
+ * - If kubernetes server version < 1.28:
+ *   - Wait for the node (VM) to be deleted.
+ * - If kubernetes server version >= 1.28:
+ *   - Wait for the out-of-service taint to be set on the node.
+ *   - Wait for the out-of-service taint to be removed from the node.
  * - Wait for the VM to power on.
  * - Wait for the node to be in a ready state.
  * - Delete the Metal3Remediation resource.
@@ -47,7 +51,7 @@ import (
  * - Unhealthy Annotation: Mark a BMH as unhealthy and ensure it is not picked up for provisioning.
  * - Metal3 Data Template: Create a new Metal3DataTemplate (M3DT), create a new Metal3MachineTemplate (M3MT), and update the MachineDeployment (MD) to point to the new M3MT. Wait for the old worker to deprovision.
  */
-var _ = Describe("Testing nodes remediation [remediation] [features]", func() {
+var _ = Describe("Testing nodes remediation [remediation] [features]", Label("remediation", "features"), func() {
 
 	var (
 		ctx                 = context.TODO()
@@ -63,7 +67,7 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", func() {
 		validateGlobals(specName)
 
 		// We need to override clusterctl apply log folder to avoid getting our credentials exposed.
-		clusterctlLogFolder = filepath.Join(os.TempDir(), "clusters", bootstrapClusterProxy.GetName())
+		clusterctlLogFolder = filepath.Join(os.TempDir(), "target_cluster_logs", bootstrapClusterProxy.GetName())
 	})
 
 	It("Should create a cluster and run remediation based tests", func() {
@@ -71,9 +75,9 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", func() {
 		targetCluster, _ = createTargetCluster(e2eConfig.GetVariable("KUBERNETES_VERSION"))
 
 		// Run Metal3Remediation test first, doesn't work after remediation...
-		By("Running node deletion remediation tests")
-		nodeDeletionRemediation(ctx, func() NodeDeletionRemediation {
-			return NodeDeletionRemediation{
+		By("Running node remediation tests")
+		nodeRemediation(ctx, func() NodeRemediation {
+			return NodeRemediation{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
 				TargetCluster:         targetCluster,
@@ -86,9 +90,11 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", func() {
 		By("Running healthcheck tests")
 		healthcheck(ctx, func() HealthCheckInput {
 			return HealthCheckInput{
+				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
 				ClusterName:           clusterName,
 				Namespace:             namespace,
+				SpecName:              specName,
 			}
 		})
 
@@ -111,13 +117,7 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", func() {
 		ListMetal3Machines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMachines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListNodes(ctx, targetCluster.GetClient())
-		// Abort the test in case of failure and keepTestEnv is true during keep VM trigger
-		if CurrentSpecReport().Failed() {
-			if keepTestEnv {
-				AbortSuite("e2e test aborted and skip cleaning the VM", 4)
-			}
-		}
-		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
+		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
 	})
 
 })
