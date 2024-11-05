@@ -439,6 +439,20 @@ const (
 	//
 	// The annotation is added to a "Bookmark" event.
 	InitialEventsAnnotationKey = "k8s.io/initial-events-end"
+
+	// InitialEventsListBlueprintAnnotationKey is the name of the key
+	// where an empty, versioned list is encoded in the requested format
+	// (e.g., protobuf, JSON, CBOR), then base64-encoded and stored as a string.
+	//
+	// This encoding matches the request encoding format, which may be
+	// protobuf, JSON, CBOR, or others, depending on what the client requested.
+	// This ensures that the reconstructed list can be processed through the
+	// same decoder chain that would handle a standard LIST call response.
+	//
+	// The annotation is added to a "Bookmark" event and is used by clients
+	// to guarantee the format consistency when reconstructing
+	// the list during WatchList processing.
+	InitialEventsListBlueprintAnnotationKey = "kubernetes.io/initial-events-list-blueprint"
 )
 
 // resourceVersionMatch specifies how the resourceVersion parameter is applied. resourceVersionMatch
@@ -1276,6 +1290,33 @@ const (
 	LabelSelectorOpNotIn        LabelSelectorOperator = "NotIn"
 	LabelSelectorOpExists       LabelSelectorOperator = "Exists"
 	LabelSelectorOpDoesNotExist LabelSelectorOperator = "DoesNotExist"
+)
+
+// FieldSelectorRequirement is a selector that contains values, a key, and an operator that
+// relates the key and values.
+type FieldSelectorRequirement struct {
+	// key is the field selector key that the requirement applies to.
+	Key string `json:"key" protobuf:"bytes,1,opt,name=key"`
+	// operator represents a key's relationship to a set of values.
+	// Valid operators are In, NotIn, Exists, DoesNotExist.
+	// The list of operators may grow in the future.
+	Operator FieldSelectorOperator `json:"operator" protobuf:"bytes,2,opt,name=operator,casttype=FieldSelectorOperator"`
+	// values is an array of string values.
+	// If the operator is In or NotIn, the values array must be non-empty.
+	// If the operator is Exists or DoesNotExist, the values array must be empty.
+	// +optional
+	// +listType=atomic
+	Values []string `json:"values,omitempty" protobuf:"bytes,3,rep,name=values"`
+}
+
+// A field selector operator is the set of operators that can be used in a selector requirement.
+type FieldSelectorOperator string
+
+const (
+	FieldSelectorOpIn           FieldSelectorOperator = "In"
+	FieldSelectorOpNotIn        FieldSelectorOperator = "NotIn"
+	FieldSelectorOpExists       FieldSelectorOperator = "Exists"
+	FieldSelectorOpDoesNotExist FieldSelectorOperator = "DoesNotExist"
 )
 
 // ManagedFieldsEntry is a workflow-id, a FieldSet and the group version of the resource
