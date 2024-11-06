@@ -22,15 +22,14 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/pkg/errors"
-
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
-
+	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -41,10 +40,14 @@ import (
 // Metal3RemediationReconciler reconciles a Metal3Remediation object.
 type Metal3RemediationReconciler struct {
 	client.Client
-	ManagerFactory baremetal.ManagerFactoryInterface
-	Log            logr.Logger
+	Tracker                    *remote.ClusterCacheTracker
+	ManagerFactory             baremetal.ManagerFactoryInterface
+	Log                        logr.Logger
+	IsOutOfServiceTaintEnabled bool
 }
 
+// +kubebuilder:rbac:groups=core,resources=pods,verbs=list
+// +kubebuilder:rbac:groups=storage.k8s.io,resources=volumeattachments,verbs=list;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=metal3remediations,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=metal3remediations/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines;machines/status,verbs=get;list;watch;create;update;patch;delete
@@ -208,15 +211,25 @@ func (r *Metal3RemediationReconciler) reconcileNormal(ctx context.Context,
 			// Restore node if available and not done yet
 			if remediationMgr.HasFinalizer() {
 				if node != nil {
-					// Node was recreated, restore annotations and labels
-					r.Log.Info("Restoring the node")
-					if err := r.restoreNode(ctx, remediationMgr, clusterClient, node); err != nil {
-						return ctrl.Result{}, err
+					if r.IsOutOfServiceTaintEnabled {
+						if remediationMgr.HasOutOfServiceTaint(node) {
+							if err := remediationMgr.RemoveOutOfServiceTaint(ctx, clusterClient, node); err != nil {
+								return ctrl.Result{}, errors.Wrapf(err, "error removing out-of-service taint from node %s", node.Name)
+							}
+						}
+					} else {
+						// Node was recreated, restore annotations and labels
+						r.Log.Info("Restoring the node")
+						if err := r.restoreNode(ctx, remediationMgr, clusterClient, node); err != nil {
+							return ctrl.Result{}, err
+						}
 					}
 
 					// clean up
 					r.Log.Info("Remediation done, cleaning up remediation CR")
-					remediationMgr.RemoveNodeBackupAnnotations()
+					if !r.IsOutOfServiceTaintEnabled {
+						remediationMgr.RemoveNodeBackupAnnotations()
+					}
 					remediationMgr.UnsetFinalizer()
 					return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 				} else if isNodeForbidden {
@@ -321,29 +334,43 @@ func (r *Metal3RemediationReconciler) remediateRebootStrategy(ctx context.Contex
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
-	// if we have a node, store annotations and labels, and delete it
 	if node != nil {
-		/*
-			Delete the node only after the host is powered off. Otherwise, if we would delete the node
-			when the host is powered on, the scheduler would assign the workload to other nodes, with the
-			possibility that two instances of the same application are running in parallel. This might result
-			in corruption or other issues for applications with singleton requirement. After the host is powered
-			off we know for sure that it is safe to re-assign that workload to other nodes.
-		*/
-		modified := r.backupNode(remediationMgr, node)
-		if modified {
-			r.Log.Info("Backing up node")
-			// save annotations before deleting node
-			return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+		if r.IsOutOfServiceTaintEnabled {
+			if !remediationMgr.HasOutOfServiceTaint(node) {
+				if err := remediationMgr.AddOutOfServiceTaint(ctx, clusterClient, node); err != nil {
+					return ctrl.Result{}, err
+				}
+				// If we immediately check if the node is drained, we might find no pods with
+				// Deletion timestamp set yet and assume the node is drained.
+				return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+			}
+
+			if !remediationMgr.IsNodeDrained(ctx, clusterClient, node) {
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+		} else {
+			/*
+				Delete the node only after the host is powered off. Otherwise, if we would delete the node
+				when the host is powered on, the scheduler would assign the workload to other nodes, with the
+				possibility that two instances of the same application are running in parallel. This might result
+				in corruption or other issues for applications with singleton requirement. After the host is powered
+				off we know for sure that it is safe to re-assign that workload to other nodes.
+			*/
+			modified := r.backupNode(remediationMgr, node)
+			if modified {
+				r.Log.Info("Backing up node")
+				// save annotations before deleting node
+				return ctrl.Result{RequeueAfter: 1 * time.Second}, nil
+			}
+			r.Log.Info("Deleting node")
+			err := remediationMgr.DeleteNode(ctx, clusterClient, node)
+			if err != nil {
+				r.Log.Error(err, "error deleting node")
+				return ctrl.Result{}, errors.Wrap(err, "error deleting node")
+			}
+			// wait until node is gone
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 		}
-		r.Log.Info("Deleting node")
-		err := remediationMgr.DeleteNode(ctx, clusterClient, node)
-		if err != nil {
-			r.Log.Error(err, "error deleting node")
-			return ctrl.Result{}, errors.Wrap(err, "error deleting node")
-		}
-		// wait until node is gone
-		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 	}
 
 	// we are done for this phase, switch to waiting for power on and the node restore
@@ -371,14 +398,14 @@ func (r *Metal3RemediationReconciler) backupNode(remediationMgr baremetal.Remedi
 }
 
 func (r *Metal3RemediationReconciler) restoreNode(ctx context.Context, remediationMgr baremetal.RemediationManagerInterface,
-	clusterClient v1.CoreV1Interface, node *corev1.Node) error {
+	clusterClient v1.CoreV1Interface, node *corev1.Node) error { //nolint:unparam
 	annotations, labels := remediationMgr.GetNodeBackupAnnotations()
 	if annotations == "" && labels == "" {
 		return nil
 	}
 
 	// set annotations
-	if len(annotations) > 0 {
+	if annotations != "" {
 		nodeAnnotations, err := unmarshal(annotations)
 		if err != nil {
 			r.Log.Error(err, "failed to unmarshal node annotations", "node", node.Name, "annotations", annotations)
@@ -391,7 +418,7 @@ func (r *Metal3RemediationReconciler) restoreNode(ctx context.Context, remediati
 	}
 
 	// set labels
-	if len(labels) > 0 {
+	if labels != "" {
 		nodeLabels, err := unmarshal(labels)
 		if err != nil {
 			r.Log.Error(err, "failed to unmarshal node labels", "node", node.Name, "labels", labels)

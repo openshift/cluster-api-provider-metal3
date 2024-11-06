@@ -92,9 +92,34 @@ provide any backward compatible guarantees.
 
 #### Backporting
 
-We only accept backports of critical bugs, security issues, or bugs without easy
-workarounds, any backport MUST not be breaking for either API or behavioral
-changes. We generally do not accept PRs against older release branches.
+We generally do not accept PRs directly against release branches, while we might
+accept backports of fixes/changes already merged into the main branch.
+
+We generally allow backports of following changes to all supported branches:
+
+- Critical bug fixes, security issue fixes, or fixes for bugs without easy
+workarounds.
+- Dependency bumps for CVE (usually limited to CVE resolution; backports of
+non-CVE related version bumps are considered exceptions to be evaluated case by
+case)
+- Changes required to support new Kubernetes patch versions, when possible.
+- Changes to use the latest Go patch version to build controller images.
+- Changes to bump the Go minor version used to build controller images, if the
+Go minor version of a supported branch goes out of support (e.g. to pick up
+bug and CVE fixes). This has no impact on users importing Cluster API Provider
+Metal3 as we won't modify the version in go.mod and the version in the Makefile
+does not affect them.
+- Improvements to existing docs
+- Improvements to the test framework
+
+Like any other activity in the project, backporting a fix/change is a
+community-driven effort and requires that someone volunteers to own the task.
+In most cases, the cherry-pick bot can (and should) be used to automate
+opening a cherry-pick PR.
+
+We generally do not accept backports to CAPM3 release branches that are out of
+support. Check the [Version support](https://github.com/metal3-io/metal3-docs/blob/main/docs/user-guide/src/version_support.md)
+guide for reference.
 
 ## Branches
 
@@ -138,16 +163,17 @@ is defined above.
   API version reaches EOL.
 - We will maintain test coverage for all supported minor releases and for one
   additional release for the current stable API version in case we have to do an
-  emergency patch release. For example, if v1.5 and v1.4 are currently
-  supported, we will also maintain test coverage for v1.3 for one additional
-  release cycle. When v1.6 is released, tests for v1.3 will be removed.
+  emergency patch release. For example, if v1.7 and v1.6 are currently
+  supported, we will also maintain test coverage for v1.5 for one additional
+  release cycle. When v1.7 is released, tests for v1.4 will be removed.
 
 <!-- markdownlint-disable MD013 -->
 
 | Minor Release | API Version  | Supported Until                              |
 | ------------- | ------------ | -------------------------------------------- |
+| v1.7.x        | **v1beta1**  | when v1.9.0 will be released                 |
 | v1.6.x        | **v1beta1**  | when v1.8.0 will be released                 |
-| v1.5.x        | **v1beta1**  | when v1.7.0 will be released                 |
+| v1.5.x        | **v1beta1**  | EOL since 2024-04-18                         |
 | v1.4.x        | **v1beta1**  | EOL since 2024-01-10                         |
 | v1.3.x        | **v1beta1**  | EOL since 2023-09-27                         |
 | v1.2.x        | **v1beta1**  | EOL since 2023-05-17                         |

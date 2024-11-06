@@ -24,11 +24,11 @@ KUSTOMIZE="${SOURCE_DIR}/../hack/tools/bin/kustomize"
 
 # Cluster.
 export CLUSTER_NAME="${CLUSTER_NAME:-test1}"
-export KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.29.0}"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.31.2}"
 export CLUSTER_APIENDPOINT_HOST="${CLUSTER_APIENDPOINT_HOST:-192.168.111.249}"
 export CLUSTER_APIENDPOINT_PORT="${CLUSTER_APIENDPOINT_PORT:-6443}"
-export IMAGE_URL="${IMAGE_URL:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.29.0-raw.img}"
-export IMAGE_CHECKSUM="${IMAGE_CHECKSUM:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.29.0-raw.img.sha256sum}"
+export IMAGE_URL="${IMAGE_URL:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img}"
+export IMAGE_CHECKSUM="${IMAGE_CHECKSUM:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img.sha256sum}"
 export IMAGE_CHECKSUM_TYPE="${IMAGE_CHECKSUM_TYPE:-sha256}"
 export IMAGE_FORMAT="${IMAGE_FORMAT:-raw}"
 
@@ -47,6 +47,7 @@ COMPONENTS_METAL3_GENERATED_FILE=${SOURCE_DIR}/provider-components/infrastructur
 
 PROVIDER_COMPONENTS_GENERATED_FILE=${OUTPUT_DIR}/provider-components.yaml
 CLUSTER_GENERATED_FILE=${OUTPUT_DIR}/cluster.yaml
+CLUSTERCLASS_GENERATED_FILE=${OUTPUT_DIR}/clusterclass.yaml
 CONTROLPLANE_GENERATED_FILE=${OUTPUT_DIR}/controlplane.yaml
 MACHINEDEPLOYMENT_GENERATED_FILE=${OUTPUT_DIR}/machinedeployment.yaml
 METAL3PLANE_GENERATED_FILE=${OUTPUT_DIR}/metal3plane.yaml
@@ -54,6 +55,7 @@ METAL3CRDS_GENERATED_FILE=${OUTPUT_DIR}/metal3crds.yaml
 
 # Overwrite flag.
 OVERWRITE=0
+
 
 SCRIPT=$(basename "$0")
 while test $# -gt 0; do
@@ -94,13 +96,27 @@ ENVSUBST="${SOURCE_DIR}/envsubst-go"
 curl --fail -Ss -L -o "${ENVSUBST}" https://github.com/a8m/envsubst/releases/download/v1.2.0/envsubst-"$(uname -s)"-"$(uname -m)"
 chmod +x "$ENVSUBST"
 
-# Generate cluster resources.
-"$KUSTOMIZE" build "${SOURCE_DIR}/cluster" | "$ENVSUBST" >"${CLUSTER_GENERATED_FILE}"
-echo "Generated ${CLUSTER_GENERATED_FILE}"
+if [ -n "${CLUSTER_TOPOLOGY:-}" ]; then
+  # Generate clusterclass resources.
+  "$ENVSUBST" -i "${SOURCE_DIR}/templates/clusterclass.yaml" >"${CLUSTERCLASS_GENERATED_FILE}"
+  echo "Generated ${CLUSTERCLASS_GENERATED_FILE}"
 
-# Generate controlplane resources.
-"$KUSTOMIZE" build "${SOURCE_DIR}/controlplane" | "$ENVSUBST" >"${CONTROLPLANE_GENERATED_FILE}"
-echo "Generated ${CONTROLPLANE_GENERATED_FILE}"
+  # Generate cluster resources.
+  "$ENVSUBST" -i "${SOURCE_DIR}/templates/cluster.yaml" >"${CLUSTER_GENERATED_FILE}"
+  echo "Generated ${CLUSTER_GENERATED_FILE}"
+else
+  # Generate cluster resources.
+  "$KUSTOMIZE" build "${SOURCE_DIR}/cluster" | "$ENVSUBST" >"${CLUSTER_GENERATED_FILE}"
+  echo "Generated ${CLUSTER_GENERATED_FILE}"
+
+  # Generate controlplane resources.
+  "$KUSTOMIZE" build "${SOURCE_DIR}/controlplane" | "$ENVSUBST" >"${CONTROLPLANE_GENERATED_FILE}"
+  echo "Generated ${CONTROLPLANE_GENERATED_FILE}"
+
+  # Generate machinedeployment resources.
+  "$KUSTOMIZE" build "${SOURCE_DIR}/machinedeployment" | "$ENVSUBST" >>"${MACHINEDEPLOYMENT_GENERATED_FILE}"
+  echo "Generated ${MACHINEDEPLOYMENT_GENERATED_FILE}"
+fi
 
 # Generate metal3crds resources.
 "$KUSTOMIZE" build "${SOURCE_DIR}/metal3crds" | "$ENVSUBST" >"${METAL3CRDS_GENERATED_FILE}"
@@ -110,12 +126,8 @@ echo "Generated ${METAL3CRDS_GENERATED_FILE}"
 "$KUSTOMIZE" build "${SOURCE_DIR}/metal3plane" | "$ENVSUBST" >"${METAL3PLANE_GENERATED_FILE}"
 echo "Generated ${METAL3PLANE_GENERATED_FILE}"
 
-# Generate machinedeployment resources.
-"$KUSTOMIZE" build "${SOURCE_DIR}/machinedeployment" | "$ENVSUBST" >>"${MACHINEDEPLOYMENT_GENERATED_FILE}"
-echo "Generated ${MACHINEDEPLOYMENT_GENERATED_FILE}"
-
 # Get Cert-manager provider components file
-curl --fail -Ss -L -o "${COMPONENTS_CERT_MANAGER_GENERATED_FILE}" https://github.com/cert-manager/cert-manager/releases/download/v1.13.0/cert-manager.yaml
+curl --fail -Ss -L -o "${COMPONENTS_CERT_MANAGER_GENERATED_FILE}" https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
 echo "Downloaded ${COMPONENTS_CERT_MANAGER_GENERATED_FILE}"
 
 # Generate Cluster API provider components file.

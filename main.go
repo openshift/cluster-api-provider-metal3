@@ -18,16 +18,14 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"math/rand"
 	"os"
-	"strings"
+	"strconv"
 	"time"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1alpha5 "github.com/metal3-io/cluster-api-provider-metal3/api/v1alpha5"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	infraremote "github.com/metal3-io/cluster-api-provider-metal3/baremetal/remote"
@@ -40,16 +38,17 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	cliflag "k8s.io/component-base/cli/flag"
 	"k8s.io/component-base/logs"
 	logsv1 "k8s.io/component-base/logs/api/v1"
 	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2/klogr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
 	caipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/util/flags"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,30 +56,27 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
-	// +kubebuilder:scaffold:imports
 )
 
 // Constants for TLS versions.
 const (
-	TLSVersion12 = "TLS12"
-	TLSVersion13 = "TLS13"
+	// out-of-service taint strategy (GA from 1.28).
+	minK8sMajorVersionOutOfServiceTaint   = 1
+	minK8sMinorVersionGAOutOfServiceTaint = 28
 )
-
-type TLSOptions struct {
-	TLSMaxVersion   string
-	TLSMinVersion   string
-	TLSCipherSuites string
-}
 
 var (
 	myscheme                         = runtime.NewScheme()
 	setupLog                         = ctrl.Log.WithName("setup")
+	controllerName                   = "cluster-api-provider-metal3-manager"
 	waitForMetal3Controller          = false
 	enableLeaderElection             bool
 	leaderElectionLeaseDuration      time.Duration
 	leaderElectionRenewDeadline      time.Duration
 	leaderElectionRetryPeriod        time.Duration
 	syncPeriod                       time.Duration
+	clusterCacheTrackerClientQPS     float32
+	clusterCacheTrackerClientBurst   int
 	metal3MachineConcurrency         int
 	metal3ClusterConcurrency         int
 	metal3DataTemplateConcurrency    int
@@ -97,9 +93,7 @@ var (
 	watchFilterValue                 string
 	logOptions                       = logs.NewOptions()
 	enableBMHNameBasedPreallocation  bool
-	tlsOptions                       = TLSOptions{}
-	diagnosticsOptions               = flags.DiagnosticsOptions{}
-	tlsSupportedVersions             = []string{TLSVersion12, TLSVersion13}
+	managerOptions                   = flags.ManagerOptions{}
 )
 
 func init() {
@@ -107,7 +101,6 @@ func init() {
 	_ = ipamv1.AddToScheme(myscheme)
 	_ = caipamv1.AddToScheme(myscheme)
 	_ = infrav1.AddToScheme(myscheme)
-	_ = infrav1alpha5.AddToScheme(myscheme)
 	_ = clusterv1.AddToScheme(myscheme)
 	_ = bmov1alpha1.AddToScheme(myscheme)
 }
@@ -131,15 +124,13 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.QPS = restConfigQPS
 	restConfig.Burst = restConfigBurst
-	restConfig.UserAgent = "cluster-api-provider-metal3-manager"
+	restConfig.UserAgent = "controllerName"
 
-	tlsOptionOverrides, err := GetTLSOptionOverrideFuncs(tlsOptions)
+	tlsOptions, metricsOptions, err := flags.GetManagerOptions(managerOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to add TLS settings to the webhook server")
+		setupLog.Error(err, "Unable to start manager: invalid flags")
 		os.Exit(1)
 	}
-
-	diagnosticsOpts := flags.GetDiagnosticsOptions(diagnosticsOptions)
 
 	var watchNamespaces map[string]cache.Config
 	if watchNamespace != "" {
@@ -160,7 +151,7 @@ func main() {
 		LeaderElectionID:           "controller-leader-election-capm3",
 		LeaderElectionResourceLock: resourcelock.LeasesResourceLock,
 		HealthProbeBindAddress:     healthAddr,
-		Metrics:                    diagnosticsOpts,
+		Metrics:                    *metricsOptions,
 		Cache: cache.Options{
 			DefaultNamespaces: watchNamespaces,
 			SyncPeriod:        &syncPeriod,
@@ -186,7 +177,7 @@ func main() {
 			webhook.Options{
 				Port:    webhookPort,
 				CertDir: webhookCertDir,
-				TLSOpts: tlsOptionOverrides,
+				TLSOpts: tlsOptions,
 			},
 		),
 	})
@@ -280,6 +271,20 @@ func initFlags(fs *pflag.FlagSet) {
 		"The minimum interval at which watched resources are reconciled (e.g. 15m)",
 	)
 
+	fs.Float32Var(
+		&clusterCacheTrackerClientQPS,
+		"clustercachetracker-client-qps",
+		20,
+		"Maximum queries per second from the cluster cache tracker clients to the Kubernetes API server of workload clusters.",
+	)
+
+	fs.IntVar(
+		&clusterCacheTrackerClientBurst,
+		"clustercachetracker-client-burst",
+		30,
+		"Maximum number of queries that should be allowed in one burst from the cluster cache tracker clients to the Kubernetes API server of workload clusters.",
+	)
+
 	fs.IntVar(
 		&webhookPort,
 		"webhook-port",
@@ -327,25 +332,8 @@ func initFlags(fs *pflag.FlagSet) {
 
 	fs.IntVar(&restConfigBurst, "kube-api-burst", 30,
 		"Maximum number of queries that should be allowed in one burst from the controller client to the Kubernetes API server. Default 30")
-	fs.StringVar(&tlsOptions.TLSMinVersion, "tls-min-version", TLSVersion12,
-		"The minimum TLS version in use by the webhook server.\n"+
-			fmt.Sprintf("Possible values are %s.", strings.Join(tlsSupportedVersions, ", ")),
-	)
 
-	fs.StringVar(&tlsOptions.TLSMaxVersion, "tls-max-version", TLSVersion13,
-		"The maximum TLS version in use by the webhook server.\n"+
-			fmt.Sprintf("Possible values are %s.", strings.Join(tlsSupportedVersions, ", ")),
-	)
-
-	tlsCipherPreferredValues := cliflag.PreferredTLSCipherNames()
-	tlsCipherInsecureValues := cliflag.InsecureTLSCipherNames()
-	fs.StringVar(&tlsOptions.TLSCipherSuites, "tls-cipher-suites", "",
-		"Comma-separated list of cipher suites for the webhook server. "+
-			"If omitted, the default Go cipher suites will be used. \n"+
-			"Preferred values: "+strings.Join(tlsCipherPreferredValues, ", ")+". \n"+
-			"Insecure values: "+strings.Join(tlsCipherInsecureValues, ", ")+".")
-
-	flags.AddDiagnosticsOptions(fs, &diagnosticsOptions)
+	flags.AddManagerOptions(fs, &managerOptions)
 }
 
 func waitForAPIs(cfg *rest.Config) error {
@@ -386,8 +374,37 @@ func setupChecks(mgr ctrl.Manager) {
 }
 
 func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
+	secretCachingClient, err := client.New(mgr.GetConfig(), client.Options{
+		HTTPClient: mgr.GetHTTPClient(),
+		Cache: &client.CacheOptions{
+			Reader: mgr.GetCache(),
+		},
+	})
+	if err != nil {
+		setupLog.Error(err, "unable to create secret caching client")
+		os.Exit(1)
+	}
+
+	// Set up a ClusterCacheTracker and ClusterCacheReconciler to provide to controllers
+	// requiring a connection to a remote cluster
+	tracker, err := remote.NewClusterCacheTracker(
+		mgr,
+		remote.ClusterCacheTrackerOptions{
+			SecretCachingClient: secretCachingClient,
+			ControllerName:      controllerName,
+			Log:                 &ctrl.Log,
+			ClientQPS:           clusterCacheTrackerClientQPS,
+			ClientBurst:         clusterCacheTrackerClientBurst,
+		},
+	)
+	if err != nil {
+		setupLog.Error(err, "Unable to create cluster cache tracker")
+		os.Exit(1)
+	}
+
 	if err := (&controllers.Metal3MachineReconciler{
 		Client:           mgr.GetClient(),
+		Tracker:          tracker,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3Machine"),
 		CapiClientGetter: infraremote.NewClusterClient,
@@ -399,6 +416,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 
 	if err := (&controllers.Metal3ClusterReconciler{
 		Client:           mgr.GetClient(),
+		Tracker:          tracker,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3Cluster"),
 		WatchFilterValue: watchFilterValue,
@@ -409,6 +427,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 
 	if err := (&controllers.Metal3DataTemplateReconciler{
 		Client:           mgr.GetClient(),
+		Tracker:          tracker,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3DataTemplate"),
 		WatchFilterValue: watchFilterValue,
@@ -419,6 +438,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 
 	if err := (&controllers.Metal3DataReconciler{
 		Client:           mgr.GetClient(),
+		Tracker:          tracker,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3Data"),
 		WatchFilterValue: watchFilterValue,
@@ -429,6 +449,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 
 	if err := (&controllers.Metal3LabelSyncReconciler{
 		Client:           mgr.GetClient(),
+		Tracker:          tracker,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3LabelSync"),
 		CapiClientGetter: infraremote.NewClusterClient,
@@ -439,6 +460,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 
 	if err := (&controllers.Metal3MachineTemplateReconciler{
 		Client:         mgr.GetClient(),
+		Tracker:        tracker,
 		ManagerFactory: baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:            ctrl.Log.WithName("controllers").WithName("Metal3MachineTemplate"),
 	}).SetupWithManager(ctx, mgr, concurrency(metal3MachineTemplateConcurrency)); err != nil {
@@ -446,10 +468,16 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
+	isOOSTSupported, err := isOutOfServiceTaintSupported(mgr.GetConfig())
+	if err != nil {
+		setupLog.Error(err, "unable to detect support for Out-of-service taint")
+	}
 	if err := (&controllers.Metal3RemediationReconciler{
-		Client:         mgr.GetClient(),
-		ManagerFactory: baremetal.NewManagerFactory(mgr.GetClient()),
-		Log:            ctrl.Log.WithName("controllers").WithName("Metal3Remediation"),
+		Client:                     mgr.GetClient(),
+		Tracker:                    tracker,
+		ManagerFactory:             baremetal.NewManagerFactory(mgr.GetClient()),
+		Log:                        ctrl.Log.WithName("controllers").WithName("Metal3Remediation"),
+		IsOutOfServiceTaintEnabled: isOOSTSupported,
 	}).SetupWithManager(ctx, mgr, concurrency(metal3RemediationConcurrency)); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Metal3Remediation")
 		os.Exit(1)
@@ -496,80 +524,51 @@ func setupWebhooks(mgr ctrl.Manager) {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3RemediationTemplate")
 		os.Exit(1)
 	}
+
+	if err := (&infrav1.Metal3ClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3ClusterTemplate")
+		os.Exit(1)
+	}
 }
 
 func concurrency(c int) controller.Options {
 	return controller.Options{MaxConcurrentReconciles: c}
 }
 
-// GetTLSOptionOverrideFuncs returns a list of TLS configuration overrides to be used
-// by the webhook server.
-func GetTLSOptionOverrideFuncs(options TLSOptions) ([]func(*tls.Config), error) {
-	var tlsOptions []func(config *tls.Config)
-
-	tlsMinVersion, err := GetTLSVersion(options.TLSMinVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	tlsMaxVersion, err := GetTLSVersion(options.TLSMaxVersion)
-	if err != nil {
-		return nil, err
-	}
-
-	if tlsMaxVersion != 0 && tlsMinVersion > tlsMaxVersion {
-		return nil, fmt.Errorf("TLS version flag min version (%s) is greater than max version (%s)",
-			options.TLSMinVersion, options.TLSMaxVersion)
-	}
-
-	tlsOptions = append(tlsOptions, func(cfg *tls.Config) {
-		cfg.MinVersion = tlsMinVersion
-	})
-
-	tlsOptions = append(tlsOptions, func(cfg *tls.Config) {
-		cfg.MaxVersion = tlsMaxVersion
-	})
-	// Cipher suites should not be set if empty.
-	if tlsMinVersion >= tls.VersionTLS13 &&
-		options.TLSCipherSuites != "" {
-		setupLog.Info("warning: Cipher suites should not be set for TLS version 1.3. Ignoring ciphers")
-		options.TLSCipherSuites = ""
-	}
-
-	if options.TLSCipherSuites != "" {
-		tlsCipherSuites := strings.Split(options.TLSCipherSuites, ",")
-		suites, err := cliflag.TLSCipherSuites(tlsCipherSuites)
-		if err != nil {
-			return nil, err
+func isOutOfServiceTaintSupported(config *rest.Config) (bool, error) {
+	cs, err := kubernetes.NewForConfig(config)
+	if err != nil || cs == nil {
+		if cs == nil {
+			err = fmt.Errorf("k8s client set is nil")
 		}
+		setupLog.Error(err, "unable to get k8s client")
+		return false, err
+	}
 
-		insecureCipherValues := cliflag.InsecureTLSCipherNames()
-		for _, cipher := range tlsCipherSuites {
-			for _, insecureCipherName := range insecureCipherValues {
-				if insecureCipherName == cipher {
-					setupLog.Info(fmt.Sprintf("warning: use of insecure cipher '%s' detected.", cipher))
-				}
-			}
+	k8sVersion, err := cs.Discovery().ServerVersion()
+	if err != nil || k8sVersion == nil {
+		if k8sVersion == nil {
+			err = fmt.Errorf("k8s server version is nil")
 		}
-		tlsOptions = append(tlsOptions, func(cfg *tls.Config) {
-			cfg.CipherSuites = suites
-		})
+		setupLog.Error(err, "unable to get k8s server version")
+		return false, err
 	}
 
-	return tlsOptions, nil
-}
-
-// GetTLSVersion returns the corresponding tls.Version or error.
-func GetTLSVersion(version string) (uint16, error) {
-	var v uint16
-
-	switch version {
-	case TLSVersion12:
-		v = tls.VersionTLS12
-	case TLSVersion13:
-		v = tls.VersionTLS13
-	default:
-		return 0, fmt.Errorf("unexpected TLS version %q (must be one of: %s)", version, strings.Join(tlsSupportedVersions, ", "))
+	major, err := strconv.Atoi(k8sVersion.Major)
+	if err != nil {
+		setupLog.Error(err, "could not parse k8s server major version", "major version", k8sVersion.Major)
+		return false, err
 	}
-	return v, nil
+	minor, err := strconv.Atoi(k8sVersion.Minor)
+	if err != nil {
+		setupLog.Error(err, "could not convert k8s server minor version", "minor version", k8sVersion.Minor)
+		return false, err
+	}
+
+	isSupported := major > minK8sMajorVersionOutOfServiceTaint ||
+		(major == minK8sMajorVersionOutOfServiceTaint &&
+			minor >= minK8sMinorVersionGAOutOfServiceTaint)
+
+	setupLog.Info("out-of-service taint", "supported", isSupported)
+	return isSupported, nil
 }
