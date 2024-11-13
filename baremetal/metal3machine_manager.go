@@ -174,11 +174,8 @@ func (m *MachineManager) IsProvisioned() bool {
 
 // IsBootstrapReady checks if the machine is given Bootstrap data.
 func (m *MachineManager) IsBootstrapReady() bool {
-	if m.Machine.Spec.Bootstrap.ConfigRef != nil {
-		return m.Machine.Status.BootstrapReady
-	}
-
-	return m.Machine.Spec.Bootstrap.DataSecretName != nil
+	m.Log.Info("metal3machine manager IsBootstrapReady()", "ready", m.Machine.Status.BootstrapReady, "bootstrap.configref", m.Machine.Spec.Bootstrap.ConfigRef, "secret name", m.Machine.Spec.Bootstrap.DataSecretName)
+	return m.Machine.Status.BootstrapReady
 }
 
 // isControlPlane returns true if the machine is a control plane.
