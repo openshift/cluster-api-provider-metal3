@@ -32,6 +32,7 @@ import (
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/klog/v2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -44,13 +45,13 @@ import (
 	runtimev1 "sigs.k8s.io/cluster-api/exp/runtime/api/v1alpha1"
 	runtimehooksv1 "sigs.k8s.io/cluster-api/exp/runtime/hooks/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/feature"
-	tlog "sigs.k8s.io/cluster-api/internal/log"
 	runtimeclient "sigs.k8s.io/cluster-api/internal/runtime/client"
 	"sigs.k8s.io/cluster-api/internal/topology/variables"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/conversion"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/cluster-api/util/paused"
 	"sigs.k8s.io/cluster-api/util/predicates"
 )
 
@@ -70,15 +71,22 @@ type Reconciler struct {
 }
 
 func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, options controller.Options) error {
+	if r.Client == nil {
+		return errors.New("Client must not be nil")
+	}
+	if feature.Gates.Enabled(feature.RuntimeSDK) && r.RuntimeClient == nil {
+		return errors.New("RuntimeClient must not be nil")
+	}
+
+	predicateLog := ctrl.LoggerFrom(ctx).WithValues("controller", "clusterclass")
 	err := ctrl.NewControllerManagedBy(mgr).
 		For(&clusterv1.ClusterClass{}).
-		Named("clusterclass").
 		WithOptions(options).
 		Watches(
 			&runtimev1.ExtensionConfig{},
 			handler.EnqueueRequestsFromMapFunc(r.extensionConfigToClusterClass),
 		).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), r.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceHasFilterLabel(mgr.GetScheme(), predicateLog, r.WatchFilterValue)).
 		Complete(r)
 
 	if err != nil {
@@ -88,8 +96,6 @@ func (r *Reconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opt
 }
 
 func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
-	log := ctrl.LoggerFrom(ctx)
-
 	clusterClass := &clusterv1.ClusterClass{}
 	if err := r.Client.Get(ctx, req.NamespacedName, clusterClass); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -99,10 +105,8 @@ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Re
 		return ctrl.Result{}, err
 	}
 
-	// Return early if the ClusterClass is paused.
-	if annotations.HasPaused(clusterClass) {
-		log.Info("Reconciliation is paused for this object")
-		return ctrl.Result{}, nil
+	if isPaused, conditionChanged, err := paused.EnsurePausedCondition(ctx, r.Client, nil, clusterClass); err != nil || isPaused || conditionChanged {
+		return ctrl.Result{}, err
 	}
 
 	if !clusterClass.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -391,7 +395,7 @@ func (r *Reconciler) reconcileExternal(ctx context.Context, clusterClass *cluste
 
 	// Set external object ControllerReference to the ClusterClass.
 	if err := controllerutil.SetOwnerReference(clusterClass, obj, r.Client.Scheme()); err != nil {
-		return errors.Wrapf(err, "failed to set ClusterClass owner reference for %s", tlog.KObj{Obj: obj})
+		return errors.Wrapf(err, "failed to set ClusterClass owner reference for %s %s", obj.GetKind(), klog.KObj(obj))
 	}
 
 	// Patch the external object.
