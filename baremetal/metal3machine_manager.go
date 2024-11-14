@@ -52,6 +52,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 const (
@@ -149,19 +150,15 @@ func NewMachineSetManager(client client.Client,
 // SetFinalizer sets finalizer.
 func (m *MachineManager) SetFinalizer() {
 	// If the Metal3Machine doesn't have finalizer, add it.
-	if !Contains(m.Metal3Machine.Finalizers, infrav1.MachineFinalizer) {
-		m.Metal3Machine.Finalizers = append(m.Metal3Machine.Finalizers,
-			infrav1.MachineFinalizer,
-		)
+	if !controllerutil.ContainsFinalizer(m.Metal3Machine, infrav1.MachineFinalizer) {
+		controllerutil.AddFinalizer(m.Metal3Machine, infrav1.MachineFinalizer)
 	}
 }
 
 // UnsetFinalizer unsets finalizer.
 func (m *MachineManager) UnsetFinalizer() {
 	// Cluster is deleted so remove the finalizer.
-	m.Metal3Machine.Finalizers = Filter(m.Metal3Machine.Finalizers,
-		infrav1.MachineFinalizer,
-	)
+	controllerutil.RemoveFinalizer(m.Metal3Machine, infrav1.MachineFinalizer)
 }
 
 // IsProvisioned checks if the metal3machine is provisioned.
@@ -174,7 +171,11 @@ func (m *MachineManager) IsProvisioned() bool {
 
 // IsBootstrapReady checks if the machine is given Bootstrap data.
 func (m *MachineManager) IsBootstrapReady() bool {
-	return m.Machine.Status.BootstrapReady
+	if m.Machine.Spec.Bootstrap.ConfigRef != nil {
+		return m.Machine.Status.BootstrapReady
+	}
+
+	return m.Machine.Spec.Bootstrap.DataSecretName != nil
 }
 
 // isControlPlane returns true if the machine is a control plane.
@@ -1643,9 +1644,7 @@ func (m *MachineManager) DissociateM3Metadata(ctx context.Context) error {
 		return nil
 	}
 
-	metal3DataClaim.Finalizers = Filter(metal3DataClaim.Finalizers,
-		infrav1.MachineFinalizer,
-	)
+	controllerutil.RemoveFinalizer(metal3DataClaim, infrav1.MachineFinalizer)
 	err = updateObject(ctx, m.client, metal3DataClaim)
 	if err != nil && !apierrors.IsNotFound(err) {
 		m.Log.Info("Unable to remove finalizers from Metal3DataClaim", "Metal3DataClaim", metal3DataClaim.Name)
