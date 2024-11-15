@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -38,13 +39,13 @@ type ObjectTracker struct {
 
 	Controller controller.Controller
 	Cache      cache.Cache
+	Scheme     *runtime.Scheme
 }
 
 // Watch uses the controller to issue a Watch only if the object hasn't been seen before.
 func (o *ObjectTracker) Watch(log logr.Logger, obj client.Object, handler handler.EventHandler, p ...predicate.Predicate) error {
-	// Consider this a no-op if the controller isn't present.
-	if o.Controller == nil {
-		return nil
+	if o.Controller == nil || o.Cache == nil || o.Scheme == nil {
+		return errors.New("all of controller, cache and scheme must be set for object tracker")
 	}
 
 	gvk := obj.GetObjectKind().GroupVersionKind()
@@ -58,7 +59,7 @@ func (o *ObjectTracker) Watch(log logr.Logger, obj client.Object, handler handle
 		o.Cache,
 		obj.DeepCopyObject().(client.Object),
 		handler,
-		append(p, predicates.ResourceNotPaused(log))...,
+		append(p, predicates.ResourceNotPaused(o.Scheme, log))...,
 	))
 	if err != nil {
 		o.m.Delete(key)

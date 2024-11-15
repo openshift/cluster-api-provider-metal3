@@ -21,7 +21,7 @@ set -o pipefail
 ROOT=$(dirname "$0")
 BIN_ROOT="${ROOT}/bin"
 
-kustomize_version=3.9.1
+kustomize_version=5.5.0
 
 goarch=amd64
 goos="unknown"
