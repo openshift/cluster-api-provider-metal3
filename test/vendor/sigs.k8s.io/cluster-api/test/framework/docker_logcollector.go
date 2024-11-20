@@ -35,16 +35,7 @@ import (
 )
 
 // DockerLogCollector collect logs from a CAPD workload cluster.
-type DockerLogCollector struct {
-	AdditionalLogs []AdditionalLogs
-}
-
-// AdditionalLogs is a struct to hold instruction for additional logs that need to be collected.
-type AdditionalLogs struct {
-	OutputFileName string
-	Command        string
-	Args           []string
-}
+type DockerLogCollector struct{}
 
 // machineContainerName return a container name using the same rule used in CAPD.
 // NOTE: if the cluster name is already included in the machine name, the cluster name is not add thus
@@ -147,7 +138,7 @@ func (k DockerLogCollector) collectLogsFromNode(ctx context.Context, outputPath 
 				"tar", "--hard-dereference", "--dereference", "--directory", containerDir, "--create", "--file", "-", ".",
 			)
 			if err != nil {
-				return errors.Wrap(err, execErr)
+				return errors.Wrapf(err, execErr)
 			}
 
 			err = os.MkdirAll(outputDir, 0750)
@@ -158,8 +149,7 @@ func (k DockerLogCollector) collectLogsFromNode(ctx context.Context, outputPath 
 			return osExec.Command("tar", "--extract", "--file", tempfileName, "--directory", outputDir).Run() //nolint:gosec // We don't care about command injection here.
 		}
 	}
-
-	collectFuncs := []func() error{
+	return errors.AggregateConcurrent([]func() error{
 		execToPathFn(
 			"journal.log",
 			"journalctl", "--no-pager", "--output=short-precise",
@@ -185,13 +175,7 @@ func (k DockerLogCollector) collectLogsFromNode(ctx context.Context, outputPath 
 			"journalctl", "--no-pager", "--output=short-precise", "-u", "containerd.service",
 		),
 		copyDirFn("/var/log/pods", "pods"),
-	}
-
-	for _, additionalLogs := range k.AdditionalLogs {
-		collectFuncs = append(collectFuncs, execToPathFn(additionalLogs.OutputFileName, additionalLogs.Command, additionalLogs.Args...))
-	}
-
-	return errors.AggregateConcurrent(collectFuncs)
+	})
 }
 
 // fileOnHost is a helper to create a file at path

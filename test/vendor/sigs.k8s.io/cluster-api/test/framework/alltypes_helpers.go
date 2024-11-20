@@ -34,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -46,9 +45,8 @@ import (
 
 // GetCAPIResourcesInput is the input for GetCAPIResources.
 type GetCAPIResourcesInput struct {
-	Lister       Lister
-	Namespace    string
-	IncludeTypes []metav1.TypeMeta
+	Lister    Lister
+	Namespace string
 }
 
 // GetCAPIResources reads all the CAPI resources in a namespace.
@@ -59,13 +57,13 @@ func GetCAPIResources(ctx context.Context, input GetCAPIResourcesInput) []*unstr
 	Expect(input.Namespace).NotTo(BeEmpty(), "input.Namespace is required for GetCAPIResources")
 
 	types := getClusterAPITypes(ctx, input.Lister)
-	types.Insert(input.IncludeTypes...)
 
 	objList := []*unstructured.Unstructured{}
-	for _, typ := range types.UnsortedList() {
+	for i := range types {
+		typeMeta := types[i]
 		typeList := new(unstructured.UnstructuredList)
-		typeList.SetAPIVersion(typ.APIVersion)
-		typeList.SetKind(typ.Kind)
+		typeList.SetAPIVersion(typeMeta.APIVersion)
+		typeList.SetKind(typeMeta.Kind)
 
 		if err := input.Lister.List(ctx, typeList, client.InNamespace(input.Namespace)); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -88,8 +86,8 @@ func GetCAPIResources(ctx context.Context, input GetCAPIResourcesInput) []*unstr
 
 // getClusterAPITypes returns the list of TypeMeta to be considered for the move discovery phase.
 // This list includes all the types belonging to CAPI providers.
-func getClusterAPITypes(ctx context.Context, lister Lister) sets.Set[metav1.TypeMeta] {
-	discoveredTypes := sets.New[metav1.TypeMeta]()
+func getClusterAPITypes(ctx context.Context, lister Lister) []metav1.TypeMeta {
+	discoveredTypes := []metav1.TypeMeta{}
 
 	crdList := &apiextensionsv1.CustomResourceDefinitionList{}
 	Eventually(func() error {
@@ -102,7 +100,7 @@ func getClusterAPITypes(ctx context.Context, lister Lister) sets.Set[metav1.Type
 				continue
 			}
 
-			discoveredTypes.Insert(metav1.TypeMeta{
+			discoveredTypes = append(discoveredTypes, metav1.TypeMeta{
 				Kind: crd.Spec.Names.Kind,
 				APIVersion: metav1.GroupVersion{
 					Group:   crd.Spec.Group,
@@ -116,10 +114,9 @@ func getClusterAPITypes(ctx context.Context, lister Lister) sets.Set[metav1.Type
 
 // DumpAllResourcesInput is the input for DumpAllResources.
 type DumpAllResourcesInput struct {
-	Lister       Lister
-	Namespace    string
-	LogPath      string
-	IncludeTypes []metav1.TypeMeta
+	Lister    Lister
+	Namespace string
+	LogPath   string
 }
 
 // DumpAllResources dumps Cluster API related resources to YAML
@@ -130,9 +127,8 @@ func DumpAllResources(ctx context.Context, input DumpAllResourcesInput) {
 	Expect(input.Namespace).NotTo(BeEmpty(), "input.Namespace is required for DumpAllResources")
 
 	resources := GetCAPIResources(ctx, GetCAPIResourcesInput{
-		Lister:       input.Lister,
-		Namespace:    input.Namespace,
-		IncludeTypes: input.IncludeTypes,
+		Lister:    input.Lister,
+		Namespace: input.Namespace,
 	})
 
 	for i := range resources {

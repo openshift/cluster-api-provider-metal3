@@ -43,6 +43,7 @@ import (
 	"sigs.k8s.io/cluster-api/internal/contract"
 	"sigs.k8s.io/cluster-api/internal/controllers/topology/cluster/structuredmerge"
 	"sigs.k8s.io/cluster-api/internal/hooks"
+	tlog "sigs.k8s.io/cluster-api/internal/log"
 	"sigs.k8s.io/cluster-api/internal/topology/check"
 	"sigs.k8s.io/cluster-api/internal/topology/clustershim"
 	topologynames "sigs.k8s.io/cluster-api/internal/topology/names"
@@ -61,8 +62,8 @@ const (
 // the entire reconcile operation will fail. This might be improved in the future if support for reconciling
 // subset of a topology will be implemented.
 func (r *Reconciler) reconcileState(ctx context.Context, s *scope.Scope) error {
-	log := ctrl.LoggerFrom(ctx)
-	log.Info("Reconciling state for topology owned objects")
+	log := tlog.LoggerFrom(ctx)
+	log.Infof("Reconciling state for topology owned objects")
 
 	// Reconcile the Cluster shim, a temporary object used a mean to collect
 	// objects/templates that can be orphaned in case of errors during the
@@ -268,8 +269,7 @@ func (r *Reconciler) callAfterClusterUpgrade(ctx context.Context, s *scope.Scope
 
 // reconcileInfrastructureCluster reconciles the desired state of the InfrastructureCluster object.
 func (r *Reconciler) reconcileInfrastructureCluster(ctx context.Context, s *scope.Scope) (bool, error) {
-	log := ctrl.LoggerFrom(ctx).WithValues(s.Desired.InfrastructureCluster.GetKind(), klog.KObj(s.Desired.InfrastructureCluster))
-	ctx = ctrl.LoggerInto(ctx, log)
+	ctx, _ = tlog.LoggerFrom(ctx).WithObject(s.Desired.InfrastructureCluster).Into(ctx)
 
 	ignorePaths, err := contract.InfrastructureCluster().IgnorePaths(s.Desired.InfrastructureCluster)
 	if err != nil {
@@ -306,12 +306,11 @@ func (r *Reconciler) reconcileControlPlane(ctx context.Context, s *scope.Scope) 
 	// If the clusterClass mandates the controlPlane has infrastructureMachines, reconcile it.
 	infrastructureMachineCleanupFunc := func() {}
 	if s.Blueprint.HasControlPlaneInfrastructureMachine() {
-		log := ctrl.LoggerFrom(ctx).WithValues(s.Desired.ControlPlane.InfrastructureMachineTemplate.GetKind(), klog.KObj(s.Desired.ControlPlane.InfrastructureMachineTemplate))
-		ctx := ctrl.LoggerInto(ctx, log)
+		ctx, _ := tlog.LoggerFrom(ctx).WithObject(s.Desired.ControlPlane.InfrastructureMachineTemplate).Into(ctx)
 
 		cpInfraRef, err := contract.ControlPlane().MachineTemplate().InfrastructureRef().Get(s.Desired.ControlPlane.Object)
 		if err != nil {
-			return false, errors.Wrapf(err, "failed to reconcile %s %s", s.Desired.ControlPlane.InfrastructureMachineTemplate.GetKind(), klog.KObj(s.Desired.ControlPlane.InfrastructureMachineTemplate))
+			return false, errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: s.Desired.ControlPlane.InfrastructureMachineTemplate})
 		}
 
 		// Create or update the MachineInfrastructureTemplate of the control plane.
@@ -332,7 +331,10 @@ func (r *Reconciler) reconcileControlPlane(ctx context.Context, s *scope.Scope) 
 				// Best effort cleanup of the InfrastructureMachineTemplate;
 				// If this fails, the object will be garbage collected when the cluster is deleted.
 				if err := r.Client.Delete(ctx, s.Desired.ControlPlane.InfrastructureMachineTemplate); err != nil {
-					log.Error(err, "WARNING! Failed to cleanup InfrastructureMachineTemplate for control plane while handling creation or update error. The object will be garbage collected when the cluster is deleted.")
+					log := tlog.LoggerFrom(ctx).
+						WithValues(s.Desired.ControlPlane.InfrastructureMachineTemplate.GetObjectKind().GroupVersionKind().Kind, s.Desired.ControlPlane.InfrastructureMachineTemplate.GetName()).
+						WithValues("err", err.Error())
+					log.Infof("WARNING! Failed to cleanup InfrastructureMachineTemplate for control plane while handling creation or update error. The object will be garbage collected when the cluster is deleted.")
 				}
 			}
 		}
@@ -342,13 +344,12 @@ func (r *Reconciler) reconcileControlPlane(ctx context.Context, s *scope.Scope) 
 		if err != nil {
 			// Best effort cleanup of the InfrastructureMachineTemplate (only on creation).
 			infrastructureMachineCleanupFunc()
-			return false, errors.Wrapf(err, "failed to reconcile %s %s", s.Desired.ControlPlane.Object.GetKind(), klog.KObj(s.Desired.ControlPlane.Object))
+			return false, errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: s.Desired.ControlPlane.Object})
 		}
 	}
 
 	// Create or update the ControlPlaneObject for the ControlPlaneState.
-	log := ctrl.LoggerFrom(ctx).WithValues(s.Desired.ControlPlane.Object.GetKind(), klog.KObj(s.Desired.ControlPlane.Object))
-	ctx = ctrl.LoggerInto(ctx, log)
+	ctx, _ = tlog.LoggerFrom(ctx).WithObject(s.Desired.ControlPlane.Object).Into(ctx)
 	created, err := r.reconcileReferencedObject(ctx, reconcileReferencedObjectInput{
 		cluster:       s.Current.Cluster,
 		current:       s.Current.ControlPlane.Object,
@@ -367,11 +368,9 @@ func (r *Reconciler) reconcileControlPlane(ctx context.Context, s *scope.Scope) 
 	if s.Blueprint.HasControlPlaneInfrastructureMachine() && s.Current.ControlPlane.InfrastructureMachineTemplate != nil {
 		if s.Current.ControlPlane.InfrastructureMachineTemplate.GetName() != s.Desired.ControlPlane.InfrastructureMachineTemplate.GetName() {
 			if err := r.Client.Delete(ctx, s.Current.ControlPlane.InfrastructureMachineTemplate); err != nil {
-				return created, errors.Wrapf(err, "failed to delete old %s %s of %s %s",
-					s.Current.ControlPlane.InfrastructureMachineTemplate.GetKind(),
-					klog.KObj(s.Current.ControlPlane.InfrastructureMachineTemplate),
-					s.Current.ControlPlane.Object.GetKind(),
-					klog.KObj(s.Current.ControlPlane.Object),
+				return created, errors.Wrapf(err, "failed to delete oldinfrastructure machine template %s of control plane %s",
+					tlog.KObj{Obj: s.Current.ControlPlane.InfrastructureMachineTemplate},
+					tlog.KObj{Obj: s.Current.ControlPlane.Object},
 				)
 			}
 		}
@@ -383,55 +382,54 @@ func (r *Reconciler) reconcileControlPlane(ctx context.Context, s *scope.Scope) 
 // reconcileMachineHealthCheck creates, updates, deletes or leaves untouched a MachineHealthCheck depending on the difference between the
 // current state and the desired state.
 func (r *Reconciler) reconcileMachineHealthCheck(ctx context.Context, current, desired *clusterv1.MachineHealthCheck) error {
-	log := ctrl.LoggerFrom(ctx)
+	log := tlog.LoggerFrom(ctx)
 
 	// If a current MachineHealthCheck doesn't exist but there is a desired MachineHealthCheck attempt to create.
 	if current == nil && desired != nil {
-		log.Info("Creating MachineHealthCheck", "MachineHealthCheck", klog.KObj(desired))
+		log.Infof("Creating %s", tlog.KObj{Obj: desired})
 		helper, err := r.patchHelperFactory(ctx, nil, desired)
 		if err != nil {
-			return errors.Wrapf(err, "failed to create patch helper for MachineHealthCheck %s", klog.KObj(desired))
+			return errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: desired})
 		}
 		if err := helper.Patch(ctx); err != nil {
-			return errors.Wrapf(err, "failed to create MachineHealthCheck %s", klog.KObj(desired))
+			return errors.Wrapf(err, "failed to create %s", tlog.KObj{Obj: desired})
 		}
-		r.recorder.Eventf(desired, corev1.EventTypeNormal, createEventReason, "Created MachineHealthCheck %q", klog.KObj(desired))
+		r.recorder.Eventf(desired, corev1.EventTypeNormal, createEventReason, "Created %q", tlog.KObj{Obj: desired})
 		return nil
 	}
 
 	// If a current MachineHealthCheck exists but there is no desired MachineHealthCheck attempt to delete.
 	if current != nil && desired == nil {
-		log.Info("Deleting MachineHealthCheck", "MachineHealthCheck", klog.KObj(current))
+		log.Infof("Deleting %s", tlog.KObj{Obj: current})
 		if err := r.Client.Delete(ctx, current); err != nil {
 			// If the object to be deleted is not found don't throw an error.
 			if !apierrors.IsNotFound(err) {
-				return errors.Wrapf(err, "failed to delete MachineHealthCheck %s", klog.KObj(current))
+				return errors.Wrapf(err, "failed to delete %s", tlog.KObj{Obj: current})
 			}
 		}
-		r.recorder.Eventf(current, corev1.EventTypeNormal, deleteEventReason, "Deleted MachineHealthCheck %q", klog.KObj(current))
+		r.recorder.Eventf(current, corev1.EventTypeNormal, deleteEventReason, "Deleted %q", tlog.KObj{Obj: current})
 		return nil
 	}
 
-	log = log.WithValues("MachineHealthCheck", klog.KObj(current))
-	ctx = ctrl.LoggerInto(ctx, log)
+	ctx, log = log.WithObject(current).Into(ctx)
 
 	// Check differences between current and desired MachineHealthChecks, and patch if required.
 	// NOTE: we want to be authoritative on the entire spec because the users are
 	// expected to change MHC fields from the ClusterClass only.
 	patchHelper, err := r.patchHelperFactory(ctx, current, desired)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create patch helper for MachineHealthCheck %s", klog.KObj(current))
+		return errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: current})
 	}
 	if !patchHelper.HasChanges() {
-		log.V(3).Info("No changes for MachineHealthCheck")
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: current})
 		return nil
 	}
 
-	log.Info("Patching MachineHealthCheck")
+	log.Infof("Patching %s", tlog.KObj{Obj: current})
 	if err := patchHelper.Patch(ctx); err != nil {
-		return errors.Wrapf(err, "failed to patch MachineHealthCheck %s", klog.KObj(current))
+		return errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: current})
 	}
-	r.recorder.Eventf(current, corev1.EventTypeNormal, updateEventReason, "Updated MachineHealthCheck %q", klog.KObj(current))
+	r.recorder.Eventf(current, corev1.EventTypeNormal, updateEventReason, "Updated %q", tlog.KObj{Obj: current})
 	return nil
 }
 
@@ -440,28 +438,28 @@ func (r *Reconciler) reconcileMachineHealthCheck(ctx context.Context, current, d
 // most specifically, after a Cluster is created it is assumed that the reference to the InfrastructureCluster /
 // ControlPlane objects should never change (only the content of the objects can change).
 func (r *Reconciler) reconcileCluster(ctx context.Context, s *scope.Scope) error {
-	log := ctrl.LoggerFrom(ctx)
+	ctx, log := tlog.LoggerFrom(ctx).WithObject(s.Desired.Cluster).Into(ctx)
 
 	// Check differences between current and desired state, and eventually patch the current object.
 	patchHelper, err := r.patchHelperFactory(ctx, s.Current.Cluster, s.Desired.Cluster)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create patch helper for Cluster %s", klog.KObj(s.Current.Cluster))
+		return errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: s.Current.Cluster})
 	}
 	if !patchHelper.HasChanges() {
-		log.V(3).Info("No changes for Cluster")
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: s.Current.Cluster})
 		return nil
 	}
 
 	changes := patchHelper.Changes()
 	if len(changes) == 0 {
-		log.Info("Patching Cluster")
+		log.Infof("Patching %s", tlog.KObj{Obj: s.Current.Cluster})
 	} else {
-		log.Info("Patching Cluster", "diff", string(changes))
+		log.Infof("Patching %s, diff: %s", tlog.KObj{Obj: s.Current.Cluster}, changes)
 	}
 	if err := patchHelper.Patch(ctx); err != nil {
-		return errors.Wrapf(err, "failed to patch Cluster %s", klog.KObj(s.Current.Cluster))
+		return errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: s.Current.Cluster})
 	}
-	r.recorder.Eventf(s.Current.Cluster, corev1.EventTypeNormal, updateEventReason, "Updated Cluster %q", klog.KObj(s.Current.Cluster))
+	r.recorder.Eventf(s.Current.Cluster, corev1.EventTypeNormal, updateEventReason, "Updated %q", tlog.KObj{Obj: s.Current.Cluster})
 
 	// Wait until Cluster is updated in the cache.
 	// Note: We have to do this because otherwise using a cached client in the Reconcile func could
@@ -478,7 +476,7 @@ func (r *Reconciler) reconcileCluster(ctx context.Context, s *scope.Scope) error
 		return s.Current.Cluster.GetResourceVersion() != cachedCluster.GetResourceVersion(), nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed waiting for Cluster %s to be updated in the cache after patch", klog.KObj(s.Current.Cluster))
+		return errors.Wrapf(err, "failed waiting for Cluster %s to be updated in the cache after patch", tlog.KObj{Obj: s.Current.Cluster})
 	}
 	return nil
 }
@@ -502,9 +500,8 @@ func (r *Reconciler) reconcileMachineDeployments(ctx context.Context, s *scope.S
 
 			// Skip the MD creation if the MD already exists.
 			if currentMDTopologyNames.Has(mdTopologyName) {
-				log := ctrl.LoggerFrom(ctx).WithValues("MachineDeployment", klog.KObj(md.Object),
-					"machineDeploymentTopology", mdTopologyName)
-				log.V(3).Info(fmt.Sprintf("Skipping creation of MachineDeployment, because MachineDeployment for topology %s already exists (only considered creation because of stale cache)", mdTopologyName))
+				log := tlog.LoggerFrom(ctx).WithMachineDeployment(md.Object)
+				log.V(3).Infof(fmt.Sprintf("Skipping creation of MachineDeployment %s because MachineDeployment for topology %s already exists (only considered creation because of stale cache)", tlog.KObj{Obj: md.Object}, mdTopologyName))
 				continue
 			}
 
@@ -575,13 +572,9 @@ func (r *Reconciler) createMachineDeployment(ctx context.Context, s *scope.Scope
 		return nil
 	}
 
-	log := ctrl.LoggerFrom(ctx).WithValues(
-		"MachineDeployment", klog.KObj(md.Object),
-		"machineDeploymentTopology", mdTopologyName)
-	ctx = ctrl.LoggerInto(ctx, log)
+	log := tlog.LoggerFrom(ctx).WithMachineDeployment(md.Object)
 	cluster := s.Current.Cluster
-	infraLog := log.WithValues(md.InfrastructureMachineTemplate.GetKind(), klog.KObj(md.InfrastructureMachineTemplate))
-	infraCtx := ctrl.LoggerInto(ctx, infraLog)
+	infraCtx, _ := log.WithObject(md.InfrastructureMachineTemplate).Into(ctx)
 	infrastructureMachineCleanupFunc := func() {}
 	createdInfra, err := r.reconcileReferencedTemplate(infraCtx, reconcileReferencedTemplateInput{
 		cluster: cluster,
@@ -596,13 +589,15 @@ func (r *Reconciler) createMachineDeployment(ctx context.Context, s *scope.Scope
 			// Best effort cleanup of the InfrastructureMachineTemplate;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, md.InfrastructureMachineTemplate); err != nil {
-				infraLog.Error(err, "WARNING! Failed to cleanup InfrastructureMachineTemplate for MachineDeployment while handling creation error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(md.InfrastructureMachineTemplate.GetObjectKind().GroupVersionKind().Kind, md.InfrastructureMachineTemplate.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup InfrastructureMachineTemplate for MachineDeployment while handling creation error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
-	bootstrapLog := log.WithValues(md.BootstrapTemplate.GetKind(), klog.KObj(md.BootstrapTemplate))
-	bootstrapCtx := ctrl.LoggerInto(ctx, bootstrapLog)
+	bootstrapCtx, _ := log.WithObject(md.BootstrapTemplate).Into(ctx)
 	bootstrapCleanupFunc := func() {}
 	createdBootstrap, err := r.reconcileReferencedTemplate(bootstrapCtx, reconcileReferencedTemplateInput{
 		cluster: cluster,
@@ -619,12 +614,16 @@ func (r *Reconciler) createMachineDeployment(ctx context.Context, s *scope.Scope
 			// Best effort cleanup of the BootstrapTemplate;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, md.BootstrapTemplate); err != nil {
-				bootstrapLog.Error(err, "WARNING! Failed to cleanup BootstrapTemplate for MachineDeployment while handling creation error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(md.BootstrapTemplate.GetObjectKind().GroupVersionKind().Kind, md.BootstrapTemplate.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup BootstrapTemplate for MachineDeployment while handling creation error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
-	log.Info("Creating MachineDeployment")
+	log = log.WithObject(md.Object)
+	log.Infof(fmt.Sprintf("Creating %s", tlog.KObj{Obj: md.Object}))
 	helper, err := r.patchHelperFactory(ctx, nil, md.Object)
 	if err != nil {
 		// Best effort cleanup of the InfrastructureMachineTemplate & BootstrapTemplate (only on creation).
@@ -638,7 +637,7 @@ func (r *Reconciler) createMachineDeployment(ctx context.Context, s *scope.Scope
 		bootstrapCleanupFunc()
 		return createErrorWithoutObjectName(ctx, err, md.Object)
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, createEventReason, "Created MachineDeployment %q", klog.KObj(md.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, createEventReason, "Created %q", tlog.KObj{Obj: md.Object})
 
 	// Wait until MachineDeployment is visible in the cache.
 	// Note: We have to do this because otherwise using a cached client in current state could
@@ -668,8 +667,7 @@ func (r *Reconciler) createMachineDeployment(ctx context.Context, s *scope.Scope
 
 // updateMachineDeployment updates a MachineDeployment. Also rotates the corresponding Templates if necessary.
 func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope, mdTopologyName string, currentMD, desiredMD *scope.MachineDeploymentState) error {
-	log := ctrl.LoggerFrom(ctx).WithValues("MachineDeployment", klog.KObj(desiredMD.Object),
-		"machineDeploymentTopology", mdTopologyName)
+	log := tlog.LoggerFrom(ctx).WithMachineDeployment(desiredMD.Object)
 
 	// Patch MachineHealthCheck for the MachineDeployment.
 	// MHC changes are not Kubernetes version dependent, therefore proceed with MHC reconciliation
@@ -688,8 +686,7 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 	}
 
 	cluster := s.Current.Cluster
-	infraLog := log.WithValues(desiredMD.InfrastructureMachineTemplate.GetKind(), klog.KObj(desiredMD.InfrastructureMachineTemplate))
-	infraCtx := ctrl.LoggerInto(ctx, infraLog)
+	infraCtx, _ := log.WithObject(desiredMD.InfrastructureMachineTemplate).Into(ctx)
 	infrastructureMachineCleanupFunc := func() {}
 	createdInfra, err := r.reconcileReferencedTemplate(infraCtx, reconcileReferencedTemplateInput{
 		cluster:              cluster,
@@ -700,7 +697,7 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 		compatibilityChecker: check.ObjectsAreCompatible,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to reconcile MachineDeployment %s", klog.KObj(currentMD.Object))
+		return errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: currentMD.Object})
 	}
 
 	if createdInfra {
@@ -708,13 +705,15 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 			// Best effort cleanup of the InfrastructureMachineTemplate;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, desiredMD.InfrastructureMachineTemplate); err != nil {
-				infraLog.Error(err, "WARNING! Failed to cleanup InfrastructureMachineTemplate for MachineDeployment while handling update error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(desiredMD.InfrastructureMachineTemplate.GetObjectKind().GroupVersionKind().Kind, desiredMD.InfrastructureMachineTemplate.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup InfrastructureMachineTemplate for MachineDeployment while handling update error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
-	bootstrapLog := log.WithValues(desiredMD.BootstrapTemplate.GetKind(), klog.KObj(desiredMD.BootstrapTemplate))
-	bootstrapCtx := ctrl.LoggerInto(ctx, bootstrapLog)
+	bootstrapCtx, _ := log.WithObject(desiredMD.BootstrapTemplate).Into(ctx)
 	bootstrapCleanupFunc := func() {}
 	createdBootstrap, err := r.reconcileReferencedTemplate(bootstrapCtx, reconcileReferencedTemplateInput{
 		cluster:              cluster,
@@ -727,7 +726,7 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 	if err != nil {
 		// Best effort cleanup of the InfrastructureMachineTemplate (only on template rotation).
 		infrastructureMachineCleanupFunc()
-		return errors.Wrapf(err, "failed to reconcile MachineDeployment %s", klog.KObj(currentMD.Object))
+		return errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: currentMD.Object})
 	}
 
 	if createdBootstrap {
@@ -735,37 +734,41 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 			// Best effort cleanup of the BootstrapTemplate;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, desiredMD.BootstrapTemplate); err != nil {
-				bootstrapLog.Error(err, "WARNING! Failed to cleanup BootstrapTemplate for MachineDeployment while handling update error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(desiredMD.BootstrapTemplate.GetObjectKind().GroupVersionKind().Kind, desiredMD.BootstrapTemplate.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup BootstrapTemplate for MachineDeployment while handling update error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
 	// Check differences between current and desired MachineDeployment, and eventually patch the current object.
+	log = log.WithObject(desiredMD.Object)
 	patchHelper, err := r.patchHelperFactory(ctx, currentMD.Object, desiredMD.Object)
 	if err != nil {
 		// Best effort cleanup of the InfrastructureMachineTemplate & BootstrapTemplate (only on template rotation).
 		infrastructureMachineCleanupFunc()
 		bootstrapCleanupFunc()
-		return errors.Wrapf(err, "failed to create patch helper for MachineDeployment %s", klog.KObj(currentMD.Object))
+		return errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: currentMD.Object})
 	}
 	if !patchHelper.HasChanges() {
-		log.V(3).Info("No changes for MachineDeployment")
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: currentMD.Object})
 		return nil
 	}
 
 	changes := patchHelper.Changes()
 	if len(changes) == 0 {
-		log.Info("Patching MachineDeployment")
+		log.Infof("Patching %s", tlog.KObj{Obj: currentMD.Object})
 	} else {
-		log.Info("Patching MachineDeployment", "diff", string(changes))
+		log.Infof("Patching %s, diff: %s", tlog.KObj{Obj: currentMD.Object}, changes)
 	}
 	if err := patchHelper.Patch(ctx); err != nil {
 		// Best effort cleanup of the InfrastructureMachineTemplate & BootstrapTemplate (only on template rotation).
 		infrastructureMachineCleanupFunc()
 		bootstrapCleanupFunc()
-		return errors.Wrapf(err, "failed to patch MachineDeployment %s", klog.KObj(currentMD.Object))
+		return errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: currentMD.Object})
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, updateEventReason, "Updated MachineDeployment %q%s", klog.KObj(currentMD.Object), logMachineDeploymentVersionChange(currentMD.Object, desiredMD.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, updateEventReason, "Updated %q%s", tlog.KObj{Obj: currentMD.Object}, logMachineDeploymentVersionChange(currentMD.Object, desiredMD.Object))
 
 	// Wait until MachineDeployment is updated in the cache.
 	// Note: We have to do this because otherwise using a cached client in current state could
@@ -782,7 +785,7 @@ func (r *Reconciler) updateMachineDeployment(ctx context.Context, s *scope.Scope
 		return currentMD.Object.GetResourceVersion() != cachedMD.GetResourceVersion(), nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed waiting for MachineDeployment %s to be updated in the cache after patch", klog.KObj(currentMD.Object))
+		return errors.Wrapf(err, "failed waiting for MachineDeployment %s to be updated in the cache after patch", tlog.KObj{Obj: currentMD.Object})
 	}
 
 	// We want to call both cleanup functions even if one of them fails to clean up as much as possible.
@@ -802,9 +805,7 @@ func logMachineDeploymentVersionChange(current, desired *clusterv1.MachineDeploy
 
 // deleteMachineDeployment deletes a MachineDeployment.
 func (r *Reconciler) deleteMachineDeployment(ctx context.Context, cluster *clusterv1.Cluster, md *scope.MachineDeploymentState) error {
-	log := ctrl.LoggerFrom(ctx).WithValues(
-		"MachineDeployment", klog.KObj(md.Object),
-		"machineDeploymentTopology", md.Object.Labels[clusterv1.ClusterTopologyMachineDeploymentNameLabel])
+	log := tlog.LoggerFrom(ctx).WithMachineDeployment(md.Object).WithObject(md.Object)
 
 	// delete MachineHealthCheck for the MachineDeployment.
 	if md.MachineHealthCheck != nil {
@@ -812,11 +813,11 @@ func (r *Reconciler) deleteMachineDeployment(ctx context.Context, cluster *clust
 			return err
 		}
 	}
-	log.Info("Deleting MachineDeployment")
+	log.Infof("Deleting %s", tlog.KObj{Obj: md.Object})
 	if err := r.Client.Delete(ctx, md.Object); err != nil && !apierrors.IsNotFound(err) {
-		return errors.Wrapf(err, "failed to delete MachineDeployment %s", klog.KObj(md.Object))
+		return errors.Wrapf(err, "failed to delete %s", tlog.KObj{Obj: md.Object})
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, deleteEventReason, "Deleted MachineDeployment %q", klog.KObj(md.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, deleteEventReason, "Deleted %q", tlog.KObj{Obj: md.Object})
 	return nil
 }
 
@@ -839,9 +840,8 @@ func (r *Reconciler) reconcileMachinePools(ctx context.Context, s *scope.Scope) 
 
 			// Skip the MP creation if the MP already exists.
 			if currentMPTopologyNames.Has(mpTopologyName) {
-				log := ctrl.LoggerFrom(ctx).WithValues("MachinePool", klog.KObj(mp.Object),
-					"machinePoolTopology", mpTopologyName)
-				log.V(3).Info(fmt.Sprintf("Skipping creation of MachinePool, because MachinePool for topology %s already exists (only considered creation because of stale cache)", mpTopologyName))
+				log := tlog.LoggerFrom(ctx).WithMachinePool(mp.Object)
+				log.V(3).Infof(fmt.Sprintf("Skipping creation of MachinePool %s because MachinePool for topology %s already exists (only considered creation because of stale cache)", tlog.KObj{Obj: mp.Object}, mpTopologyName))
 				continue
 			}
 
@@ -855,7 +855,7 @@ func (r *Reconciler) reconcileMachinePools(ctx context.Context, s *scope.Scope) 
 	for _, mpTopologyName := range diff.toUpdate {
 		currentMP := s.Current.MachinePools[mpTopologyName]
 		desiredMP := s.Desired.MachinePools[mpTopologyName]
-		if err := r.updateMachinePool(ctx, s, mpTopologyName, currentMP, desiredMP); err != nil {
+		if err := r.updateMachinePool(ctx, s, currentMP, desiredMP); err != nil {
 			return err
 		}
 	}
@@ -911,20 +911,16 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 		return nil
 	}
 
-	log := ctrl.LoggerFrom(ctx).WithValues(
-		"MachinePool", klog.KObj(mp.Object),
-		"machinePoolTopology", mpTopologyName)
-	ctx = ctrl.LoggerInto(ctx, log)
+	log := tlog.LoggerFrom(ctx).WithMachinePool(mp.Object)
 	cluster := s.Current.Cluster
-	infraLog := log.WithValues(mp.InfrastructureMachinePoolObject.GetKind(), klog.KObj(mp.InfrastructureMachinePoolObject))
-	infraCtx := ctrl.LoggerInto(ctx, infraLog)
+	infraCtx, _ := log.WithObject(mp.InfrastructureMachinePoolObject).Into(ctx)
 	infrastructureMachineMachinePoolCleanupFunc := func() {}
 	createdInfrastructureMachinePool, err := r.reconcileReferencedObject(infraCtx, reconcileReferencedObjectInput{
 		cluster: cluster,
 		desired: mp.InfrastructureMachinePoolObject,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed to create MachinePool %s", klog.KObj(mp.Object))
+		return errors.Wrapf(err, "failed to create %s", mp.Object.Kind)
 	}
 
 	if createdInfrastructureMachinePool {
@@ -932,13 +928,15 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 			// Best effort cleanup of the InfrastructureMachinePool;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, mp.InfrastructureMachinePoolObject); err != nil {
-				infraLog.Info("WARNING! Failed to cleanup InfrastructureMachinePoolObject for MachinePool while handling creation error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(mp.InfrastructureMachinePoolObject.GetObjectKind().GroupVersionKind().Kind, mp.InfrastructureMachinePoolObject.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup InfrastructureMachinePoolObject for MachinePool while handling creation error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
-	bootstrapLog := log.WithValues(mp.BootstrapObject.GetKind(), klog.KObj(mp.BootstrapObject))
-	bootstrapCtx := ctrl.LoggerInto(ctx, bootstrapLog)
+	bootstrapCtx, _ := log.WithObject(mp.BootstrapObject).Into(ctx)
 	bootstrapCleanupFunc := func() {}
 	createdBootstrap, err := r.reconcileReferencedObject(bootstrapCtx, reconcileReferencedObjectInput{
 		cluster: cluster,
@@ -947,7 +945,7 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 	if err != nil {
 		// Best effort cleanup of the InfrastructureMachinePool (only on creation).
 		infrastructureMachineMachinePoolCleanupFunc()
-		return errors.Wrapf(err, "failed to create MachinePool %s", mp.Object.Kind)
+		return errors.Wrapf(err, "failed to create %s", mp.Object.Kind)
 	}
 
 	if createdBootstrap {
@@ -955,12 +953,16 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 			// Best effort cleanup of the BootstrapConfig;
 			// If this fails, the object will be garbage collected when the cluster is deleted.
 			if err := r.Client.Delete(ctx, mp.BootstrapObject); err != nil {
-				bootstrapLog.Error(err, "WARNING! Failed to cleanup BootstrapObject for MachinePool while handling creation error. The object will be garbage collected when the cluster is deleted.")
+				log := tlog.LoggerFrom(ctx).
+					WithValues(mp.BootstrapObject.GetObjectKind().GroupVersionKind().Kind, mp.BootstrapObject.GetName()).
+					WithValues("err", err.Error())
+				log.Infof("WARNING! Failed to cleanup BootstrapObject for MachinePool while handling creation error. The object will be garbage collected when the cluster is deleted.")
 			}
 		}
 	}
 
-	log.Info("Creating MachinePool")
+	log = log.WithObject(mp.Object)
+	log.Infof(fmt.Sprintf("Creating %s", tlog.KObj{Obj: mp.Object}))
 	helper, err := r.patchHelperFactory(ctx, nil, mp.Object)
 	if err != nil {
 		// Best effort cleanup of the InfrastructureMachinePool & BootstrapConfig (only on creation).
@@ -974,7 +976,7 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 		bootstrapCleanupFunc()
 		return createErrorWithoutObjectName(ctx, err, mp.Object)
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, createEventReason, "Created MachinePool %q", klog.KObj(mp.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, createEventReason, "Created %q", tlog.KObj{Obj: mp.Object})
 
 	// Wait until MachinePool is visible in the cache.
 	// Note: We have to do this because otherwise using a cached client in current state could
@@ -997,9 +999,8 @@ func (r *Reconciler) createMachinePool(ctx context.Context, s *scope.Scope, mp *
 }
 
 // updateMachinePool updates a MachinePool. Also updates the corresponding objects if necessary.
-func (r *Reconciler) updateMachinePool(ctx context.Context, s *scope.Scope, mpTopologyName string, currentMP, desiredMP *scope.MachinePoolState) error {
-	log := ctrl.LoggerFrom(ctx).WithValues("MachinePool", klog.KObj(desiredMP.Object),
-		"machinePoolTopology", mpTopologyName)
+func (r *Reconciler) updateMachinePool(ctx context.Context, s *scope.Scope, currentMP, desiredMP *scope.MachinePoolState) error {
+	log := tlog.LoggerFrom(ctx).WithMachinePool(desiredMP.Object)
 
 	// Return early if the MachinePool is pending an upgrade.
 	// Do not reconcile the MachinePool yet to avoid updating the MachinePool while it is still pending a
@@ -1009,44 +1010,45 @@ func (r *Reconciler) updateMachinePool(ctx context.Context, s *scope.Scope, mpTo
 	}
 
 	cluster := s.Current.Cluster
-	infraCtx := ctrl.LoggerInto(ctx, log.WithValues(desiredMP.InfrastructureMachinePoolObject.GetKind(), klog.KObj(desiredMP.InfrastructureMachinePoolObject)))
+	infraCtx, _ := log.WithObject(desiredMP.InfrastructureMachinePoolObject).Into(ctx)
 	if _, err := r.reconcileReferencedObject(infraCtx, reconcileReferencedObjectInput{
 		cluster: cluster,
 		current: currentMP.InfrastructureMachinePoolObject,
 		desired: desiredMP.InfrastructureMachinePoolObject,
 	}); err != nil {
-		return errors.Wrapf(err, "failed to reconcile MachinePool %s", klog.KObj(currentMP.Object))
+		return errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: currentMP.Object})
 	}
 
-	bootstrapCtx := ctrl.LoggerInto(ctx, log.WithValues(desiredMP.BootstrapObject.GetKind(), klog.KObj(desiredMP.BootstrapObject)))
+	bootstrapCtx, _ := log.WithObject(desiredMP.BootstrapObject).Into(ctx)
 	if _, err := r.reconcileReferencedObject(bootstrapCtx, reconcileReferencedObjectInput{
 		cluster: cluster,
 		current: currentMP.BootstrapObject,
 		desired: desiredMP.BootstrapObject,
 	}); err != nil {
-		return errors.Wrapf(err, "failed to reconcile MachinePool %s", klog.KObj(currentMP.Object))
+		return errors.Wrapf(err, "failed to reconcile %s", tlog.KObj{Obj: currentMP.Object})
 	}
 
 	// Check differences between current and desired MachinePool, and eventually patch the current object.
+	log = log.WithObject(desiredMP.Object)
 	patchHelper, err := r.patchHelperFactory(ctx, currentMP.Object, desiredMP.Object)
 	if err != nil {
-		return errors.Wrapf(err, "failed to create patch helper for MachinePool %s", klog.KObj(currentMP.Object))
+		return errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: currentMP.Object})
 	}
 	if !patchHelper.HasChanges() {
-		log.V(3).Info("No changes for MachinePool")
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: currentMP.Object})
 		return nil
 	}
 
 	changes := patchHelper.Changes()
 	if len(changes) == 0 {
-		log.Info("Patching MachinePool")
+		log.Infof("Patching %s", tlog.KObj{Obj: currentMP.Object})
 	} else {
-		log.Info("Patching MachinePool", "diff", string(changes))
+		log.Infof("Patching %s, diff: %s", tlog.KObj{Obj: currentMP.Object}, changes)
 	}
 	if err := patchHelper.Patch(ctx); err != nil {
-		return errors.Wrapf(err, "failed to patch MachinePool %s", klog.KObj(currentMP.Object))
+		return errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: currentMP.Object})
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, updateEventReason, "Updated MachinePool %q%s", klog.KObj(currentMP.Object), logMachinePoolVersionChange(currentMP.Object, desiredMP.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, updateEventReason, "Updated %q%s", tlog.KObj{Obj: currentMP.Object}, logMachinePoolVersionChange(currentMP.Object, desiredMP.Object))
 
 	// Wait until MachinePool is updated in the cache.
 	// Note: We have to do this because otherwise using a cached client in current state could
@@ -1063,7 +1065,7 @@ func (r *Reconciler) updateMachinePool(ctx context.Context, s *scope.Scope, mpTo
 		return currentMP.Object.GetResourceVersion() != cachedMP.GetResourceVersion(), nil
 	})
 	if err != nil {
-		return errors.Wrapf(err, "failed waiting for MachinePool %s to be updated in the cache after patch", klog.KObj(currentMP.Object))
+		return errors.Wrapf(err, "failed waiting for MachinePool %s to be updated in the cache after patch", tlog.KObj{Obj: currentMP.Object})
 	}
 
 	// We want to call both cleanup functions even if one of them fails to clean up as much as possible.
@@ -1083,15 +1085,12 @@ func logMachinePoolVersionChange(current, desired *expv1.MachinePool) string {
 
 // deleteMachinePool deletes a MachinePool.
 func (r *Reconciler) deleteMachinePool(ctx context.Context, cluster *clusterv1.Cluster, mp *scope.MachinePoolState) error {
-	log := ctrl.LoggerFrom(ctx).WithValues(
-		"MachinePool", klog.KObj(mp.Object),
-		"machinePoolTopology", mp.Object.Labels[clusterv1.ClusterTopologyMachinePoolNameLabel])
-
-	log.Info("Deleting MachinePool")
+	log := tlog.LoggerFrom(ctx).WithMachinePool(mp.Object).WithObject(mp.Object)
+	log.Infof("Deleting %s", tlog.KObj{Obj: mp.Object})
 	if err := r.Client.Delete(ctx, mp.Object); err != nil && !apierrors.IsNotFound(err) {
-		return errors.Wrapf(err, "failed to delete MachinePool %s", klog.KObj(mp.Object))
+		return errors.Wrapf(err, "failed to delete %s", tlog.KObj{Obj: mp.Object})
 	}
-	r.recorder.Eventf(cluster, corev1.EventTypeNormal, deleteEventReason, "Deleted MachinePool %q", klog.KObj(mp.Object))
+	r.recorder.Eventf(cluster, corev1.EventTypeNormal, deleteEventReason, "Deleted %q", tlog.KObj{Obj: mp.Object})
 	return nil
 }
 
@@ -1158,11 +1157,11 @@ type reconcileReferencedObjectInput struct {
 // NOTE: After a referenced object is created it is assumed that the reference should
 // never change (only the content of the object can eventually change). Thus, we are checking for strict compatibility.
 func (r *Reconciler) reconcileReferencedObject(ctx context.Context, in reconcileReferencedObjectInput) (bool, error) {
-	log := ctrl.LoggerFrom(ctx)
+	log := tlog.LoggerFrom(ctx)
 
 	// If there is no current object, create it.
 	if in.current == nil {
-		log.Info(fmt.Sprintf("Creating %s", in.desired.GetKind()), in.desired.GetKind(), klog.KObj(in.desired))
+		log.Infof("Creating %s", tlog.KObj{Obj: in.desired})
 		helper, err := r.patchHelperFactory(ctx, nil, in.desired, structuredmerge.IgnorePaths(in.ignorePaths))
 		if err != nil {
 			return false, errors.Wrap(createErrorWithoutObjectName(ctx, err, in.desired), "failed to create patch helper")
@@ -1170,7 +1169,7 @@ func (r *Reconciler) reconcileReferencedObject(ctx context.Context, in reconcile
 		if err := helper.Patch(ctx); err != nil {
 			return false, createErrorWithoutObjectName(ctx, err, in.desired)
 		}
-		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %s %q", in.desired.GetKind(), klog.KObj(in.desired))
+		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %q", tlog.KObj{Obj: in.desired})
 		return true, nil
 	}
 
@@ -1179,29 +1178,26 @@ func (r *Reconciler) reconcileReferencedObject(ctx context.Context, in reconcile
 		return false, allErrs.ToAggregate()
 	}
 
-	log = log.WithValues(in.current.GetKind(), klog.KObj(in.current))
-	ctx = ctrl.LoggerInto(ctx, log)
-
 	// Check differences between current and desired state, and eventually patch the current object.
 	patchHelper, err := r.patchHelperFactory(ctx, in.current, in.desired, structuredmerge.IgnorePaths(in.ignorePaths))
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to create patch helper for %s %s", in.current.GetKind(), klog.KObj(in.current))
+		return false, errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: in.current})
 	}
 	if !patchHelper.HasChanges() {
-		log.V(3).Info(fmt.Sprintf("No changes for %s", in.desired.GetKind()))
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: in.desired})
 		return false, nil
 	}
 
 	changes := patchHelper.Changes()
 	if len(changes) == 0 {
-		log.Info(fmt.Sprintf("Patching %s", in.desired.GetKind()))
+		log.Infof("Patching %s", tlog.KObj{Obj: in.desired})
 	} else {
-		log.Info(fmt.Sprintf("Patching %s", in.desired.GetKind()), "diff", string(changes))
+		log.Infof("Patching %s, diff: %s", tlog.KObj{Obj: in.desired}, changes)
 	}
 	if err := patchHelper.Patch(ctx); err != nil {
-		return false, errors.Wrapf(err, "failed to patch %s %s", in.current.GetKind(), klog.KObj(in.current))
+		return false, errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: in.current})
 	}
-	r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, updateEventReason, "Updated %s %q%s", in.desired.GetKind(), klog.KObj(in.desired), logUnstructuredVersionChange(in.current, in.desired, in.versionGetter))
+	r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, updateEventReason, "Updated %q%s", tlog.KObj{Obj: in.desired}, logUnstructuredVersionChange(in.current, in.desired, in.versionGetter))
 	return false, nil
 }
 
@@ -1244,11 +1240,11 @@ type reconcileReferencedTemplateInput struct {
 // can be executed afterwards.
 // NOTE: This func has a side effect in case of template rotation, changing both the desired object and the object reference.
 func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconcileReferencedTemplateInput) (bool, error) {
-	log := ctrl.LoggerFrom(ctx)
+	log := tlog.LoggerFrom(ctx)
 
 	// If there is no current object, create the desired object.
 	if in.current == nil {
-		log.Info(fmt.Sprintf("Creating %s", in.desired.GetKind()), in.desired.GetKind(), klog.KObj(in.desired))
+		log.Infof("Creating %s", tlog.KObj{Obj: in.desired})
 		helper, err := r.patchHelperFactory(ctx, nil, in.desired)
 		if err != nil {
 			return false, errors.Wrap(createErrorWithoutObjectName(ctx, err, in.desired), "failed to create patch helper")
@@ -1256,12 +1252,12 @@ func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconci
 		if err := helper.Patch(ctx); err != nil {
 			return false, createErrorWithoutObjectName(ctx, err, in.desired)
 		}
-		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %s %q", in.desired.GetKind(), klog.KObj(in.desired))
+		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %q", tlog.KObj{Obj: in.desired})
 		return true, nil
 	}
 
 	if in.ref == nil {
-		return false, errors.Errorf("failed to rotate %s: ref should not be nil", in.desired.GetKind())
+		return false, errors.Errorf("failed to rotate %s: ref should not be nil", in.desired.GroupVersionKind())
 	}
 
 	// Check if the current and desired referenced object are compatible.
@@ -1269,18 +1265,15 @@ func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconci
 		return false, allErrs.ToAggregate()
 	}
 
-	log = log.WithValues(in.current.GetKind(), klog.KObj(in.current))
-	ctx = ctrl.LoggerInto(ctx, log)
-
 	// Check differences between current and desired objects, and if there are changes eventually start the template rotation.
 	patchHelper, err := r.patchHelperFactory(ctx, in.current, in.desired)
 	if err != nil {
-		return false, errors.Wrapf(err, "failed to create patch helper for %s %s", in.current.GetKind(), klog.KObj(in.current))
+		return false, errors.Wrapf(err, "failed to create patch helper for %s", tlog.KObj{Obj: in.current})
 	}
 
 	// Return if no changes are detected.
 	if !patchHelper.HasChanges() {
-		log.V(3).Info(fmt.Sprintf("No changes for %s", in.desired.GetKind()))
+		log.V(3).Infof("No changes for %s", tlog.KObj{Obj: in.desired})
 		return false, nil
 	}
 
@@ -1289,14 +1282,14 @@ func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconci
 	if !patchHelper.HasSpecChanges() {
 		changes := patchHelper.Changes()
 		if len(changes) == 0 {
-			log.Info(fmt.Sprintf("Patching %s", in.desired.GetKind()))
+			log.Infof("Patching %s", tlog.KObj{Obj: in.desired})
 		} else {
-			log.Info(fmt.Sprintf("Patching %s", in.desired.GetKind()), "diff", string(changes))
+			log.Infof("Patching %s, diff: %s", tlog.KObj{Obj: in.desired}, changes)
 		}
 		if err := patchHelper.Patch(ctx); err != nil {
-			return false, errors.Wrapf(err, "failed to patch %s %s", in.desired.GetKind(), klog.KObj(in.desired))
+			return false, errors.Wrapf(err, "failed to patch %s", tlog.KObj{Obj: in.desired})
 		}
-		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, updateEventReason, "Updated %s %q (metadata changes)", in.desired.GetKind(), klog.KObj(in.desired))
+		r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, updateEventReason, "Updated %q (metadata changes)", tlog.KObj{Obj: in.desired})
 		return false, nil
 	}
 
@@ -1309,11 +1302,11 @@ func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconci
 
 	changes := patchHelper.Changes()
 	if len(changes) == 0 {
-		log.Info(fmt.Sprintf("Rotating %s, new name %s", in.current.GetKind(), newName))
+		log.Infof("Rotating %s, new name %s", tlog.KObj{Obj: in.current}, newName)
 	} else {
-		log.Info(fmt.Sprintf("Rotating %s, new name %s", in.current.GetKind(), newName), "diff", string(changes))
+		log.Infof("Rotating %s, new name %s, diff: %s", tlog.KObj{Obj: in.current}, newName, changes)
 	}
-	log.Info(fmt.Sprintf("Creating %s", in.current.GetKind()))
+	log.Infof("Creating %s", tlog.KObj{Obj: in.desired})
 	helper, err := r.patchHelperFactory(ctx, nil, in.desired)
 	if err != nil {
 		return false, errors.Wrap(createErrorWithoutObjectName(ctx, err, in.desired), "failed to create patch helper")
@@ -1321,7 +1314,7 @@ func (r *Reconciler) reconcileReferencedTemplate(ctx context.Context, in reconci
 	if err := helper.Patch(ctx); err != nil {
 		return false, createErrorWithoutObjectName(ctx, err, in.desired)
 	}
-	r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %s %q as a replacement for %q (template rotation)", in.desired.GetKind(), klog.KObj(in.desired), in.ref.Name)
+	r.recorder.Eventf(in.cluster, corev1.EventTypeNormal, createEventReason, "Created %q as a replacement for %q (template rotation)", tlog.KObj{Obj: in.desired}, in.ref.Name)
 
 	// Update the reference with the new name.
 	// NOTE: Updating the object hosting reference to the template is executed outside this func.

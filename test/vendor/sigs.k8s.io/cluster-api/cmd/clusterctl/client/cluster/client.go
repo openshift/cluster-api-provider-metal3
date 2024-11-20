@@ -200,7 +200,7 @@ func newClusterClient(kubeconfig Kubeconfig, configClient config.Client, options
 
 	// if there is an injected proxy, use it, otherwise use a default one
 	if client.proxy == nil {
-		client.proxy = NewProxy(client.kubeconfig)
+		client.proxy = newProxy(client.kubeconfig)
 	}
 
 	// if there is an injected repositoryClientFactory, use it, otherwise use the default one

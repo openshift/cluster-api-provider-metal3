@@ -66,10 +66,6 @@ type ClusterUpgradeConformanceSpecInput struct {
 	// Allows to inject a function to be run after test namespace is created.
 	// If not specified, this is a no-op.
 	PostNamespaceCreated func(managementClusterProxy framework.ClusterProxy, workloadClusterNamespace string)
-
-	// Allows to inject a function to be run before checking control-plane machines to be upgraded.
-	// If not specified, this is a no-op.
-	PreWaitForControlPlaneToBeUpgraded func(managementClusterProxy framework.ClusterProxy, workloadClusterNamespace, workloadClusterName string)
 }
 
 // ClusterUpgradeConformanceSpec implements a spec that upgrades a cluster and runs the Kubernetes conformance suite.
@@ -97,8 +93,6 @@ func ClusterUpgradeConformanceSpec(ctx context.Context, inputGetter func() Clust
 
 		clusterResources       *clusterctl.ApplyClusterTemplateAndWaitResult
 		kubetestConfigFilePath string
-
-		clusterName string
 	)
 
 	BeforeEach(func() {
@@ -148,8 +142,6 @@ func ClusterUpgradeConformanceSpec(ctx context.Context, inputGetter func() Clust
 			infrastructureProvider = *input.InfrastructureProvider
 		}
 
-		clusterName = fmt.Sprintf("%s-%s", specName, util.RandomString(6))
-
 		clusterctl.ApplyClusterTemplateAndWait(ctx, clusterctl.ApplyClusterTemplateAndWaitInput{
 			ClusterProxy: input.BootstrapClusterProxy,
 			ConfigCluster: clusterctl.ConfigClusterInput{
@@ -159,7 +151,7 @@ func ClusterUpgradeConformanceSpec(ctx context.Context, inputGetter func() Clust
 				InfrastructureProvider:   infrastructureProvider,
 				Flavor:                   ptr.Deref(input.Flavor, "upgrades"),
 				Namespace:                namespace.Name,
-				ClusterName:              clusterName,
+				ClusterName:              fmt.Sprintf("%s-%s", specName, util.RandomString(6)),
 				KubernetesVersion:        input.E2EConfig.GetVariable(KubernetesVersionUpgradeFrom),
 				ControlPlaneMachineCount: ptr.To[int64](controlPlaneMachineCount),
 				WorkerMachineCount:       ptr.To[int64](workerMachineCount),
@@ -188,11 +180,6 @@ func ClusterUpgradeConformanceSpec(ctx context.Context, inputGetter func() Clust
 				WaitForKubeProxyUpgrade:        input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
 				WaitForDNSUpgrade:              input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
 				WaitForEtcdUpgrade:             input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
-				PreWaitForControlPlaneToBeUpgraded: func() {
-					if input.PreWaitForControlPlaneToBeUpgraded != nil {
-						input.PreWaitForControlPlaneToBeUpgraded(input.BootstrapClusterProxy, namespace.Name, clusterName)
-					}
-				},
 			})
 		} else {
 			// Cluster is not using ClusterClass, upgrade via individual resources.
@@ -222,11 +209,6 @@ func ClusterUpgradeConformanceSpec(ctx context.Context, inputGetter func() Clust
 				WaitForKubeProxyUpgrade:     input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
 				WaitForDNSUpgrade:           input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
 				WaitForEtcdUpgrade:          input.E2EConfig.GetIntervals(specName, "wait-machine-upgrade"),
-				PreWaitForControlPlaneToBeUpgraded: func() {
-					if input.PreWaitForControlPlaneToBeUpgraded != nil {
-						input.PreWaitForControlPlaneToBeUpgraded(input.BootstrapClusterProxy, namespace.Name, clusterName)
-					}
-				},
 			})
 
 			if workerMachineCount > 0 {

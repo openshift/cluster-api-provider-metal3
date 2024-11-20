@@ -39,11 +39,6 @@ func (b *BootstrapContract) Ready() *Bool {
 	}
 }
 
-// ReadyConditionType returns the type of the ready condition.
-func (b *BootstrapContract) ReadyConditionType() string {
-	return "Ready"
-}
-
 // DataSecretName provide access to status.dataSecretName field in a bootstrap object.
 func (b *BootstrapContract) DataSecretName() *String {
 	return &String{
@@ -52,8 +47,6 @@ func (b *BootstrapContract) DataSecretName() *String {
 }
 
 // FailureReason provides access to the status.failureReason field in an bootstrap object. Note that this field is optional.
-//
-// Deprecated: This function is deprecated and is going to be removed. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
 func (b *BootstrapContract) FailureReason() *String {
 	return &String{
 		path: []string{"status", "failureReason"},
@@ -61,8 +54,6 @@ func (b *BootstrapContract) FailureReason() *String {
 }
 
 // FailureMessage provides access to the status.failureMessage field in an bootstrap object. Note that this field is optional.
-//
-// Deprecated: This function is deprecated and is going to be removed. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
 func (b *BootstrapContract) FailureMessage() *String {
 	return &String{
 		path: []string{"status", "failureMessage"},
