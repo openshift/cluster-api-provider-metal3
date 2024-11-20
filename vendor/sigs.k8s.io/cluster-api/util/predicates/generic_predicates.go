@@ -17,11 +17,10 @@ limitations under the License.
 package predicates
 
 import (
+	"strings"
+
 	"github.com/go-logr/logr"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -30,13 +29,10 @@ import (
 )
 
 // All returns a predicate that returns true only if all given predicates return true.
-func All(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Funcs) predicate.Funcs {
+func All(logger logr.Logger, predicates ...predicate.Funcs) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log := logger.WithValues("predicateAggregation", "All")
-			if gvk, err := apiutil.GVKForObject(e.ObjectNew, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.ObjectNew))
-			}
 			for _, p := range predicates {
 				if !p.UpdateFunc(e) {
 					log.V(6).Info("One of the provided predicates returned false, blocking further processing")
@@ -48,9 +44,6 @@ func All(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			log := logger.WithValues("predicateAggregation", "All")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if !p.CreateFunc(e) {
 					log.V(6).Info("One of the provided predicates returned false, blocking further processing")
@@ -62,9 +55,6 @@ func All(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			log := logger.WithValues("predicateAggregation", "All")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if !p.DeleteFunc(e) {
 					log.V(6).Info("One of the provided predicates returned false, blocking further processing")
@@ -76,9 +66,6 @@ func All(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			log := logger.WithValues("predicateAggregation", "All")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if !p.GenericFunc(e) {
 					log.V(6).Info("One of the provided predicates returned false, blocking further processing")
@@ -92,13 +79,10 @@ func All(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 }
 
 // Any returns a predicate that returns true only if any given predicate returns true.
-func Any(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Funcs) predicate.Funcs {
+func Any(logger logr.Logger, predicates ...predicate.Funcs) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			log := logger.WithValues("predicateAggregation", "Any")
-			if gvk, err := apiutil.GVKForObject(e.ObjectNew, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.ObjectNew))
-			}
 			for _, p := range predicates {
 				if p.UpdateFunc(e) {
 					log.V(6).Info("One of the provided predicates returned true, allowing further processing")
@@ -110,9 +94,6 @@ func Any(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
 			log := logger.WithValues("predicateAggregation", "Any")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if p.CreateFunc(e) {
 					log.V(6).Info("One of the provided predicates returned true, allowing further processing")
@@ -124,9 +105,6 @@ func Any(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			log := logger.WithValues("predicateAggregation", "Any")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if p.DeleteFunc(e) {
 					log.V(6).Info("One of the provided predicates returned true, allowing further processing")
@@ -138,9 +116,6 @@ func Any(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			log := logger.WithValues("predicateAggregation", "Any")
-			if gvk, err := apiutil.GVKForObject(e.Object, scheme); err == nil {
-				log = log.WithValues(gvk.Kind, klog.KObj(e.Object))
-			}
 			for _, p := range predicates {
 				if p.GenericFunc(e) {
 					log.V(6).Info("One of the provided predicates returned true, allowing further processing")
@@ -155,19 +130,19 @@ func Any(scheme *runtime.Scheme, logger logr.Logger, predicates ...predicate.Fun
 
 // ResourceHasFilterLabel returns a predicate that returns true only if the provided resource contains
 // a label with the WatchLabel key and the configured label value exactly.
-func ResourceHasFilterLabel(scheme *runtime.Scheme, logger logr.Logger, labelValue string) predicate.Funcs {
+func ResourceHasFilterLabel(logger logr.Logger, labelValue string) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return processIfLabelMatch(scheme, logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "update"), e.ObjectNew, labelValue)
+			return processIfLabelMatch(logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "update"), e.ObjectNew, labelValue)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return processIfLabelMatch(scheme, logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "create"), e.Object, labelValue)
+			return processIfLabelMatch(logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "create"), e.Object, labelValue)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return processIfLabelMatch(scheme, logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "delete"), e.Object, labelValue)
+			return processIfLabelMatch(logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "delete"), e.Object, labelValue)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return processIfLabelMatch(scheme, logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "generic"), e.Object, labelValue)
+			return processIfLabelMatch(logger.WithValues("predicate", "ResourceHasFilterLabel", "eventType", "generic"), e.Object, labelValue)
 		},
 	}
 }
@@ -182,59 +157,57 @@ func ResourceHasFilterLabel(scheme *runtime.Scheme, logger logr.Logger, labelVal
 //		controller, err := ctrl.NewControllerManagedBy(mgr).
 //			For(&v1.MyType{}).
 //			WithOptions(options).
-//			WithEventFilter(util.ResourceNotPaused(mgr.GetScheme(), r.Log)).
+//			WithEventFilter(util.ResourceNotPaused(r.Log)).
 //			Build(r)
 //		return err
 //	}
-func ResourceNotPaused(scheme *runtime.Scheme, logger logr.Logger) predicate.Funcs {
+func ResourceNotPaused(logger logr.Logger) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return processIfNotPaused(scheme, logger.WithValues("predicate", "ResourceNotPaused", "eventType", "update"), e.ObjectNew)
+			return processIfNotPaused(logger.WithValues("predicate", "ResourceNotPaused", "eventType", "update"), e.ObjectNew)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return processIfNotPaused(scheme, logger.WithValues("predicate", "ResourceNotPaused", "eventType", "create"), e.Object)
+			return processIfNotPaused(logger.WithValues("predicate", "ResourceNotPaused", "eventType", "create"), e.Object)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return processIfNotPaused(scheme, logger.WithValues("predicate", "ResourceNotPaused", "eventType", "delete"), e.Object)
+			return processIfNotPaused(logger.WithValues("predicate", "ResourceNotPaused", "eventType", "delete"), e.Object)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return processIfNotPaused(scheme, logger.WithValues("predicate", "ResourceNotPaused", "eventType", "generic"), e.Object)
+			return processIfNotPaused(logger.WithValues("predicate", "ResourceNotPaused", "eventType", "generic"), e.Object)
 		},
 	}
 }
 
 // ResourceNotPausedAndHasFilterLabel returns a predicate that returns true only if the
 // ResourceNotPaused and ResourceHasFilterLabel predicates return true.
-func ResourceNotPausedAndHasFilterLabel(scheme *runtime.Scheme, logger logr.Logger, labelValue string) predicate.Funcs {
-	return All(scheme, logger, ResourceNotPaused(scheme, logger), ResourceHasFilterLabel(scheme, logger, labelValue))
+func ResourceNotPausedAndHasFilterLabel(logger logr.Logger, labelValue string) predicate.Funcs {
+	return All(logger, ResourceNotPaused(logger), ResourceHasFilterLabel(logger, labelValue))
 }
 
-func processIfNotPaused(scheme *runtime.Scheme, logger logr.Logger, obj client.Object) bool {
-	if gvk, err := apiutil.GVKForObject(obj, scheme); err == nil {
-		logger = logger.WithValues(gvk.Kind, klog.KObj(obj))
-	}
+func processIfNotPaused(logger logr.Logger, obj client.Object) bool {
+	kind := strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)
+	log := logger.WithValues("namespace", obj.GetNamespace(), kind, obj.GetName())
 	if annotations.HasPaused(obj) {
-		logger.V(4).Info("Resource is paused, will not attempt to map resource")
+		log.V(4).Info("Resource is paused, will not attempt to map resource")
 		return false
 	}
-	logger.V(6).Info("Resource is not paused, will attempt to map resource")
+	log.V(6).Info("Resource is not paused, will attempt to map resource")
 	return true
 }
 
-func processIfLabelMatch(scheme *runtime.Scheme, logger logr.Logger, obj client.Object, labelValue string) bool {
+func processIfLabelMatch(logger logr.Logger, obj client.Object, labelValue string) bool {
 	// Return early if no labelValue was set.
 	if labelValue == "" {
 		return true
 	}
 
-	if gvk, err := apiutil.GVKForObject(obj, scheme); err == nil {
-		logger = logger.WithValues(gvk.Kind, klog.KObj(obj))
-	}
+	kind := strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)
+	log := logger.WithValues("namespace", obj.GetNamespace(), kind, obj.GetName())
 	if labels.HasWatchLabel(obj, labelValue) {
-		logger.V(6).Info("Resource matches label, will attempt to map resource")
+		log.V(6).Info("Resource matches label, will attempt to map resource")
 		return true
 	}
-	logger.V(4).Info("Resource does not match label, will not attempt to map resource")
+	log.V(4).Info("Resource does not match label, will not attempt to map resource")
 	return false
 }
 
@@ -242,64 +215,62 @@ func processIfLabelMatch(scheme *runtime.Scheme, logger logr.Logger, obj client.
 // the externally managed annotation.
 // This implements a requirement for InfraCluster providers to be able to ignore externally managed
 // cluster infrastructure.
-func ResourceIsNotExternallyManaged(scheme *runtime.Scheme, logger logr.Logger) predicate.Funcs {
+func ResourceIsNotExternallyManaged(logger logr.Logger) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return processIfNotExternallyManaged(scheme, logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "update"), e.ObjectNew)
+			return processIfNotExternallyManaged(logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "update"), e.ObjectNew)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return processIfNotExternallyManaged(scheme, logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "create"), e.Object)
+			return processIfNotExternallyManaged(logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "create"), e.Object)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return processIfNotExternallyManaged(scheme, logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "delete"), e.Object)
+			return processIfNotExternallyManaged(logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "delete"), e.Object)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return processIfNotExternallyManaged(scheme, logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "generic"), e.Object)
+			return processIfNotExternallyManaged(logger.WithValues("predicate", "ResourceIsNotExternallyManaged", "eventType", "generic"), e.Object)
 		},
 	}
 }
 
-func processIfNotExternallyManaged(scheme *runtime.Scheme, logger logr.Logger, obj client.Object) bool {
-	if gvk, err := apiutil.GVKForObject(obj, scheme); err == nil {
-		logger = logger.WithValues(gvk.Kind, klog.KObj(obj))
-	}
+func processIfNotExternallyManaged(logger logr.Logger, obj client.Object) bool {
+	kind := strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)
+	log := logger.WithValues("namespace", obj.GetNamespace(), kind, obj.GetName())
 	if annotations.IsExternallyManaged(obj) {
-		logger.V(4).Info("Resource is externally managed, will not attempt to map resource")
+		log.V(4).Info("Resource is externally managed, will not attempt to map resource")
 		return false
 	}
-	logger.V(6).Info("Resource is managed, will attempt to map resource")
+	log.V(6).Info("Resource is managed, will attempt to map resource")
 	return true
 }
 
 // ResourceIsTopologyOwned returns a predicate that returns true only if the resource has
 // the `topology.cluster.x-k8s.io/owned` label.
-func ResourceIsTopologyOwned(scheme *runtime.Scheme, logger logr.Logger) predicate.Funcs {
+func ResourceIsTopologyOwned(logger logr.Logger) predicate.Funcs {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			return processIfTopologyOwned(scheme, logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "update"), e.ObjectNew)
+			return processIfTopologyOwned(logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "update"), e.ObjectNew)
 		},
 		CreateFunc: func(e event.CreateEvent) bool {
-			return processIfTopologyOwned(scheme, logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "create"), e.Object)
+			return processIfTopologyOwned(logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "create"), e.Object)
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return processIfTopologyOwned(scheme, logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "delete"), e.Object)
+			return processIfTopologyOwned(logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "delete"), e.Object)
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
-			return processIfTopologyOwned(scheme, logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "generic"), e.Object)
+			return processIfTopologyOwned(logger.WithValues("predicate", "ResourceIsTopologyOwned", "eventType", "generic"), e.Object)
 		},
 	}
 }
 
-func processIfTopologyOwned(scheme *runtime.Scheme, logger logr.Logger, obj client.Object) bool {
-	if gvk, err := apiutil.GVKForObject(obj, scheme); err == nil {
-		logger = logger.WithValues(gvk.Kind, klog.KObj(obj))
-	}
+func processIfTopologyOwned(logger logr.Logger, obj client.Object) bool {
+	kind := strings.ToLower(obj.GetObjectKind().GroupVersionKind().Kind)
+	log := logger.WithValues("namespace", obj.GetNamespace(), kind, obj.GetName())
 	if labels.IsTopologyOwned(obj) {
-		logger.V(6).Info("Resource is topology owned, will attempt to map resource")
+		log.V(6).Info("Resource is topology owned, will attempt to map resource")
 		return true
 	}
 	// We intentionally log this line only on level 6, because it will be very frequently
 	// logged for MachineDeployments and MachineSets not owned by a topology.
-	logger.V(6).Info("Resource is not topology owned, will not attempt to map resource")
+	log.V(6).Info("Resource is not topology owned, will not attempt to map resource")
 	return false
 }

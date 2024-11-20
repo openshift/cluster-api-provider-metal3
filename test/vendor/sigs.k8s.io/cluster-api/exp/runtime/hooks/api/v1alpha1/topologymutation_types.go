@@ -34,26 +34,26 @@ type GeneratePatchesRequest struct {
 	// CommonRequest contains Settings field common to all request types.
 	CommonRequest `json:",inline"`
 
-	// variables are global variables for all templates.
+	// Variables are global variables for all templates.
 	Variables []Variable `json:"variables"`
 
-	// items is the list of templates to generate patches for.
+	// Items is the list of templates to generate patches for.
 	Items []GeneratePatchesRequestItem `json:"items"`
 }
 
 // GeneratePatchesRequestItem represents a template to generate patches for.
 type GeneratePatchesRequestItem struct {
-	// uid is an identifier for this template. It allows us to correlate the template in the request
+	// UID is an identifier for this template. It allows us to correlate the template in the request
 	// with the corresponding generated patches in the response.
 	UID types.UID `json:"uid"`
 
-	// holderReference is a reference to the object where the template is used.
+	// HolderReference is a reference to the object where the template is used.
 	HolderReference HolderReference `json:"holderReference"`
 
-	// object contains the template as a raw object.
+	// Object contains the template as a raw object.
 	Object runtime.RawExtension `json:"object"`
 
-	// variables are variables specific for the current template.
+	// Variables are variables specific for the current template.
 	// For example some builtin variables like MachineDeployment replicas and version are context-sensitive
 	// and thus are only added to templates for MachineDeployments and with values which correspond to the
 	// current MachineDeployment.
@@ -72,21 +72,21 @@ type GeneratePatchesResponse struct {
 	// CommonResponse contains Status and Message fields common to all response types.
 	CommonResponse `json:",inline"`
 
-	// items is the list of generated patches.
+	// Items is the list of generated patches.
 	Items []GeneratePatchesResponseItem `json:"items"`
 }
 
 // GeneratePatchesResponseItem is a generated patch.
 type GeneratePatchesResponseItem struct {
-	// uid identifies the corresponding template in the request on which
+	// UID identifies the corresponding template in the request on which
 	// the patch should be applied.
 	UID types.UID `json:"uid"`
 
-	// patchType defines the type of the patch.
+	// PatchType defines the type of the patch.
 	// One of: "JSONPatch" or "JSONMergePatch".
 	PatchType PatchType `json:"patchType"`
 
-	// patch contains the patch which should be applied to the template.
+	// Patch contains the patch which should be applied to the template.
 	// It must be of the corresponding PatchType.
 	Patch []byte `json:"patch"`
 }
@@ -114,22 +114,22 @@ type ValidateTopologyRequest struct {
 	// CommonRequest contains Settings field common to all request types.
 	CommonRequest `json:",inline"`
 
-	// variables are global variables for all templates.
+	// Variables are global variables for all templates.
 	Variables []Variable `json:"variables"`
 
-	// items is the list of templates to validate.
+	// Items is the list of templates to validate.
 	Items []*ValidateTopologyRequestItem `json:"items"`
 }
 
 // ValidateTopologyRequestItem represents a template to validate.
 type ValidateTopologyRequestItem struct {
-	// holderReference is a reference to the object where the template is used.
+	// HolderReference is a reference to the object where the template is used.
 	HolderReference HolderReference `json:"holderReference"`
 
-	// object contains the template as a raw object.
+	// Object contains the template as a raw object.
 	Object runtime.RawExtension `json:"object"`
 
-	// variables are variables specific for the current template.
+	// Variables are variables specific for the current template.
 	// For example some builtin variables like MachineDeployment replicas and version are context-sensitive
 	// and thus are only added to templates for MachineDeployments and with values which correspond to the
 	// current MachineDeployment.
@@ -149,10 +149,10 @@ type ValidateTopologyResponse struct {
 
 // Variable represents a variable value.
 type Variable struct {
-	// name of the variable.
+	// Name of the variable.
 	Name string `json:"name"`
 
-	// value of the variable.
+	// Value of the variable.
 	Value apiextensionsv1.JSON `json:"value"`
 }
 
@@ -161,19 +161,19 @@ type HolderReference struct {
 	// API version of the referent.
 	APIVersion string `json:"apiVersion"`
 
-	// kind of the referent.
+	// Kind of the referent.
 	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
 	Kind string `json:"kind"`
 
-	// namespace of the referent.
+	// Namespace of the referent.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
 	Namespace string `json:"namespace"`
 
-	// name of the referent.
+	// Name of the referent.
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
 	Name string `json:"name"`
 
-	// fieldPath is the path to the field of the object which references the template.
+	// FieldPath is the path to the field of the object which references the template.
 	FieldPath string `json:"fieldPath"`
 }
 
@@ -197,7 +197,7 @@ type DiscoverVariablesResponse struct {
 	// CommonResponse contains Status and Message fields common to all response types.
 	CommonResponse `json:",inline"`
 
-	// variables are variable schemas for variables defined by the DiscoverVariables hook.
+	// Variables are variable schemas for variables defined by the DiscoverVariables hook.
 	Variables []clusterv1.ClusterClassVariable `json:"variables"`
 }
 

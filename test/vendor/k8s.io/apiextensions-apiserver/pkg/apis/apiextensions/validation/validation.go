@@ -28,6 +28,7 @@ import (
 	"unicode/utf8"
 
 	celgo "github.com/google/cel-go/cel"
+
 	"k8s.io/apiextensions-apiserver/pkg/apihelpers"
 	"k8s.io/apiextensions-apiserver/pkg/apis/apiextensions"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -93,8 +94,6 @@ func ValidateCustomResourceDefinition(ctx context.Context, obj *apiextensions.Cu
 		requireMapListKeysMapSetValidation:       true,
 		// strictCost is always true to enforce cost limits.
 		celEnvironmentSet: environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true),
-		// allowInvalidCABundle is set to true since the CRD is not established yet.
-		allowInvalidCABundle: true,
 	}
 
 	allErrs := genericvalidation.ValidateObjectMeta(&obj.ObjectMeta, false, nameValidationFn, field.NewPath("metadata"))
@@ -141,9 +140,6 @@ type validationOptions struct {
 	suppressPerExpressionCost bool
 
 	celEnvironmentSet *environment.EnvSet
-	// allowInvalidCABundle allows an invalid conversion webhook CABundle on update only if the existing CABundle is invalid.
-	// An invalid CABundle is also permitted on create and before a CRD is in an Established=True condition.
-	allowInvalidCABundle bool
 }
 
 type preexistingExpressions struct {
@@ -183,7 +179,7 @@ func findPreexistingExpressionsInSchema(schema *apiextensions.JSONSchemaProps, e
 		for _, v := range s.XValidations {
 			expressions.rules.Insert(v.Rule)
 			if len(v.MessageExpression) > 0 {
-				expressions.messageExpressions.Insert(v.MessageExpression)
+				expressions.messageExpressions.Insert(v.Rule)
 			}
 		}
 		return false
@@ -237,8 +233,7 @@ func ValidateCustomResourceDefinitionUpdate(ctx context.Context, obj, oldObj *ap
 		preexistingExpressions:                   findPreexistingExpressions(&oldObj.Spec),
 		versionsWithUnchangedSchemas:             findVersionsWithUnchangedSchemas(obj, oldObj),
 		// strictCost is always true to enforce cost limits.
-		celEnvironmentSet:    environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true),
-		allowInvalidCABundle: allowInvalidCABundle(oldObj),
+		celEnvironmentSet: environment.MustBaseEnvSet(environment.DefaultCompatibilityVersion(), true),
 	}
 	return validateCustomResourceDefinitionUpdate(ctx, obj, oldObj, opts)
 }
@@ -490,7 +485,7 @@ func validateCustomResourceDefinitionSpec(ctx context.Context, spec *apiextensio
 	if (spec.Conversion != nil && spec.Conversion.Strategy != apiextensions.NoneConverter) && (spec.PreserveUnknownFields == nil || *spec.PreserveUnknownFields) {
 		allErrs = append(allErrs, field.Invalid(fldPath.Child("conversion").Child("strategy"), spec.Conversion.Strategy, "must be None if spec.preserveUnknownFields is true"))
 	}
-	allErrs = append(allErrs, validateCustomResourceConversion(spec.Conversion, opts.requireRecognizedConversionReviewVersion, fldPath.Child("conversion"), opts)...)
+	allErrs = append(allErrs, validateCustomResourceConversion(spec.Conversion, opts.requireRecognizedConversionReviewVersion, fldPath.Child("conversion"))...)
 
 	return allErrs
 }
@@ -550,20 +545,6 @@ func validateConversionReviewVersions(versions []string, requireRecognizedVersio
 	return allErrs
 }
 
-// Allows invalid CA Bundle to be specified only if the existing CABundle is invalid
-// or if the CRD is not established yet.
-func allowInvalidCABundle(oldCRD *apiextensions.CustomResourceDefinition) bool {
-	if !apiextensions.IsCRDConditionTrue(oldCRD, apiextensions.Established) {
-		return true
-	}
-	oldConversion := oldCRD.Spec.Conversion
-	if oldConversion == nil || oldConversion.WebhookClientConfig == nil ||
-		len(oldConversion.WebhookClientConfig.CABundle) == 0 {
-		return false
-	}
-	return len(webhook.ValidateCABundle(field.NewPath("caBundle"), oldConversion.WebhookClientConfig.CABundle)) > 0
-}
-
 // hasValidConversionReviewVersion return true if there is a valid version or if the list is empty.
 func hasValidConversionReviewVersionOrEmpty(versions []string) bool {
 	if len(versions) < 1 {
@@ -577,7 +558,12 @@ func hasValidConversionReviewVersionOrEmpty(versions []string) bool {
 	return false
 }
 
-func validateCustomResourceConversion(conversion *apiextensions.CustomResourceConversion, requireRecognizedVersion bool, fldPath *field.Path, opts validationOptions) field.ErrorList {
+// ValidateCustomResourceConversion statically validates
+func ValidateCustomResourceConversion(conversion *apiextensions.CustomResourceConversion, fldPath *field.Path) field.ErrorList {
+	return validateCustomResourceConversion(conversion, true, fldPath)
+}
+
+func validateCustomResourceConversion(conversion *apiextensions.CustomResourceConversion, requireRecognizedVersion bool, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if conversion == nil {
 		return allErrs
@@ -595,9 +581,6 @@ func validateCustomResourceConversion(conversion *apiextensions.CustomResourceCo
 				allErrs = append(allErrs, webhook.ValidateWebhookURL(fldPath.Child("webhookClientConfig").Child("url"), *cc.URL, true)...)
 			case cc.Service != nil:
 				allErrs = append(allErrs, webhook.ValidateWebhookService(fldPath.Child("webhookClientConfig").Child("service"), cc.Service.Name, cc.Service.Namespace, cc.Service.Path, cc.Service.Port)...)
-			}
-			if len(cc.CABundle) > 0 && !opts.allowInvalidCABundle {
-				allErrs = append(allErrs, webhook.ValidateCABundle(fldPath.Child("webhookClientConfig").Child("caBundle"), cc.CABundle)...)
 			}
 		}
 		allErrs = append(allErrs, validateConversionReviewVersions(conversion.ConversionReviewVersions, requireRecognizedVersion, fldPath.Child("conversionReviewVersions"))...)

@@ -306,18 +306,17 @@ func WaitForControlPlaneAndMachinesReady(ctx context.Context, input WaitForContr
 
 // UpgradeControlPlaneAndWaitForUpgradeInput is the input type for UpgradeControlPlaneAndWaitForUpgrade.
 type UpgradeControlPlaneAndWaitForUpgradeInput struct {
-	ClusterProxy                       ClusterProxy
-	Cluster                            *clusterv1.Cluster
-	ControlPlane                       *controlplanev1.KubeadmControlPlane
-	KubernetesUpgradeVersion           string
-	UpgradeMachineTemplate             *string
-	EtcdImageTag                       string
-	DNSImageTag                        string
-	WaitForMachinesToBeUpgraded        []interface{}
-	WaitForDNSUpgrade                  []interface{}
-	WaitForKubeProxyUpgrade            []interface{}
-	WaitForEtcdUpgrade                 []interface{}
-	PreWaitForControlPlaneToBeUpgraded func()
+	ClusterProxy                ClusterProxy
+	Cluster                     *clusterv1.Cluster
+	ControlPlane                *controlplanev1.KubeadmControlPlane
+	KubernetesUpgradeVersion    string
+	UpgradeMachineTemplate      *string
+	EtcdImageTag                string
+	DNSImageTag                 string
+	WaitForMachinesToBeUpgraded []interface{}
+	WaitForDNSUpgrade           []interface{}
+	WaitForKubeProxyUpgrade     []interface{}
+	WaitForEtcdUpgrade          []interface{}
 }
 
 // UpgradeControlPlaneAndWaitForUpgrade upgrades a KubeadmControlPlane and waits for it to be upgraded.
@@ -357,12 +356,6 @@ func UpgradeControlPlaneAndWaitForUpgrade(ctx context.Context, input UpgradeCont
 	Eventually(func() error {
 		return patchHelper.Patch(ctx, input.ControlPlane)
 	}, retryableOperationTimeout, retryableOperationInterval).Should(Succeed(), "Failed to patch the new kubernetes version to KCP %s", klog.KObj(input.ControlPlane))
-
-	// Once we have patched the Kubernetes Cluster we can run PreWaitForControlPlaneToBeUpgraded.
-	if input.PreWaitForControlPlaneToBeUpgraded != nil {
-		log.Logf("Calling PreWaitForControlPlaneToBeUpgraded")
-		input.PreWaitForControlPlaneToBeUpgraded()
-	}
 
 	log.Logf("Waiting for control-plane machines to have the upgraded kubernetes version")
 	WaitForControlPlaneMachinesToBeUpgraded(ctx, WaitForControlPlaneMachinesToBeUpgradedInput{
