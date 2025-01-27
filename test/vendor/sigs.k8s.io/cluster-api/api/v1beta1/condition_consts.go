@@ -337,6 +337,9 @@ const (
 	// yet completed because the ClusterClass has not reconciled yet. If this condition persists there may be an issue
 	// with the ClusterClass surfaced in the ClusterClass status or controller logs.
 	TopologyReconciledClusterClassNotReconciledReason = "ClusterClassNotReconciled"
+
+	// TopologyReconciledPausedReason (Severity=Info) surfaces when the Cluster is paused.
+	TopologyReconciledPausedReason = "Paused"
 )
 
 // Conditions and condition reasons for ClusterClass.
@@ -350,4 +353,8 @@ const (
 	// up-to-date (i.e. they are not using the latest apiVersion of the current Cluster API contract from
 	// the corresponding CRD).
 	ClusterClassOutdatedRefVersionsReason = "OutdatedRefVersions"
+
+	// ClusterClassRefVersionsUpToDateInternalErrorReason (Severity=Warning) surfaces that an unexpected error occurred when validating
+	// if the references are up-to-date.
+	ClusterClassRefVersionsUpToDateInternalErrorReason = "InternalError"
 )

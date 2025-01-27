@@ -40,6 +40,423 @@ const (
 	ClusterKind = "Cluster"
 )
 
+// Cluster's Available condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterAvailableV1Beta2Condition is true if the Cluster is not deleted, and RemoteConnectionProbe, InfrastructureReady,
+	// ControlPlaneAvailable, WorkersAvailable, TopologyReconciled (if present) conditions are true.
+	// If conditions are defined in spec.availabilityGates, those conditions must be true as well.
+	// Note:
+	// - When summarizing TopologyReconciled, all reasons except TopologyReconcileFailed and ClusterClassNotReconciled will
+	//   be treated as info. This is because even if topology is not fully reconciled, this is an expected temporary state
+	//   and it doesn't impact availability.
+	// - When summarizing InfrastructureReady, ControlPlaneAvailable, in case the Cluster is deleting, the absence of the
+	//   referenced object won't be considered as an issue.
+	ClusterAvailableV1Beta2Condition = AvailableV1Beta2Condition
+
+	// ClusterAvailableV1Beta2Reason surfaces when the cluster availability criteria is met.
+	ClusterAvailableV1Beta2Reason = AvailableV1Beta2Reason
+
+	// ClusterNotAvailableV1Beta2Reason surfaces when the cluster availability criteria is not met (and thus the machine is not available).
+	ClusterNotAvailableV1Beta2Reason = NotAvailableV1Beta2Reason
+
+	// ClusterAvailableUnknownV1Beta2Reason surfaces when at least one cluster availability criteria is unknown
+	// and no availability criteria is not met.
+	ClusterAvailableUnknownV1Beta2Reason = AvailableUnknownV1Beta2Reason
+
+	// ClusterAvailableInternalErrorV1Beta2Reason surfaces unexpected error when computing the Available condition.
+	ClusterAvailableInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's TopologyReconciled condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterTopologyReconciledV1Beta2Condition is true if the topology controller is working properly.
+	// Note: This condition is added only if the Cluster is referencing a ClusterClass / defining a managed Topology.
+	ClusterTopologyReconciledV1Beta2Condition = "TopologyReconciled"
+
+	// ClusterTopologyReconcileSucceededV1Beta2Reason documents the reconciliation of a Cluster topology succeeded.
+	ClusterTopologyReconcileSucceededV1Beta2Reason = "ReconcileSucceeded"
+
+	// ClusterTopologyReconciledFailedV1Beta2Reason documents the reconciliation of a Cluster topology
+	// failing due to an error.
+	ClusterTopologyReconciledFailedV1Beta2Reason = "ReconcileFailed"
+
+	// ClusterTopologyReconciledControlPlaneUpgradePendingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because Control Plane is not yet updated to match the desired topology spec.
+	ClusterTopologyReconciledControlPlaneUpgradePendingV1Beta2Reason = "ControlPlaneUpgradePending"
+
+	// ClusterTopologyReconciledMachineDeploymentsCreatePendingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because at least one of the MachineDeployments is yet to be created.
+	// This generally happens because new MachineDeployment creations are held off while the ControlPlane is not stable.
+	ClusterTopologyReconciledMachineDeploymentsCreatePendingV1Beta2Reason = "MachineDeploymentsCreatePending"
+
+	// ClusterTopologyReconciledMachineDeploymentsUpgradePendingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because at least one of the MachineDeployments is not yet updated to match the desired topology spec.
+	ClusterTopologyReconciledMachineDeploymentsUpgradePendingV1Beta2Reason = "MachineDeploymentsUpgradePending"
+
+	// ClusterTopologyReconciledMachineDeploymentsUpgradeDeferredV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because the upgrade for at least one of the MachineDeployments has been deferred.
+	ClusterTopologyReconciledMachineDeploymentsUpgradeDeferredV1Beta2Reason = "MachineDeploymentsUpgradeDeferred"
+
+	// ClusterTopologyReconciledMachinePoolsUpgradePendingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because at least one of the MachinePools is not yet updated to match the desired topology spec.
+	ClusterTopologyReconciledMachinePoolsUpgradePendingV1Beta2Reason = "MachinePoolsUpgradePending"
+
+	// ClusterTopologyReconciledMachinePoolsCreatePendingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because at least one of the MachinePools is yet to be created.
+	// This generally happens because new MachinePool creations are held off while the ControlPlane is not stable.
+	ClusterTopologyReconciledMachinePoolsCreatePendingV1Beta2Reason = "MachinePoolsCreatePending"
+
+	// ClusterTopologyReconciledMachinePoolsUpgradeDeferredV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because the upgrade for at least one of the MachinePools has been deferred.
+	ClusterTopologyReconciledMachinePoolsUpgradeDeferredV1Beta2Reason = "MachinePoolsUpgradeDeferred"
+
+	// ClusterTopologyReconciledHookBlockingV1Beta2Reason documents reconciliation of a Cluster topology
+	// not yet completed because at least one of the lifecycle hooks is blocking.
+	ClusterTopologyReconciledHookBlockingV1Beta2Reason = "LifecycleHookBlocking"
+
+	// ClusterTopologyReconciledClusterClassNotReconciledV1Beta2Reason documents reconciliation of a Cluster topology not
+	// yet completed because the ClusterClass has not reconciled yet. If this condition persists there may be an issue
+	// with the ClusterClass surfaced in the ClusterClass status or controller logs.
+	ClusterTopologyReconciledClusterClassNotReconciledV1Beta2Reason = "ClusterClassNotReconciled"
+
+	// ClusterTopologyReconciledDeletingV1Beta2Reason surfaces when the Cluster is deleting because the
+	// DeletionTimestamp is set.
+	ClusterTopologyReconciledDeletingV1Beta2Reason = DeletingV1Beta2Reason
+
+	// ClusterTopologyReconcilePausedV1Beta2Reason surfaces when the Cluster is paused.
+	ClusterTopologyReconcilePausedV1Beta2Reason = PausedV1Beta2Reason
+)
+
+// Cluster's InfrastructureReady condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterInfrastructureReadyV1Beta2Condition mirrors Cluster's infrastructure Ready condition.
+	ClusterInfrastructureReadyV1Beta2Condition = InfrastructureReadyV1Beta2Condition
+
+	// ClusterInfrastructureReadyV1Beta2Reason surfaces when the cluster infrastructure is ready.
+	ClusterInfrastructureReadyV1Beta2Reason = ReadyV1Beta2Reason
+
+	// ClusterInfrastructureNotReadyV1Beta2Reason surfaces when the cluster infrastructure is not ready.
+	ClusterInfrastructureNotReadyV1Beta2Reason = NotReadyV1Beta2Reason
+
+	// ClusterInfrastructureInvalidConditionReportedV1Beta2Reason surfaces a infrastructure Ready condition (read from an infra cluster object) which is invalid
+	// (e.g. its status is missing).
+	ClusterInfrastructureInvalidConditionReportedV1Beta2Reason = InvalidConditionReportedV1Beta2Reason
+
+	// ClusterInfrastructureInternalErrorV1Beta2Reason surfaces unexpected failures when reading an infra cluster object.
+	ClusterInfrastructureInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+
+	// ClusterInfrastructureDoesNotExistV1Beta2Reason surfaces when a referenced infrastructure object does not exist.
+	// Note: this could happen when creating the Cluster. However, this state should be treated as an error if it lasts indefinitely.
+	ClusterInfrastructureDoesNotExistV1Beta2Reason = ObjectDoesNotExistV1Beta2Reason
+
+	// ClusterInfrastructureDeletedV1Beta2Reason surfaces when a referenced infrastructure object has been deleted.
+	// Note: controllers can't identify if the infrastructure object was deleted by the controller itself, e.g.
+	// during the deletion workflow, or by a users.
+	ClusterInfrastructureDeletedV1Beta2Reason = ObjectDeletedV1Beta2Reason
+)
+
+// Cluster's ControlPlaneInitialized condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterControlPlaneInitializedV1Beta2Condition is true when the Cluster's control plane is functional enough
+	// to accept requests. This information is usually used as a signal for starting all the provisioning operations
+	// that depends on a functional API server, but do not require a full HA control plane to exists.
+	// Note: Once set to true, this condition will never change.
+	ClusterControlPlaneInitializedV1Beta2Condition = "ControlPlaneInitialized"
+
+	// ClusterControlPlaneInitializedV1Beta2Reason surfaces when the cluster control plane is initialized.
+	ClusterControlPlaneInitializedV1Beta2Reason = "Initialized"
+
+	// ClusterControlPlaneNotInitializedV1Beta2Reason surfaces when the cluster control plane is not yet initialized.
+	ClusterControlPlaneNotInitializedV1Beta2Reason = "NotInitialized"
+
+	// ClusterControlPlaneInitializedInternalErrorV1Beta2Reason surfaces unexpected failures when computing the
+	// ControlPlaneInitialized condition.
+	ClusterControlPlaneInitializedInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's ControlPlaneAvailable condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterControlPlaneAvailableV1Beta2Condition is a mirror of Cluster's control plane Available condition.
+	ClusterControlPlaneAvailableV1Beta2Condition = "ControlPlaneAvailable"
+
+	// ClusterControlPlaneAvailableV1Beta2Reason surfaces when the cluster control plane is available.
+	ClusterControlPlaneAvailableV1Beta2Reason = AvailableV1Beta2Reason
+
+	// ClusterControlPlaneNotAvailableV1Beta2Reason surfaces when the cluster control plane is not available.
+	ClusterControlPlaneNotAvailableV1Beta2Reason = NotAvailableV1Beta2Reason
+
+	// ClusterControlPlaneInvalidConditionReportedV1Beta2Reason surfaces a control plane Available condition (read from a control plane object) which is invalid.
+	// (e.g. its status is missing).
+	ClusterControlPlaneInvalidConditionReportedV1Beta2Reason = InvalidConditionReportedV1Beta2Reason
+
+	// ClusterControlPlaneInternalErrorV1Beta2Reason surfaces unexpected failures when reading a control plane object.
+	ClusterControlPlaneInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+
+	// ClusterControlPlaneDoesNotExistV1Beta2Reason surfaces when a referenced control plane object does not exist.
+	// Note: this could happen when creating the Cluster. However, this state should be treated as an error if it lasts indefinitely.
+	ClusterControlPlaneDoesNotExistV1Beta2Reason = ObjectDoesNotExistV1Beta2Reason
+
+	// ClusterControlPlaneDeletedV1Beta2Reason surfaces when a referenced control plane object has been deleted.
+	// Note: controllers can't identify if the control plane object was deleted by the controller itself, e.g.
+	// during the deletion workflow, or by a users.
+	ClusterControlPlaneDeletedV1Beta2Reason = ObjectDeletedV1Beta2Reason
+)
+
+// Cluster's WorkersAvailable condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterWorkersAvailableV1Beta2Condition is the summary of MachineDeployment and MachinePool's Available conditions.
+	// Note: Stand-alone MachineSets and stand-alone Machines are not included in this condition.
+	ClusterWorkersAvailableV1Beta2Condition = "WorkersAvailable"
+
+	// ClusterWorkersAvailableV1Beta2Reason surfaces when all  MachineDeployment and MachinePool's Available conditions are true.
+	ClusterWorkersAvailableV1Beta2Reason = AvailableV1Beta2Reason
+
+	// ClusterWorkersNotAvailableV1Beta2Reason surfaces when at least one of the  MachineDeployment and MachinePool's Available
+	// conditions is false.
+	ClusterWorkersNotAvailableV1Beta2Reason = NotAvailableV1Beta2Reason
+
+	// ClusterWorkersAvailableUnknownV1Beta2Reason surfaces when at least one of the  MachineDeployment and MachinePool's Available
+	// conditions is unknown and none of those Available conditions is false.
+	ClusterWorkersAvailableUnknownV1Beta2Reason = AvailableUnknownV1Beta2Reason
+
+	// ClusterWorkersAvailableNoWorkersV1Beta2Reason surfaces when no MachineDeployment and MachinePool exist for the Cluster.
+	ClusterWorkersAvailableNoWorkersV1Beta2Reason = "NoWorkers"
+
+	// ClusterWorkersAvailableInternalErrorV1Beta2Reason surfaces unexpected failures when listing MachineDeployment and MachinePool
+	// or aggregating conditions from those objects.
+	ClusterWorkersAvailableInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's ControlPlaneMachinesReady condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterControlPlaneMachinesReadyV1Beta2Condition surfaces detail of issues on control plane machines, if any.
+	ClusterControlPlaneMachinesReadyV1Beta2Condition = "ControlPlaneMachinesReady"
+
+	// ClusterControlPlaneMachinesReadyV1Beta2Reason surfaces when all control plane machine's Ready conditions are true.
+	ClusterControlPlaneMachinesReadyV1Beta2Reason = ReadyV1Beta2Reason
+
+	// ClusterControlPlaneMachinesNotReadyV1Beta2Reason surfaces when at least one of control plane machine's Ready conditions is false.
+	ClusterControlPlaneMachinesNotReadyV1Beta2Reason = NotReadyV1Beta2Reason
+
+	// ClusterControlPlaneMachinesReadyUnknownV1Beta2Reason surfaces when at least one of control plane machine's Ready conditions is unknown
+	// and none of control plane machine's Ready conditions is false.
+	ClusterControlPlaneMachinesReadyUnknownV1Beta2Reason = ReadyUnknownV1Beta2Reason
+
+	// ClusterControlPlaneMachinesReadyNoReplicasV1Beta2Reason surfaces when no control plane machines exist for the Cluster.
+	ClusterControlPlaneMachinesReadyNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
+
+	// ClusterControlPlaneMachinesReadyInternalErrorV1Beta2Reason surfaces unexpected failures when listing control plane machines
+	// or aggregating control plane machine's conditions.
+	ClusterControlPlaneMachinesReadyInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's WorkerMachinesReady condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterWorkerMachinesReadyV1Beta2Condition surfaces detail of issues on the worker machines, if any.
+	ClusterWorkerMachinesReadyV1Beta2Condition = "WorkerMachinesReady"
+
+	// ClusterWorkerMachinesReadyV1Beta2Reason surfaces when all the worker machine's Ready conditions are true.
+	ClusterWorkerMachinesReadyV1Beta2Reason = ReadyV1Beta2Reason
+
+	// ClusterWorkerMachinesNotReadyV1Beta2Reason surfaces when at least one of the worker machine's Ready conditions is false.
+	ClusterWorkerMachinesNotReadyV1Beta2Reason = NotReadyV1Beta2Reason
+
+	// ClusterWorkerMachinesReadyUnknownV1Beta2Reason surfaces when at least one of the worker machine's Ready conditions is unknown
+	// and none of the worker machine's Ready conditions is false.
+	ClusterWorkerMachinesReadyUnknownV1Beta2Reason = ReadyUnknownV1Beta2Reason
+
+	// ClusterWorkerMachinesReadyNoReplicasV1Beta2Reason surfaces when no worker machines exist for the Cluster.
+	ClusterWorkerMachinesReadyNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
+
+	// ClusterWorkerMachinesReadyInternalErrorV1Beta2Reason surfaces unexpected failures when listing worker machines
+	// or aggregating worker machine's conditions.
+	ClusterWorkerMachinesReadyInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's ControlPlaneMachinesUpToDate condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterControlPlaneMachinesUpToDateV1Beta2Condition surfaces details of control plane machines not up to date, if any.
+	// Note: New machines are considered 10s after machine creation. This gives time to the machine's owner controller to recognize the new machine and add the UpToDate condition.
+	ClusterControlPlaneMachinesUpToDateV1Beta2Condition = "ControlPlaneMachinesUpToDate"
+
+	// ClusterControlPlaneMachinesUpToDateV1Beta2Reason surfaces when all the control plane machine's UpToDate conditions are true.
+	ClusterControlPlaneMachinesUpToDateV1Beta2Reason = UpToDateV1Beta2Reason
+
+	// ClusterControlPlaneMachinesNotUpToDateV1Beta2Reason surfaces when at least one of the control plane machine's UpToDate conditions is false.
+	ClusterControlPlaneMachinesNotUpToDateV1Beta2Reason = NotUpToDateV1Beta2Reason
+
+	// ClusterControlPlaneMachinesUpToDateUnknownV1Beta2Reason surfaces when at least one of the control plane machine's UpToDate conditions is unknown
+	// and none of the control plane machine's UpToDate conditions is false.
+	ClusterControlPlaneMachinesUpToDateUnknownV1Beta2Reason = UpToDateUnknownV1Beta2Reason
+
+	// ClusterControlPlaneMachinesUpToDateNoReplicasV1Beta2Reason surfaces when no control plane machines exist for the Cluster.
+	ClusterControlPlaneMachinesUpToDateNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
+
+	// ClusterControlPlaneMachinesUpToDateInternalErrorV1Beta2Reason surfaces unexpected failures when listing control plane machines
+	// or aggregating status.
+	ClusterControlPlaneMachinesUpToDateInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's WorkerMachinesUpToDate condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterWorkerMachinesUpToDateV1Beta2Condition surfaces details of worker machines not up to date, if any.
+	// Note: New machines are considered 10s after machine creation. This gives time to the machine's owner controller to recognize the new machine and add the UpToDate condition.
+	ClusterWorkerMachinesUpToDateV1Beta2Condition = "WorkerMachinesUpToDate"
+
+	// ClusterWorkerMachinesUpToDateV1Beta2Reason surfaces when all the worker machine's UpToDate conditions are true.
+	ClusterWorkerMachinesUpToDateV1Beta2Reason = UpToDateV1Beta2Reason
+
+	// ClusterWorkerMachinesNotUpToDateV1Beta2Reason surfaces when at least one of the worker machine's UpToDate conditions is false.
+	ClusterWorkerMachinesNotUpToDateV1Beta2Reason = NotUpToDateV1Beta2Reason
+
+	// ClusterWorkerMachinesUpToDateUnknownV1Beta2Reason surfaces when at least one of the worker machine's UpToDate conditions is unknown
+	// and none of the worker machine's UpToDate conditions is false.
+	ClusterWorkerMachinesUpToDateUnknownV1Beta2Reason = UpToDateUnknownV1Beta2Reason
+
+	// ClusterWorkerMachinesUpToDateNoReplicasV1Beta2Reason surfaces when no worker machines exist for the Cluster.
+	ClusterWorkerMachinesUpToDateNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
+
+	// ClusterWorkerMachinesUpToDateInternalErrorV1Beta2Reason surfaces unexpected failures when listing worker machines
+	// or aggregating status.
+	ClusterWorkerMachinesUpToDateInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's RemoteConnectionProbe condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterRemoteConnectionProbeV1Beta2Condition is true when control plane can be reached; in case of connection problems.
+	// The condition turns to false only if the cluster cannot be reached for 50s after the first connection problem
+	// is detected (or whatever period is defined in the --remote-connection-grace-period flag).
+	ClusterRemoteConnectionProbeV1Beta2Condition = "RemoteConnectionProbe"
+
+	// ClusterRemoteConnectionProbeFailedV1Beta2Reason surfaces issues with the connection to the workload cluster.
+	ClusterRemoteConnectionProbeFailedV1Beta2Reason = "ProbeFailed"
+
+	// ClusterRemoteConnectionProbeSucceededV1Beta2Reason is used to report a working connection with the workload cluster.
+	ClusterRemoteConnectionProbeSucceededV1Beta2Reason = "ProbeSucceeded"
+)
+
+// Cluster's RollingOut condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterRollingOutV1Beta2Condition is the summary of `RollingOut` conditions from ControlPlane, MachineDeployments
+	// and MachinePools.
+	ClusterRollingOutV1Beta2Condition = RollingOutV1Beta2Condition
+
+	// ClusterRollingOutV1Beta2Reason surfaces when at least one of the Cluster's control plane, MachineDeployments,
+	// or MachinePools are rolling out.
+	ClusterRollingOutV1Beta2Reason = RollingOutV1Beta2Reason
+
+	// ClusterNotRollingOutV1Beta2Reason surfaces when none of the Cluster's control plane, MachineDeployments,
+	// or MachinePools are rolling out.
+	ClusterNotRollingOutV1Beta2Reason = NotRollingOutV1Beta2Reason
+
+	// ClusterRollingOutUnknownV1Beta2Reason surfaces when one of the Cluster's control plane, MachineDeployments,
+	// or MachinePools rolling out condition is unknown, and none true.
+	ClusterRollingOutUnknownV1Beta2Reason = "RollingOutUnknown"
+
+	// ClusterRollingOutInternalErrorV1Beta2Reason surfaces unexpected failures when listing machines
+	// or computing the RollingOut condition.
+	ClusterRollingOutInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's ScalingUp condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterScalingUpV1Beta2Condition is the summary of `ScalingUp` conditions from ControlPlane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets.
+	ClusterScalingUpV1Beta2Condition = ScalingUpV1Beta2Condition
+
+	// ClusterScalingUpV1Beta2Reason surfaces when at least one of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets are scaling up.
+	ClusterScalingUpV1Beta2Reason = ScalingUpV1Beta2Reason
+
+	// ClusterNotScalingUpV1Beta2Reason surfaces when none of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets are scaling up.
+	ClusterNotScalingUpV1Beta2Reason = NotScalingUpV1Beta2Reason
+
+	// ClusterScalingUpUnknownV1Beta2Reason surfaces when one of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets scaling up condition is unknown, and none true.
+	ClusterScalingUpUnknownV1Beta2Reason = "ScalingUpUnknown"
+
+	// ClusterScalingUpInternalErrorV1Beta2Reason surfaces unexpected failures when listing machines
+	// or computing the ScalingUp condition.
+	ClusterScalingUpInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's ScalingDown condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterScalingDownV1Beta2Condition is the summary of `ScalingDown` conditions from ControlPlane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets.
+	ClusterScalingDownV1Beta2Condition = ScalingDownV1Beta2Condition
+
+	// ClusterScalingDownV1Beta2Reason surfaces when at least one of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets are scaling down.
+	ClusterScalingDownV1Beta2Reason = ScalingDownV1Beta2Reason
+
+	// ClusterNotScalingDownV1Beta2Reason surfaces when none of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets are scaling down.
+	ClusterNotScalingDownV1Beta2Reason = NotScalingDownV1Beta2Reason
+
+	// ClusterScalingDownUnknownV1Beta2Reason surfaces when one of the Cluster's control plane, MachineDeployments,
+	// MachinePools and stand-alone MachineSets scaling down condition is unknown, and none true.
+	ClusterScalingDownUnknownV1Beta2Reason = "ScalingDownUnknown"
+
+	// ClusterScalingDownInternalErrorV1Beta2Reason surfaces unexpected failures when listing machines
+	// or computing the ScalingDown condition.
+	ClusterScalingDownInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's Remediating condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterRemediatingV1Beta2Condition surfaces details about ongoing remediation of the controlled machines, if any.
+	ClusterRemediatingV1Beta2Condition = RemediatingV1Beta2Condition
+
+	// ClusterRemediatingV1Beta2Reason surfaces when the Cluster has at least one machine with HealthCheckSucceeded set to false
+	// and with the OwnerRemediated condition set to false.
+	ClusterRemediatingV1Beta2Reason = RemediatingV1Beta2Reason
+
+	// ClusterNotRemediatingV1Beta2Reason surfaces when the Cluster does not have any machine with HealthCheckSucceeded set to false
+	// and with the OwnerRemediated condition set to false.
+	ClusterNotRemediatingV1Beta2Reason = NotRemediatingV1Beta2Reason
+
+	// ClusterRemediatingInternalErrorV1Beta2Reason surfaces unexpected failures when computing the Remediating condition.
+	ClusterRemediatingInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Cluster's Deleting condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// ClusterDeletingV1Beta2Condition surfaces details about ongoing deletion of the cluster.
+	ClusterDeletingV1Beta2Condition = DeletingV1Beta2Condition
+
+	// ClusterNotDeletingV1Beta2Reason surfaces when the Cluster is not deleting because the
+	// DeletionTimestamp is not set.
+	ClusterNotDeletingV1Beta2Reason = NotDeletingV1Beta2Reason
+
+	// ClusterDeletingWaitingForBeforeDeleteHookV1Beta2Reason surfaces when the Cluster deletion
+	// waits for the ClusterDelete hooks to allow deletion to complete.
+	ClusterDeletingWaitingForBeforeDeleteHookV1Beta2Reason = "WaitingForBeforeDeleteHook"
+
+	// ClusterDeletingWaitingForWorkersDeletionV1Beta2Reason surfaces when the Cluster deletion
+	// waits for the workers Machines and the object controlling those machines (MachinePools, MachineDeployments, MachineSets)
+	// to be deleted.
+	ClusterDeletingWaitingForWorkersDeletionV1Beta2Reason = "WaitingForWorkersDeletion"
+
+	// ClusterDeletingWaitingForControlPlaneDeletionV1Beta2Reason surfaces when the Cluster deletion
+	// waits for the ControlPlane to be deleted.
+	ClusterDeletingWaitingForControlPlaneDeletionV1Beta2Reason = "WaitingForControlPlaneDeletion"
+
+	// ClusterDeletingWaitingForInfrastructureDeletionV1Beta2Reason surfaces when the Cluster deletion
+	// waits for the InfraCluster to be deleted.
+	ClusterDeletingWaitingForInfrastructureDeletionV1Beta2Reason = "WaitingForInfrastructureDeletion"
+
+	// ClusterDeletingDeletionCompletedV1Beta2Reason surfaces when the Cluster deletion has been completed.
+	// This reason is set right after the `cluster.cluster.x-k8s.io` finalizer is removed.
+	// This means that the object will go away (i.e. be removed from etcd), except if there are other
+	// finalizers on the Cluster object.
+	ClusterDeletingDeletionCompletedV1Beta2Reason = DeletionCompletedV1Beta2Reason
+
+	// ClusterDeletingInternalErrorV1Beta2Reason surfaces unexpected failures when deleting a cluster.
+	ClusterDeletingInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
 // ANCHOR: ClusterSpec
 
 // ClusterSpec defines the desired state of Cluster.

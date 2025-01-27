@@ -2,7 +2,7 @@
 
 This doc gives short instructions how to run e2e tests. For the developing e2e
 tests, please refer to
-[Developing E2E tests](https://cluster-api.sigs.k8s.io/developer/e2e.html).
+[Developing E2E tests](https://cluster-api.sigs.k8s.io/developer/core/e2e).
 
 ## Prerequisites
 
@@ -36,9 +36,36 @@ tests, please refer to
 
 ## Running
 
-Run e2e tests with
+The whole e2e test suite is very big and it is not recommended to run whole
+suite at a time. You can easily choose the test you want to run or skip by
+using`GINKGO_FOCUS` and `GINKGO_SKIP`.
+For example following will run integration test:
 
 ```sh
+export GINKGO_FOCUS=integration
+make test-e2e
+```
+
+Below are the tests that you can use with `GINKGO_FOCUS` and `GINKGO_SKIP`
+
+- features
+   - ip-reuse
+   - healthcheck
+   - remediation
+   - pivoting
+- k8s-upgrade
+- clusterctl-upgrade
+- scalability
+- integration
+- basic
+
+You can combine both `GINKGO_FOCUS` and `GINKGO_SKIP` to run multiple tests
+according to your requirements. For example following will run ip-reuse and
+pivoting tests:
+
+```sh
+export GINKGO_FOCUS=features
+export GINKGO_SKIP=healthcheck remediation
 make test-e2e
 ```
 
@@ -98,16 +125,19 @@ in the ephemeral cluster either before pivoting or after re-pivoting.
 - Upgrade Ironic
 - Upgrade CAPI/CAPM3
 
-| tests         | CAPM3 from  | CAPM3 to  | CAPI from  | CAPI to         |
-| --------------| ----------- | --------- | ---------- |---------------- |
-| v1.7=>current | v1.7.0      | main      | v1.7.3     | latest release  |
-| v1.6=>current | v1.6.1      | main      | v1.6.3     | latest release  |
-| v1.5=>current | v1.5.3      | main      | v1.5.7     | latest release  |
+<!-- markdownlint-disable MD013 -->
+
+| tests         | CAPM3 from             | CAPM3 to  | CAPI from             | CAPI to         |
+| --------------| ---------------------- | --------- | --------------------- |---------------- |
+| v1.9=>current | v1.9 latest patch      | main      | v1.9 latest patch     | latest release  |
+| v1.8=>current | v1.8 latest patch      | main      | v1.8 latest patch     | latest release  |
+
+<!-- markdownlint-disable MD013 -->
 
 ### K8s upgrade tests
 
-Kubernetes version upgrade in target nodes. We run three latest version
-upgrades in k8s-upgrade tests for main branch and one kubernetes upgrade
+Kubernetes version upgrade in target nodes. We run latest version
+upgrade in k8s-upgrade tests for main branch and one kubernetes upgrade
 version for each release branch. When a new Kubernetes minor release is
 available, we will try to support it in an upcoming CAPM3 patch release
 (only in the latest supported CAPM3 minor release).
@@ -116,21 +146,19 @@ For example:
 
 Main branch k8s-upgrade tests:
 
-- `v1.27` => `v1.28`
-- `v1.28` => `v1.29`
+- `v1.31` => `v1.32`
+
+Release 1.9 branch k8s-upgrade test:
+
+- `v1.31` => `v1.32`
+
+Release 1.8 branch k8s-upgrade test:
+
 - `v1.29` => `v1.30`
 
 Release 1.7 branch k8s-upgrade test:
 
 - `v1.29` => `v1.30`
-
-Release 1.6 branch k8s-upgrade test:
-
-- `v1.28` => `v1.29`
-
-Release 1.5 branch k8s-upgrade test:
-
-- `v1.26` => `v1.27`
 
 When Kubernetes 1.31 is released, k8s-upgrade `v1.30` => `v1.31` will be
 supported in v1.7.x (but not in v1.6.x)
@@ -172,9 +200,9 @@ clusters:
 
 | tests               | bootstrap cluster | metal3 cluster init | metal3 cluster final |
 | ------------------- | ----------------- | ------------------- | -------------------- |
-| integration         | v1.29.0           | v1.29.0             | x                    |
-| remediation         | v1.29.0           | v1.29.0             | x                    |
-| pivot based feature | v1.29.0           | v1.28.1             | v1.29.0              |
-| upgrade             | v1.29.0           | v1.28.1             | v1.29.0              |
+| integration         | v1.32.0           | v1.32.0             | x                    |
+| remediation         | v1.32.0           | v1.31.2             | x                    |
+| pivot based feature | v1.32.0           | v1.31.2             | v1.32.0              |
+| upgrade             | v1.32.0           | v1.31.2             | v1.32.0              |
 
 <!-- markdownlint-enable MD013 -->

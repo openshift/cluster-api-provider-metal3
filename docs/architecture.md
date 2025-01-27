@@ -121,7 +121,7 @@ metadata:
   name: test1
 spec:
   apiEndpoint: https://192.168.111.249:6443
-  noCloudProvider: true
+  cloudProviderEnabled: false
 ```
 
 Metal3Cluster, after reconciliation
@@ -142,7 +142,7 @@ metadata:
   |----------------------------------------------------------------------------|
 spec:
   apiEndpoint: https://192.168.111.249:6443
-  noCloudProvider: true
+  cloudProviderEnabled: false
 status:
   apiEndpoints:
   - host: 192.168.111.249
@@ -404,7 +404,7 @@ spec:
     etcd: {}
     imageRepository: ""
     kind: ClusterConfiguration
-    kubernetesVersion: v1.31.2
+    kubernetesVersion: v1.32.0
     networking:
       dnsDomain: cluster.local
       podSubnet: 192.168.0.0/18

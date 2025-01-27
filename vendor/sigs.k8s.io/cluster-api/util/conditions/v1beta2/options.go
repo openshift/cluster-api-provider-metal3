@@ -68,11 +68,16 @@ func (t ForConditionTypes) ApplyToSummary(opts *SummaryOptions) {
 	opts.conditionTypes = t
 }
 
-// NegativePolarityConditionTypes allows to define polarity for some of the conditions in scope for a summary operation.
+// NegativePolarityConditionTypes allows to define polarity for some of the conditions in scope for a summary or an aggregate operation.
 type NegativePolarityConditionTypes []string
 
 // ApplyToSummary applies this configuration to the given summary options.
 func (t NegativePolarityConditionTypes) ApplyToSummary(opts *SummaryOptions) {
+	opts.negativePolarityConditionTypes = t
+}
+
+// ApplyToAggregate applies this configuration to the given aggregate options.
+func (t NegativePolarityConditionTypes) ApplyToAggregate(opts *AggregateOptions) {
 	opts.negativePolarityConditionTypes = t
 }
 
@@ -123,4 +128,37 @@ type ForceOverwrite bool
 // ApplyToPatchApply applies this configuration to the given patch apply options.
 func (f ForceOverwrite) ApplyToPatchApply(opts *PatchApplyOptions) {
 	opts.forceOverwrite = bool(f)
+}
+
+// GetPriorityFunc defines priority of a given condition when processed by the DefaultMergeStrategy.
+// Note: The return value must be one of IssueMergePriority, UnknownMergePriority, InfoMergePriority.
+type GetPriorityFunc func(condition metav1.Condition) MergePriority
+
+// ApplyToDefaultMergeStrategy applies this configuration to the given DefaultMergeStrategy options.
+func (f GetPriorityFunc) ApplyToDefaultMergeStrategy(opts *DefaultMergeStrategyOptions) {
+	opts.getPriorityFunc = f
+}
+
+// TargetConditionHasPositivePolarity defines the polarity of the condition returned by the DefaultMergeStrategy.
+type TargetConditionHasPositivePolarity bool
+
+// ApplyToDefaultMergeStrategy applies this configuration to the given DefaultMergeStrategy options.
+func (t TargetConditionHasPositivePolarity) ApplyToDefaultMergeStrategy(opts *DefaultMergeStrategyOptions) {
+	opts.targetConditionHasPositivePolarity = bool(t)
+}
+
+// ComputeReasonFunc defines a function to be used when computing the reason of the condition returned by the DefaultMergeStrategy.
+type ComputeReasonFunc func(issueConditions []ConditionWithOwnerInfo, unknownConditions []ConditionWithOwnerInfo, infoConditions []ConditionWithOwnerInfo) string
+
+// ApplyToDefaultMergeStrategy applies this configuration to the given DefaultMergeStrategy options.
+func (f ComputeReasonFunc) ApplyToDefaultMergeStrategy(opts *DefaultMergeStrategyOptions) {
+	opts.computeReasonFunc = f
+}
+
+// SummaryMessageTransformFunc defines a function to be used when computing the message for a summary condition returned by the DefaultMergeStrategy.
+type SummaryMessageTransformFunc func([]string) []string
+
+// ApplyToDefaultMergeStrategy applies this configuration to the given DefaultMergeStrategy options.
+func (f SummaryMessageTransformFunc) ApplyToDefaultMergeStrategy(opts *DefaultMergeStrategyOptions) {
+	opts.summaryMessageTransformFunc = f
 }

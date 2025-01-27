@@ -48,8 +48,8 @@ else
   export EPHEMERAL_CLUSTER="minikube"
 fi
 
-export FROM_K8S_VERSION=${FROM_K8S_VERSION:-"v1.30.0"}
-export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.31.2"}
+export FROM_K8S_VERSION=${FROM_K8S_VERSION:-"v1.31.2"}
+export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.32.0"}
 
 # Can be overriden from jjbs
 export CAPI_VERSION=${CAPI_VERSION:-"v1beta1"}
@@ -64,8 +64,11 @@ fi
 
 # Scalability test environment vars and config
 if [[ ${GINKGO_FOCUS:-} == "scalability" ]]; then
-  export NUM_NODES=${NUM_NODES:-"100"}
-  export BMH_BATCH_SIZE=${BMH_BATCH_SIZE:-"20"}
+  export NUM_NODES=${NUM_NODES:-"10"}
+  export BMH_BATCH_SIZE=${BMH_BATCH_SIZE:-"2"}
+  export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"1"}
+  export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"0"}
+  export KUBERNETES_VERSION_UPGRADE_FROM=${FROM_K8S_VERSION}
 fi
 
 # Integration test environment vars and config
@@ -73,6 +76,13 @@ if [[ ${GINKGO_FOCUS:-} == "integration" || ${GINKGO_FOCUS:-} == "basic" ]]; the
   export NUM_NODES=${NUM_NODES:-"2"}
   export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"1"}
   export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"1"}
+fi
+
+# IPReuse feature test environment vars and config
+if [[ ${GINKGO_FOCUS:-} == "features" && ${GINKGO_SKIP:-} == "pivoting remediation" ]]; then
+  export NUM_NODES="5"
+  export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"3"}
+  export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"2"}
 fi
 
 # Exported to the cluster templates

@@ -17,8 +17,6 @@ limitations under the License.
 package v1beta2
 
 import (
-	"fmt"
-
 	"github.com/pkg/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -55,20 +53,24 @@ func (o *SummaryOptions) ApplyOptions(opts []SummaryOption) *SummaryOptions {
 // If any of the condition in scope does not exist in the source object, missing conditions are considered Unknown, reason NotYetReported.
 // Use the IgnoreTypesIfMissing to exclude types from this option.
 //
-// If the StepCounter option, a message will be added at to the generated condition reporting how many condition
-// are not reporting issues/unknown over the total number of conditions being summarized, thus allowing to
-// provide users a indication of progress for multistep process like provisioning a machine.
 // Additionally, it is possible to inject custom merge strategies using the CustomMergeStrategy option or
 // to add a step counter to the generated message by using the StepCounter option.
 func NewSummaryCondition(sourceObj Getter, targetConditionType string, opts ...SummaryOption) (*metav1.Condition, error) {
 	summarizeOpt := &SummaryOptions{}
 	summarizeOpt.ApplyOptions(opts)
 	if summarizeOpt.mergeStrategy == nil {
-		summarizeOpt.mergeStrategy = newDefaultMergeStrategy(sets.New[string](summarizeOpt.negativePolarityConditionTypes...))
+		// Note. Summary always assume the target condition type has positive polarity.
+		summarizeOpt.mergeStrategy = DefaultMergeStrategy(GetPriorityFunc(GetDefaultMergePriorityFunc(summarizeOpt.negativePolarityConditionTypes...)))
 	}
 
 	if len(summarizeOpt.conditionTypes) == 0 {
 		return nil, errors.New("option ForConditionTypes not provided or empty")
+	}
+
+	for _, conditionType := range summarizeOpt.conditionTypes {
+		if conditionType == targetConditionType {
+			return nil, errors.Errorf("option ForConditionTypes cannot include %s (target condition type)", targetConditionType)
+		}
 	}
 
 	expectedConditionTypes := sets.New[string](summarizeOpt.conditionTypes...)
@@ -124,7 +126,7 @@ func NewSummaryCondition(sourceObj Getter, targetConditionType string, opts ...S
 					Type:    c,
 					Status:  metav1.ConditionUnknown,
 					Reason:  NotYetReportedReason,
-					Message: fmt.Sprintf("Condition %s not yet reported", c),
+					Message: "Condition not yet reported",
 					// NOTE: LastTransitionTime and ObservedGeneration are not relevant for merge.
 				},
 			})

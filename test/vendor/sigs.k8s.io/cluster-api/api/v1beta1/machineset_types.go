@@ -90,6 +90,7 @@ type MachineSetSpec struct {
 // MachineSet's ScalingUp condition and corresponding reasons that will be used in v1Beta2 API version.
 const (
 	// MachineSetScalingUpV1Beta2Condition is true if actual replicas < desired replicas.
+	// Note: In case a MachineSet preflight check is preventing scale up, this will surface in the condition message.
 	MachineSetScalingUpV1Beta2Condition = ScalingUpV1Beta2Condition
 
 	// MachineSetScalingUpV1Beta2Reason surfaces when actual replicas < desired replicas.
@@ -131,6 +132,16 @@ const (
 	// MachineSetMachinesReadyV1Beta2Condition surfaces detail of issues on the controlled machines, if any.
 	MachineSetMachinesReadyV1Beta2Condition = MachinesReadyV1Beta2Condition
 
+	// MachineSetMachinesReadyV1Beta2Reason surfaces when all the controlled machine's Ready conditions are true.
+	MachineSetMachinesReadyV1Beta2Reason = ReadyV1Beta2Reason
+
+	// MachineSetMachinesNotReadyV1Beta2Reason surfaces when at least one of the controlled machine's Ready conditions is false.
+	MachineSetMachinesNotReadyV1Beta2Reason = NotReadyV1Beta2Reason
+
+	// MachineSetMachinesReadyUnknownV1Beta2Reason surfaces when at least one of the controlled machine's Ready conditions is unknown
+	// and none of the controlled machine's Ready conditions is false.
+	MachineSetMachinesReadyUnknownV1Beta2Reason = ReadyUnknownV1Beta2Reason
+
 	// MachineSetMachinesReadyNoReplicasV1Beta2Reason surfaces when no machines exist for the MachineSet.
 	MachineSetMachinesReadyNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
 
@@ -143,7 +154,18 @@ const (
 // Note: Reason's could also be derived from the aggregation of machine's MachinesUpToDate conditions.
 const (
 	// MachineSetMachinesUpToDateV1Beta2Condition surfaces details of controlled machines not up to date, if any.
+	// Note: New machines are considered 10s after machine creation. This gives time to the machine's owner controller to recognize the new machine and add the UpToDate condition.
 	MachineSetMachinesUpToDateV1Beta2Condition = MachinesUpToDateV1Beta2Condition
+
+	// MachineSetMachinesUpToDateV1Beta2Reason surfaces when all the controlled machine's UpToDate conditions are true.
+	MachineSetMachinesUpToDateV1Beta2Reason = UpToDateV1Beta2Reason
+
+	// MachineSetMachinesNotUpToDateV1Beta2Reason surfaces when at least one of the controlled machine's UpToDate conditions is false.
+	MachineSetMachinesNotUpToDateV1Beta2Reason = NotUpToDateV1Beta2Reason
+
+	// MachineSetMachinesUpToDateUnknownV1Beta2Reason surfaces when at least one of the controlled machine's UpToDate conditions is unknown
+	// and none of the controlled machine's UpToDate conditions is false.
+	MachineSetMachinesUpToDateUnknownV1Beta2Reason = UpToDateUnknownV1Beta2Reason
 
 	// MachineSetMachinesUpToDateNoReplicasV1Beta2Reason surfaces when no machines exist for the MachineSet.
 	MachineSetMachinesUpToDateNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
@@ -153,13 +175,54 @@ const (
 	MachineSetMachinesUpToDateInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
 )
 
-// Conditions that will be used for the MachineSet object in v1Beta2 API version.
+// MachineSet's Remediating condition and corresponding reasons that will be used in v1Beta2 API version.
 const (
 	// MachineSetRemediatingV1Beta2Condition surfaces details about ongoing remediation of the controlled machines, if any.
 	MachineSetRemediatingV1Beta2Condition = RemediatingV1Beta2Condition
 
+	// MachineSetRemediatingV1Beta2Reason surfaces when the MachineSet has at least one machine with HealthCheckSucceeded set to false
+	// and with the OwnerRemediated condition set to false.
+	MachineSetRemediatingV1Beta2Reason = RemediatingV1Beta2Reason
+
+	// MachineSetNotRemediatingV1Beta2Reason surfaces when the MachineSet does not have any machine with HealthCheckSucceeded set to false
+	// and with the OwnerRemediated condition set to false.
+	MachineSetNotRemediatingV1Beta2Reason = NotRemediatingV1Beta2Reason
+
+	// MachineSetRemediatingInternalErrorV1Beta2Reason surfaces unexpected failures when computing the Remediating condition.
+	MachineSetRemediatingInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// Reasons that will be used for the OwnerRemediated condition set by MachineHealthCheck on MachineSet controlled machines
+// being remediated in v1Beta2 API version.
+const (
+	// MachineSetMachineCannotBeRemediatedV1Beta2Reason surfaces when remediation of a MachineSet machine can't be started.
+	MachineSetMachineCannotBeRemediatedV1Beta2Reason = "CannotBeRemediated"
+
+	// MachineSetMachineRemediationDeferredV1Beta2Reason surfaces when remediation of a MachineSet machine must be deferred.
+	MachineSetMachineRemediationDeferredV1Beta2Reason = "RemediationDeferred"
+
+	// MachineSetMachineRemediationMachineDeletingV1Beta2Reason surfaces when remediation of a MachineSet machine
+	// has been completed by deleting the unhealthy machine.
+	// Note: After an unhealthy machine is deleted, a new one is created by the MachineSet as part of the
+	// regular reconcile loop that ensures the correct number of replicas exist.
+	MachineSetMachineRemediationMachineDeletingV1Beta2Reason = "MachineDeleting"
+)
+
+// MachineSet's Deleting condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
 	// MachineSetDeletingV1Beta2Condition surfaces details about ongoing deletion of the controlled machines.
 	MachineSetDeletingV1Beta2Condition = DeletingV1Beta2Condition
+
+	// MachineSetNotDeletingV1Beta2Reason surfaces when the MachineSet is not deleting because the
+	// DeletionTimestamp is not set.
+	MachineSetNotDeletingV1Beta2Reason = NotDeletingV1Beta2Reason
+
+	// MachineSetDeletingV1Beta2Reason surfaces when the MachineSet is deleting because the
+	// DeletionTimestamp is set.
+	MachineSetDeletingV1Beta2Reason = DeletingV1Beta2Reason
+
+	// MachineSetDeletingInternalErrorV1Beta2Reason surfaces unexpected failures when deleting a MachineSet.
+	MachineSetDeletingInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
 )
 
 // ANCHOR_END: MachineSetSpec
@@ -223,6 +286,9 @@ type MachineSetStatus struct {
 	Replicas int32 `json:"replicas"`
 
 	// The number of replicas that have labels matching the labels of the machine template of the MachineSet.
+	//
+	// Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
+	//
 	// +optional
 	FullyLabeledReplicas int32 `json:"fullyLabeledReplicas"`
 

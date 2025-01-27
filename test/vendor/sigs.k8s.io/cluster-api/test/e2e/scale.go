@@ -415,7 +415,16 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 			Concurrency:  concurrency,
 			FailFast:     input.FailFast,
 			WorkerFunc: func(ctx context.Context, inputChan chan string, resultChan chan workResult, wg *sync.WaitGroup) {
-				deleteClusterAndWaitWorker(ctx, inputChan, resultChan, wg, input.BootstrapClusterProxy.GetClient(), namespace.Name, input.DeployClusterInSeparateNamespaces)
+				deleteClusterAndWaitWorker(
+					ctx,
+					inputChan,
+					resultChan,
+					wg,
+					input.BootstrapClusterProxy.GetClient(),
+					namespace.Name,
+					input.DeployClusterInSeparateNamespaces,
+					input.E2EConfig.GetIntervals(specName, "wait-delete-cluster")...,
+				)
 			},
 		})
 		if err != nil {
@@ -637,7 +646,7 @@ func createClusterWorker(ctx context.Context, clusterProxy framework.ClusterProx
 				// If every cluster should be deployed in a separate namespace:
 				// * Deploy ClusterClass in new namespace.
 				if deployClusterInSeparateNamespaces {
-					log.Logf("Apply ClusterClass in namespace %", namespaceName)
+					log.Logf("Apply ClusterClass in namespace %s", namespaceName)
 					clusterClassYAML := bytes.Replace(customizedClusterClassYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespaceName), -1)
 					Eventually(func() error {
 						return clusterProxy.CreateOrUpdate(ctx, clusterClassYAML)
@@ -659,7 +668,7 @@ func createClusterWorker(ctx context.Context, clusterProxy framework.ClusterProx
 	}
 }
 
-func deleteClusterAndWaitWorker(ctx context.Context, inputChan <-chan string, resultChan chan<- workResult, wg *sync.WaitGroup, c client.Client, defaultNamespace string, deployClusterInSeparateNamespaces bool) {
+func deleteClusterAndWaitWorker(ctx context.Context, inputChan <-chan string, resultChan chan<- workResult, wg *sync.WaitGroup, c client.Client, defaultNamespace string, deployClusterInSeparateNamespaces bool, intervals ...interface{}) {
 	defer wg.Done()
 
 	for {
@@ -705,7 +714,7 @@ func deleteClusterAndWaitWorker(ctx context.Context, inputChan <-chan string, re
 				framework.WaitForClusterDeleted(ctx, framework.WaitForClusterDeletedInput{
 					Client:  c,
 					Cluster: cluster,
-				})
+				}, intervals...)
 
 				// Note: We only delete the namespace in this case because in the case where all clusters are deployed
 				// to the same namespace deleting the Namespace will lead to deleting all clusters.

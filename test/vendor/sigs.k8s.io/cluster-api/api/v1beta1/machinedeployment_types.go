@@ -107,6 +107,16 @@ const (
 	// MachineDeploymentMachinesReadyV1Beta2Condition surfaces detail of issues on the controlled machines, if any.
 	MachineDeploymentMachinesReadyV1Beta2Condition = MachinesReadyV1Beta2Condition
 
+	// MachineDeploymentMachinesReadyV1Beta2Reason surfaces when all the controlled machine's Ready conditions are true.
+	MachineDeploymentMachinesReadyV1Beta2Reason = ReadyV1Beta2Reason
+
+	// MachineDeploymentMachinesNotReadyV1Beta2Reason surfaces when at least one of the controlled machine's Ready conditions is false.
+	MachineDeploymentMachinesNotReadyV1Beta2Reason = NotReadyV1Beta2Reason
+
+	// MachineDeploymentMachinesReadyUnknownV1Beta2Reason surfaces when at least one of the controlled machine's Ready conditions is unknown
+	// and none of the controlled machine's Ready conditions is false.
+	MachineDeploymentMachinesReadyUnknownV1Beta2Reason = ReadyUnknownV1Beta2Reason
+
 	// MachineDeploymentMachinesReadyNoReplicasV1Beta2Reason surfaces when no machines exist for the MachineDeployment.
 	MachineDeploymentMachinesReadyNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
 
@@ -118,7 +128,18 @@ const (
 // MachineDeployment's MachinesUpToDate condition and corresponding reasons that will be used in v1Beta2 API version.
 const (
 	// MachineDeploymentMachinesUpToDateV1Beta2Condition surfaces details of controlled machines not up to date, if any.
+	// Note: New machines are considered 10s after machine creation. This gives time to the machine's owner controller to recognize the new machine and add the UpToDate condition.
 	MachineDeploymentMachinesUpToDateV1Beta2Condition = MachinesUpToDateV1Beta2Condition
+
+	// MachineDeploymentMachinesUpToDateV1Beta2Reason surfaces when all the controlled machine's UpToDate conditions are true.
+	MachineDeploymentMachinesUpToDateV1Beta2Reason = UpToDateV1Beta2Reason
+
+	// MachineDeploymentMachinesNotUpToDateV1Beta2Reason surfaces when at least one of the controlled machine's UpToDate conditions is false.
+	MachineDeploymentMachinesNotUpToDateV1Beta2Reason = NotUpToDateV1Beta2Reason
+
+	// MachineDeploymentMachinesUpToDateUnknownV1Beta2Reason surfaces when at least one of the controlled machine's UpToDate conditions is unknown
+	// and none of the controlled machine's UpToDate conditions is false.
+	MachineDeploymentMachinesUpToDateUnknownV1Beta2Reason = UpToDateUnknownV1Beta2Reason
 
 	// MachineDeploymentMachinesUpToDateNoReplicasV1Beta2Reason surfaces when no machines exist for the MachineDeployment.
 	MachineDeploymentMachinesUpToDateNoReplicasV1Beta2Reason = NoReplicasV1Beta2Reason
@@ -126,6 +147,21 @@ const (
 	// MachineDeploymentMachinesUpToDateInternalErrorV1Beta2Reason surfaces unexpected failures when listing machines
 	// or aggregating status.
 	MachineDeploymentMachinesUpToDateInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
+)
+
+// MachineDeployment's RollingOut condition and corresponding reasons that will be used in v1Beta2 API version.
+const (
+	// MachineDeploymentRollingOutV1Beta2Condition is true if there is at least one machine not up-to-date.
+	MachineDeploymentRollingOutV1Beta2Condition = RollingOutV1Beta2Condition
+
+	// MachineDeploymentRollingOutV1Beta2Reason surfaces when there is at least one machine not up-to-date.
+	MachineDeploymentRollingOutV1Beta2Reason = RollingOutV1Beta2Reason
+
+	// MachineDeploymentNotRollingOutV1Beta2Reason surfaces when all the machines are up-to-date.
+	MachineDeploymentNotRollingOutV1Beta2Reason = NotRollingOutV1Beta2Reason
+
+	// MachineDeploymentRollingOutInternalErrorV1Beta2Reason surfaces unexpected failures when listing machines.
+	MachineDeploymentRollingOutInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
 )
 
 // MachineDeployment's ScalingUp condition and corresponding reasons that will be used in v1Beta2 API version.
@@ -188,13 +224,13 @@ const (
 	// MachineDeploymentDeletingV1Beta2Condition surfaces details about ongoing deletion of the controlled machines.
 	MachineDeploymentDeletingV1Beta2Condition = DeletingV1Beta2Condition
 
-	// MachineDeploymentDeletingDeletionTimestampNotSetV1Beta2Reason surfaces when the MachineDeployment is not deleting because the
+	// MachineDeploymentNotDeletingV1Beta2Reason surfaces when the MachineDeployment is not deleting because the
 	// DeletionTimestamp is not set.
-	MachineDeploymentDeletingDeletionTimestampNotSetV1Beta2Reason = DeletionTimestampNotSetV1Beta2Reason
+	MachineDeploymentNotDeletingV1Beta2Reason = NotDeletingV1Beta2Reason
 
-	// MachineDeploymentDeletingDeletionTimestampSetV1Beta2Reason surfaces when the MachineDeployment is deleting because the
+	// MachineDeploymentDeletingV1Beta2Reason surfaces when the MachineDeployment is deleting because the
 	// DeletionTimestamp is set.
-	MachineDeploymentDeletingDeletionTimestampSetV1Beta2Reason = DeletionTimestampSetV1Beta2Reason
+	MachineDeploymentDeletingV1Beta2Reason = DeletingV1Beta2Reason
 
 	// MachineDeploymentDeletingInternalErrorV1Beta2Reason surfaces unexpected failures when deleting a MachineDeployment.
 	MachineDeploymentDeletingInternalErrorV1Beta2Reason = InternalErrorV1Beta2Reason
@@ -273,6 +309,9 @@ type MachineDeploymentSpec struct {
 	// process failed deployments and a condition with a ProgressDeadlineExceeded
 	// reason will be surfaced in the deployment status. Note that progress will
 	// not be estimated during the time a deployment is paused. Defaults to 600s.
+	//
+	// Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/issues/11470 for more details.
+	//
 	// +optional
 	ProgressDeadlineSeconds *int32 `json:"progressDeadlineSeconds,omitempty"`
 }
@@ -411,6 +450,9 @@ type MachineDeploymentStatus struct {
 	// the deployment to have 100% available capacity. They may either
 	// be machines that are running but not yet available or machines
 	// that still have not been created.
+	//
+	// Deprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
+	//
 	// +optional
 	UnavailableReplicas int32 `json:"unavailableReplicas"`
 

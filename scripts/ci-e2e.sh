@@ -10,6 +10,16 @@ FORCE_REPO_UPDATE="${FORCE_REPO_UPDATE:-false}"
 
 export CAPM3RELEASEBRANCH="${CAPM3RELEASEBRANCH:-main}"
 
+# Extract release version from release-branch name
+if [[ "${CAPM3RELEASEBRANCH}" == release-* ]]; then
+    CAPM3_RELEASE_PREFIX="${CAPM3RELEASEBRANCH#release-}"
+    export CAPM3RELEASE="v${CAPM3_RELEASE_PREFIX}.99"
+    export CAPI_RELEASE_PREFIX="v${CAPM3_RELEASE_PREFIX}."
+else
+    export CAPM3RELEASE="v1.10.99"
+    export CAPI_RELEASE_PREFIX="v1.9."
+fi
+
 # Default CAPI_CONFIG_FOLDER to $HOME/.config folder if XDG_CONFIG_HOME not set
 CONFIG_FOLDER="${XDG_CONFIG_HOME:-$HOME/.config}"
 export CAPI_CONFIG_FOLDER="${CONFIG_FOLDER}/cluster-api"
@@ -33,8 +43,9 @@ export NUM_NODES=${NUM_NODES:-"4"}
 export KUBERNETES_VERSION=${KUBERNETES_VERSION}
 export IMAGE_OS=${IMAGE_OS}
 export FORCE_REPO_UPDATE="false"
+export USE_IRSO="${USE_IRSO:-false}"
 EOF
-# if running a clusterctl-upgrade test skip apply bmhs in dev-env
+# if running a scalability test skip apply bmhs in dev-env and run fakeIPA
 if [[ ${GINKGO_FOCUS:-} == "clusterctl-upgrade" ]]; then
     echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
 fi
@@ -42,10 +53,18 @@ if [[ ${GINKGO_FOCUS:-} == "features" ]]; then
     mkdir -p "$CAPI_CONFIG_FOLDER"
     echo "ENABLE_BMH_NAME_BASED_PREALLOCATION: true" >"$CAPI_CONFIG_FOLDER/clusterctl.yaml"
 fi
-# if running a scalability test skip apply bmhs in dev-env and run fakeIPA
+# if running a scalability tests, configure dev-env with fakeIPA
 if [[ ${GINKGO_FOCUS:-} == "scalability" ]]; then
-    echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+    export NUM_NODES="${NUM_NODES:-100}"
     echo 'export NODES_PLATFORM="fake"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+    echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+    sed -i "s/^export NUM_NODES=.*/export NUM_NODES=${NUM_NODES:-100}/" "${M3_DEV_ENV_PATH}/config_${USER}.sh"
+    mkdir -p "$CAPI_CONFIG_FOLDER"
+    echo 'CLUSTER_TOPOLOGY: true' >"$CAPI_CONFIG_FOLDER/clusterctl.yaml"
+    echo 'export EPHEMERAL_CLUSTER="minikube"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+else
+    # Don't run scalability tests if not asked for.
+    export GINKGO_SKIP="${GINKGO_SKIP:-} scalability"
 fi
 # Run make devenv to boot the source cluster
 pushd "${M3_DEV_ENV_PATH}" || exit 1
@@ -77,13 +96,13 @@ source "${M3_DEV_ENV_PATH}/lib/ironic_tls_setup.sh"
 
 # Generate credentials
 BMO_OVERLAYS=(
-  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.6"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.8"
+  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.9"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-latest"
 )
 IRONIC_OVERLAYS=(
-  "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-25.0"
   "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-26.0"
+  "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-27.0"
   "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-latest"
 )
 

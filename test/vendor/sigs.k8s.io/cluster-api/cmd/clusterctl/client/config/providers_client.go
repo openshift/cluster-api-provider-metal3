@@ -37,13 +37,15 @@ const (
 
 // Infra providers.
 const (
-	AWSProviderName            = "aws"
-	AzureProviderName          = "azure"
-	BYOHProviderName           = "byoh"
-	CloudStackProviderName     = "cloudstack"
-	DockerProviderName         = "docker"
-	DOProviderName             = "digitalocean"
-	GCPProviderName            = "gcp"
+	AWSProviderName        = "aws"
+	AzureProviderName      = "azure"
+	BYOHProviderName       = "byoh"
+	CloudStackProviderName = "cloudstack"
+	DockerProviderName     = "docker"
+	DOProviderName         = "digitalocean"
+	GCPProviderName        = "gcp"
+	// Note: harvester is currently on rancher-sandbox, but the plan is to move it on the harvester GitHub org (also owned by Rancher).
+	HarvesterProviderName      = "harvester-harvester"
 	HetznerProviderName        = "hetzner"
 	HivelocityProviderName     = "hivelocity-hivelocity"
 	OutscaleProviderName       = "outscale"
@@ -101,11 +103,17 @@ const (
 // IPAM providers.
 const (
 	InClusterIPAMProviderName = "in-cluster"
+	NutanixIPAMProviderName   = "nutanix"
 )
 
 // Add-on providers.
 const (
 	HelmAddonProviderName = "helm"
+)
+
+// Runtime extensions providers.
+const (
+	NutanixRuntimeExtensionsProviderName = "nutanix"
 )
 
 // Other.
@@ -249,6 +257,11 @@ func (p *providersClient) defaults() []Provider {
 		&provider{
 			name:         BYOHProviderName,
 			url:          "https://github.com/vmware-tanzu/cluster-api-provider-bringyourownhost/releases/latest/infrastructure-components.yaml",
+			providerType: clusterctlv1.InfrastructureProviderType,
+		},
+		&provider{
+			name:         HarvesterProviderName,
+			url:          "https://github.com/rancher-sandbox/cluster-api-provider-harvester/releases/latest/infrastructure-components.yaml",
 			providerType: clusterctlv1.InfrastructureProviderType,
 		},
 		&provider{
@@ -422,12 +435,24 @@ func (p *providersClient) defaults() []Provider {
 			url:          "https://github.com/kubernetes-sigs/cluster-api-ipam-provider-in-cluster/releases/latest/ipam-components.yaml",
 			providerType: clusterctlv1.IPAMProviderType,
 		},
+		&provider{
+			name:         NutanixIPAMProviderName,
+			url:          "https://github.com/nutanix-cloud-native/cluster-api-ipam-provider-nutanix/releases/latest/ipam-components.yaml",
+			providerType: clusterctlv1.IPAMProviderType,
+		},
 
 		// Add-on providers
 		&provider{
 			name:         HelmAddonProviderName,
 			url:          "https://github.com/kubernetes-sigs/cluster-api-addon-provider-helm/releases/latest/addon-components.yaml",
 			providerType: clusterctlv1.AddonProviderType,
+		},
+
+		// Runtime extensions providers
+		&provider{
+			name:         NutanixRuntimeExtensionsProviderName,
+			url:          "https://github.com/nutanix-cloud-native/cluster-api-runtime-extensions-nutanix/releases/latest/runtime-extensions-components.yaml",
+			providerType: clusterctlv1.RuntimeExtensionProviderType,
 		},
 	}
 

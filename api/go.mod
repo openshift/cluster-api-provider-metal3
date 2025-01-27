@@ -1,18 +1,18 @@
 module github.com/metal3-io/cluster-api-provider-metal3/api
 
-go 1.22.3
+go 1.22.8
 
 require (
-	github.com/metal3-io/ip-address-manager/api v1.8.0
-	github.com/onsi/gomega v1.35.1
+	github.com/metal3-io/ip-address-manager/api v1.9.2
+	github.com/onsi/gomega v1.36.2
 	github.com/pkg/errors v0.9.1
-	golang.org/x/net v0.31.0
-	k8s.io/api v0.31.2
-	k8s.io/apimachinery v0.31.2
-	k8s.io/client-go v0.31.2
+	golang.org/x/net v0.34.0
+	k8s.io/api v0.31.4
+	k8s.io/apimachinery v0.31.4
+	k8s.io/client-go v0.31.4
 	k8s.io/utils v0.0.0-20240711033017-18e509b52bc8
-	sigs.k8s.io/cluster-api v1.9.0-beta.0
-	sigs.k8s.io/controller-runtime v0.19.1
+	sigs.k8s.io/cluster-api v1.9.4
+	sigs.k8s.io/controller-runtime v0.19.4
 
 )
 
@@ -49,17 +49,17 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	golang.org/x/exp v0.0.0-20240719175910-8a7402abbf56 // indirect
-	golang.org/x/oauth2 v0.23.0 // indirect
-	golang.org/x/sys v0.27.0 // indirect
-	golang.org/x/term v0.26.0 // indirect
-	golang.org/x/text v0.20.0 // indirect
+	golang.org/x/oauth2 v0.24.0 // indirect
+	golang.org/x/sys v0.29.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 //indirect
-	k8s.io/apiextensions-apiserver v0.31.2 // indirect
+	k8s.io/apiextensions-apiserver v0.31.4 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect

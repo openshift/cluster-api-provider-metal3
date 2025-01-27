@@ -2242,7 +2242,7 @@ func schema_sigsk8sio_cluster_api_api_v1beta1_MachineDeploymentSpec(ref common.R
 					},
 					"progressDeadlineSeconds": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The maximum time in seconds for a deployment to make progress before it is considered to be failed. The deployment controller will continue to process failed deployments and a condition with a ProgressDeadlineExceeded reason will be surfaced in the deployment status. Note that progress will not be estimated during the time a deployment is paused. Defaults to 600s.",
+							Description: "The maximum time in seconds for a deployment to make progress before it is considered to be failed. The deployment controller will continue to process failed deployments and a condition with a ProgressDeadlineExceeded reason will be surfaced in the deployment status. Note that progress will not be estimated during the time a deployment is paused. Defaults to 600s.\n\nDeprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/issues/11470 for more details.",
 							Type:        []string{"integer"},
 							Format:      "int32",
 						},
@@ -2311,7 +2311,7 @@ func schema_sigsk8sio_cluster_api_api_v1beta1_MachineDeploymentStatus(ref common
 					},
 					"unavailableReplicas": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Total number of unavailable machines targeted by this deployment. This is the total number of machines that are still required for the deployment to have 100% available capacity. They may either be machines that are running but not yet available or machines that still have not been created.",
+							Description: "Total number of unavailable machines targeted by this deployment. This is the total number of machines that are still required for the deployment to have 100% available capacity. They may either be machines that are running but not yet available or machines that still have not been created.\n\nDeprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.",
 							Default:     0,
 							Type:        []string{"integer"},
 							Format:      "int32",
@@ -3762,7 +3762,7 @@ func schema_sigsk8sio_cluster_api_api_v1beta1_MachineSetStatus(ref common.Refere
 					},
 					"fullyLabeledReplicas": {
 						SchemaProps: spec.SchemaProps{
-							Description: "The number of replicas that have labels matching the labels of the machine template of the MachineSet.",
+							Description: "The number of replicas that have labels matching the labels of the machine template of the MachineSet.\n\nDeprecated: This field is deprecated and is going to be removed in the next apiVersion. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.",
 							Default:     0,
 							Type:        []string{"integer"},
 							Format:      "int32",
@@ -3951,7 +3951,7 @@ func schema_sigsk8sio_cluster_api_api_v1beta1_MachineSpec(ref common.ReferenceCa
 							},
 						},
 						SchemaProps: spec.SchemaProps{
-							Description: "readinessGates specifies additional conditions to include when evaluating Machine Ready condition.\n\nThis field can be used e.g. by Cluster API control plane providers to extend the semantic of the Ready condition for the Machine they control, like the kubeadm control provider adding ReadinessGates for the APIServerPodHealthy, SchedulerPodHealthy conditions, etc.\n\nAnother example are external controllers, e.g. responsible to install special software/hardware on the Machines; they can include the status of those components with a new condition and add this condition to ReadinessGates.\n\nNOTE: this field is considered only for computing v1beta2 conditions.",
+							Description: "readinessGates specifies additional conditions to include when evaluating Machine Ready condition.\n\nThis field can be used e.g. by Cluster API control plane providers to extend the semantic of the Ready condition for the Machine they control, like the kubeadm control provider adding ReadinessGates for the APIServerPodHealthy, SchedulerPodHealthy conditions, etc.\n\nAnother example are external controllers, e.g. responsible to install special software/hardware on the Machines; they can include the status of those components with a new condition and add this condition to ReadinessGates.\n\nNOTE: This field is considered only for computing v1beta2 conditions. NOTE: In case readinessGates conditions start with the APIServer, ControllerManager, Scheduler prefix, and all those readiness gates condition are reporting the same message, when computing the Machine's Ready condition those readinessGates will be replaced by a single entry reporting \"Control plane components: \" + message. This helps to improve readability of conditions bubbling up to the Machine's owner resource / to the Cluster).",
 							Type:        []string{"array"},
 							Items: &spec.SchemaOrArray{
 								Schema: &spec.Schema{

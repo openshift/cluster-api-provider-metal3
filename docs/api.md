@@ -80,8 +80,13 @@ cluster on Baremetal. It currently has two specification fields :
 
 - **controlPlaneEndpoint**: contains the target cluster API server address and
   port
-- **noCloudProvider**: (true/false) Whether the cluster will not be deployed
-  with an external cloud provider. If set to true, CAPM3 will patch the target
+- **noCloudProvider(Deprecated use CloudProviderEnabled)**: (true/false) Whether
+  the cluster will not be deployed with an external cloud provider. If set to
+  true, CAPM3 will patch the target cluster node objects to add a providerID.
+  This will allow the CAPI process to continue even if the cluster is deployed
+  without cloud provider.
+- **CloudProviderEnabled**: (true/false) Whether the cluster will be deployed
+  with an external cloud provider. If set to false, CAPM3 will patch the target
   cluster node objects to add a providerID. This will allow the CAPI process to
   continue even if the cluster is deployed without cloud provider.
 
@@ -97,7 +102,7 @@ spec:
   controlPlaneEndpoint:
     host: 192.168.111.249
     port: 6443
-  noCloudProvider: true
+  cloudProviderEnabled: false
 ```
 
 ## KubeadmControlPlane
@@ -127,7 +132,7 @@ spec:
     rollingUpdate:
       maxSurge: 1
     type: RollingUpdate
-  version: v1.31.2
+  version: v1.32.0
   kubeadmConfigSpec:
     joinConfiguration:
       controlPlane: {}
@@ -243,7 +248,7 @@ spec:
     namespace: metal3
   nodeDrainTimeout: 0s
   providerID: metal3://68be298f-ed11-439e-9d51-6c5260faede6
-  version: v1.31.2
+  version: v1.32.0
 ```
 
 ## Metal3Machine
@@ -274,14 +279,14 @@ The fields are:
   would not be managed by the Metal3DataTemplate controller, if provided by the
   user for example, the ownerreference should be set properly to ensure that the
   secret belongs to the cluster ownerReference tree (see
-  [doc](https://cluster-api.sigs.k8s.io/clusterctl/provider-contract.html#ownerreferences-chain)).
+  [doc](https://cluster-api.sigs.k8s.io/developer/providers/contracts/clusterctl.html#ownerreferences-chain)).
 
 - **networkData** is a reference to a secret containing the network data
   rendered from the Metal3DataTemplate metadata template object automatically.
   In case this would not be managed by the Metal3DataTemplate controller, if
   provided by the user for example, the ownerreference should be set properly to
   ensure that the secret belongs to the cluster ownerReference tree (see
-  [doc](https://cluster-api.sigs.k8s.io/clusterctl/provider-contract.html#ownerreferences-chain)).
+  [doc](https://cluster-api.sigs.k8s.io/developer/providers/contracts/clusterctl.html#ownerreferences-chain)).
   The content of the secret should be a yaml equivalent of a json object that
   follows the format definition that can be found
   [here](https://docs.openstack.org/nova/latest/_downloads/9119ca7ac90aa2990e762c08baea3a36/network_data.json).
@@ -413,10 +418,10 @@ metadata:
 spec:
   automatedCleaningMode: metadata
   image:
-    checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img.sha256sum
+    checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img.sha256sum
     checksumType: sha256
     format: raw
-    url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img
+    url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img
   hostSelector:
     matchLabels:
       key1: value1
@@ -473,7 +478,7 @@ spec:
         name: md-0
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: Metal3MachineTemplate
-      version: v1.31.2
+      version: v1.32.0
 ```
 
 ## KubeadmConfigTemplate
@@ -557,10 +562,10 @@ spec:
     spec:
       automatedCleaningMode: metadata
       image:
-        checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img.sha256sum
+        checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img.sha256sum
         checksumType: sha256
         format: raw
-        url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.31.2-raw.img
+        url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img
       hostSelector:
         matchLabels:
           key1: value1
