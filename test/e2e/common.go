@@ -13,7 +13,6 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -32,6 +31,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/kubernetes"
@@ -82,13 +82,6 @@ func LogFromFile(logFile string) {
 	Logf(string(data))
 }
 
-// return only the boolean value from ParseBool.
-func getBool(s string) bool {
-	b, err := strconv.ParseBool(s)
-	Expect(err).ToNot(HaveOccurred())
-	return b
-}
-
 // logTable print a formatted table into the e2e logs.
 func logTable(title string, rows [][]string) {
 	getRowFormatted := func(row []string) string {
@@ -123,6 +116,19 @@ func getSha256Hash(filename string) ([]byte, error) {
 		return nil, err
 	}
 	return hash.Sum(nil), nil
+}
+
+var falseValues = []string{"", "false", "no"}
+
+// GetBoolVariable returns a variable from environment variables or from the e2e config file as boolean.
+func GetBoolVariable(e2eConfig *clusterctl.E2EConfig, varName string) bool {
+	value := e2eConfig.GetVariable(varName)
+	for _, falseVal := range falseValues {
+		if strings.EqualFold(value, falseVal) {
+			return false
+		}
+	}
+	return true
 }
 
 // TODO change this function to handle multiple workload(target) clusters.
@@ -224,30 +230,14 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 
 // DownloadFile will download a url and store it in local filepath.
 func DownloadFile(filePath string, url string) error {
-	// Get the data
-	/* #nosec G107 */
-	resp, err := http.Get(url) //nolint:noctx
+	// TODO: Lets change the wget to use go's native http client when network
+	// more resilient
+	cmd := exec.Command("wget", "-O", filePath, url)
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return err
+		return fmt.Errorf("wget failed: %v, output: %s", err, string(output))
 	}
-	if resp.StatusCode != http.StatusOK {
-		return errors.Errorf("failed to download image from %q got %d %s", filePath, resp.StatusCode, http.StatusText(resp.StatusCode))
-	}
-	defer resp.Body.Close()
-
-	// Create the file
-	out, err := os.Create(filepath.Clean(filePath))
-	if err != nil {
-		return err
-	}
-	defer func() {
-		err := out.Close()
-		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Error closing file: %s", filePath))
-	}()
-
-	// Write the body to file
-	_, err = io.Copy(out, resp.Body)
-	return err
+	return nil
 }
 
 // FilterBmhsByProvisioningState returns a filtered list of BaremetalHost objects in certain provisioning state.
@@ -323,13 +313,13 @@ func ScaleMachineDeployment(ctx context.Context, clusterClient client.Client, cl
 }
 
 // ScaleKubeadmControlPlane scales up/down KubeadmControlPlane object to desired replicas.
-func ScaleKubeadmControlPlane(ctx context.Context, c client.Client, name client.ObjectKey, newReplicaCount int) {
+func ScaleKubeadmControlPlane(ctx context.Context, c client.Client, name client.ObjectKey, newReplicaCount int32) {
 	ctrlplane := controlplanev1.KubeadmControlPlane{}
 	Expect(c.Get(ctx, name, &ctrlplane)).To(Succeed())
 	helper, err := patch.NewHelper(&ctrlplane, c)
 	Expect(err).ToNot(HaveOccurred(), "Failed to create new patch helper")
 
-	ctrlplane.Spec.Replicas = ptr.To(int32(newReplicaCount))
+	ctrlplane.Spec.Replicas = ptr.To(newReplicaCount)
 	Expect(helper.Patch(ctx, &ctrlplane)).To(Succeed())
 }
 
@@ -995,7 +985,6 @@ func CreateOrUpdateWithNamespace(ctx context.Context, p framework.ClusterProxy, 
 		}
 		existingObject.SetAPIVersion(o.GetAPIVersion())
 		existingObject.SetKind(o.GetKind())
-		o := o
 		if err := p.GetClient().Get(ctx, objectKey, existingObject); err != nil {
 			// Expected error -- if the object does not exist, create it
 			if apierrors.IsNotFound(err) {
@@ -1013,4 +1002,54 @@ func CreateOrUpdateWithNamespace(ctx context.Context, p framework.ClusterProxy, 
 		}
 	}
 	return kerrors.NewAggregate(retErrs)
+}
+
+type CreateTargetClusterInput struct {
+	E2EConfig             *clusterctl.E2EConfig
+	BootstrapClusterProxy framework.ClusterProxy
+	SpecName              string
+	ClusterName           string
+	K8sVersion            string
+	KCPMachineCount       int64
+	WorkerMachineCount    int64
+	ClusterctlLogFolder   string
+	ClusterctlConfigPath  string
+	OSType                string
+	Namespace             string
+}
+
+func CreateTargetCluster(ctx context.Context, inputGetter func() CreateTargetClusterInput) (framework.ClusterProxy, *clusterctl.ApplyClusterTemplateAndWaitResult) {
+	By("Creating a high available cluster")
+	input := inputGetter()
+	imageURL, imageChecksum := EnsureImage(input.K8sVersion)
+	os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
+	os.Setenv("IMAGE_RAW_URL", imageURL)
+	controlPlaneMachineCount := input.KCPMachineCount
+	workerMachineCount := input.WorkerMachineCount
+	result := clusterctl.ApplyClusterTemplateAndWaitResult{}
+	clusterctl.ApplyClusterTemplateAndWait(ctx, clusterctl.ApplyClusterTemplateAndWaitInput{
+		ClusterProxy: input.BootstrapClusterProxy,
+		ConfigCluster: clusterctl.ConfigClusterInput{
+			LogFolder:                input.ClusterctlLogFolder,
+			ClusterctlConfigPath:     input.ClusterctlConfigPath,
+			KubeconfigPath:           input.BootstrapClusterProxy.GetKubeconfigPath(),
+			InfrastructureProvider:   clusterctl.DefaultInfrastructureProvider,
+			Flavor:                   input.OSType,
+			Namespace:                input.Namespace,
+			ClusterName:              input.ClusterName,
+			KubernetesVersion:        input.K8sVersion,
+			ControlPlaneMachineCount: &controlPlaneMachineCount,
+			WorkerMachineCount:       &workerMachineCount,
+		},
+		WaitForClusterIntervals:      input.E2EConfig.GetIntervals(input.SpecName, "wait-cluster"),
+		WaitForControlPlaneIntervals: input.E2EConfig.GetIntervals(input.SpecName, "wait-control-plane"),
+		WaitForMachineDeployments:    input.E2EConfig.GetIntervals(input.SpecName, "wait-worker-nodes"),
+	}, &result)
+	targetCluster := input.BootstrapClusterProxy.GetWorkloadCluster(ctx, input.Namespace, result.Cluster.Name)
+	framework.WaitForPodListCondition(ctx, framework.WaitForPodListConditionInput{
+		Lister:      targetCluster.GetClient(),
+		ListOptions: &client.ListOptions{LabelSelector: labels.Everything(), Namespace: "kube-system"},
+		Condition:   framework.PhasePodCondition(corev1.PodRunning),
+	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-all-pod-to-be-running-on-target-cluster")...)
+	return targetCluster, &result
 }

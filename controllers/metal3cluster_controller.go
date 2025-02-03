@@ -28,7 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/controllers/remote"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -54,7 +54,7 @@ const (
 // Metal3ClusterReconciler reconciles a Metal3Cluster object.
 type Metal3ClusterReconciler struct {
 	Client           client.Client
-	Tracker          *remote.ClusterCacheTracker
+	ClusterCache     clustercache.ClusterCache
 	ManagerFactory   baremetal.ManagerFactoryInterface
 	Log              logr.Logger
 	WatchFilterValue string
@@ -80,6 +80,21 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 
+	// This is checking if default values are changed or not if the default
+	// value of CloudProviderEnabled or NoCloudProvider is changed then update
+	// the other value too to avoid conflicts.
+	// TODO: Remove this code after v1.10 when NoCloudProvider is completely
+	// removed. Ref: https://github.com/metal3-io/cluster-api-provider-metal3/issues/2255
+	if metal3Cluster.Spec.CloudProviderEnabled != nil {
+		if !*metal3Cluster.Spec.CloudProviderEnabled {
+			metal3Cluster.Spec.NoCloudProvider = ptr.To(true)
+		}
+	} else if metal3Cluster.Spec.NoCloudProvider != nil {
+		if *metal3Cluster.Spec.NoCloudProvider {
+			metal3Cluster.Spec.CloudProviderEnabled = ptr.To(false)
+		}
+	}
+
 	patchHelper, err := patch.NewHelper(metal3Cluster, r.Client)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "failed to init patch helper")
@@ -98,7 +113,7 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		invalidConfigError := capierrors.InvalidConfigurationClusterError
 		metal3Cluster.Status.FailureReason = &invalidConfigError
 		metal3Cluster.Status.FailureMessage = ptr.To("Unable to get owner cluster")
-		conditions.MarkFalse(metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.InternalFailureReason, clusterv1.ConditionSeverityError, err.Error())
+		conditions.MarkFalse(metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.InternalFailureReason, clusterv1.ConditionSeverityError, "%s", err.Error())
 		return ctrl.Result{}, err
 	}
 	if cluster == nil {
@@ -128,10 +143,10 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Handle deleted clusters
 	if !metal3Cluster.DeletionTimestamp.IsZero() {
 		res, err := reconcileDelete(ctx, clusterMgr)
-		// Requeue if the reconcile failed because the ClusterCacheTracker was locked for
+		// Requeue if the reconcile failed because the ClusterCache was locked for
 		// the current cluster because of concurrent access.
-		if errors.Is(err, remote.ErrClusterLocked) {
-			clusterLog.Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
+		if errors.Is(err, clustercache.ErrClusterNotConnected) {
+			clusterLog.Info("Requeuing because another worker has the lock on the ClusterCache")
 			return ctrl.Result{Requeue: true}, nil
 		}
 		return res, err
@@ -139,10 +154,10 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Handle non-deleted clusters
 	res, err := reconcileNormal(ctx, clusterMgr)
-	// Requeue if the reconcile failed because the ClusterCacheTracker was locked for
+	// Requeue if the reconcile failed because the ClusterCache was locked for
 	// the current cluster because of concurrent access.
-	if errors.Is(err, remote.ErrClusterLocked) {
-		clusterLog.Info("Requeuing because another worker has the lock on the ClusterCacheTracker")
+	if errors.Is(err, clustercache.ErrClusterNotConnected) {
+		clusterLog.Info("Requeuing because another worker has the lock on the ClusterCache")
 		return ctrl.Result{Requeue: true}, nil
 	}
 	return res, err
@@ -252,9 +267,9 @@ func (r *Metal3ClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl
 				return requests
 			}),
 			// predicates.ClusterUnpaused will handle cluster unpaused logic
-			builder.WithPredicates(predicates.ClusterUnpaused(ctrl.LoggerFrom(ctx))),
+			builder.WithPredicates(predicates.ClusterUnpaused(mgr.GetScheme(), ctrl.LoggerFrom(ctx))),
 		).
-		WithEventFilter(predicates.ResourceIsNotExternallyManaged(mgr.GetLogger())).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), r.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceIsNotExternallyManaged(mgr.GetScheme(), mgr.GetLogger())).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(mgr.GetScheme(), ctrl.LoggerFrom(ctx), r.WatchFilterValue)).
 		Complete(r)
 }

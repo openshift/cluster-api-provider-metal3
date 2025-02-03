@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/controllers/remote"
+	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -46,7 +46,7 @@ const (
 // Metal3DataReconciler reconciles a Metal3Data object.
 type Metal3DataReconciler struct {
 	Client           client.Client
-	Tracker          *remote.ClusterCacheTracker
+	ClusterCache     clustercache.ClusterCache
 	ManagerFactory   baremetal.ManagerFactoryInterface
 	Log              logr.Logger
 	WatchFilterValue string
@@ -165,7 +165,7 @@ func (r *Metal3DataReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 			&ipamv1.IPClaim{},
 			handler.EnqueueRequestsFromMapFunc(r.Metal3IPClaimToMetal3Data),
 		).
-		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(ctrl.LoggerFrom(ctx), r.WatchFilterValue)).
+		WithEventFilter(predicates.ResourceNotPausedAndHasFilterLabel(mgr.GetScheme(), ctrl.LoggerFrom(ctx), r.WatchFilterValue)).
 		Complete(r)
 }
 

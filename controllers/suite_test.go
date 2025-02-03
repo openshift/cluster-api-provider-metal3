@@ -32,7 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
-	"k8s.io/klog/v2/klogr"
+	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -62,7 +63,7 @@ const (
 )
 
 func init() {
-	logf.SetLogger(klogr.New())
+	logf.SetLogger(klog.Background())
 
 	// Register required object kinds with global scheme.
 	_ = apiextensionsv1.AddToScheme(scheme.Scheme)
@@ -168,7 +169,8 @@ func bmcSpec() *infrav1.Metal3ClusterSpec {
 			Host: "192.168.111.249",
 			Port: 6443,
 		},
-		NoCloudProvider: true,
+		NoCloudProvider:      ptr.To(true),
+		CloudProviderEnabled: ptr.To(false),
 	}
 }
 
