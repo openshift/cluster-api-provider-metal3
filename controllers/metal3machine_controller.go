@@ -182,7 +182,7 @@ func (r *Metal3MachineReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Handle non-deleted machines
-	return r.reconcileNormal(ctx, machineMgr)
+	return r.reconcileNormal(ctx, machineLog, machineMgr)
 }
 
 func patchMetal3Machine(ctx context.Context, patchHelper *patch.Helper, metal3Machine *infrav1.Metal3Machine, options ...patch.Option) error {
@@ -209,6 +209,7 @@ func patchMetal3Machine(ctx context.Context, patchHelper *patch.Helper, metal3Ma
 }
 
 func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
+	machineLog logr.Logger,
 	machineMgr baremetal.MachineManagerInterface,
 ) (ctrl.Result, error) {
 	// If the Metal3Machine doesn't have finalizer, add it.
@@ -268,8 +269,26 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 				"failed to get the providerID for the Metal3Machine", errType)
 		}
 	}
-	if providerID != "" || bmhID != nil {
+
+	machineLog.Info("->", "providerID", providerID, "bmhID", bmhID)
+
+	if providerID == "" {
+		machineLog.Info("getting provider ID")
+		providerID, err = machineMgr.GetProviderID()
+		if err != nil {
+			machineMgr.SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.SettingProviderIDOnNodeFailedReason, clusterv1.ConditionSeverityError, err.Error())
+			return checkMachineError(machineMgr, err,
+				"failed to get providerID", errType)
+		}
+	}
+
+	// Make sure Spec.ProviderID is set and mark the capm3Machine ready
+	machineLog.Info("setting provider id on machine", "providerID", providerID)
+	machineMgr.SetProviderID(providerID)
+
+	if bmhID != nil {
 		// Set the providerID on the node if no Cloud provider
+		machineLog.Info("setting provider id on node")
 		err = machineMgr.SetNodeProviderID(ctx, &providerID, r.CapiClientGetter)
 		if err != nil {
 			r.Log.Error(err, "Failed to set the target node providerID", "providerID", providerID)
@@ -277,8 +296,9 @@ func (r *Metal3MachineReconciler) reconcileNormal(ctx context.Context,
 			return checkMachineError(machineMgr, err,
 				"failed to set the target node providerID", errType)
 		}
-		// Make sure Spec.ProviderID is set and mark the capm3Machine ready
-		machineMgr.SetProviderID(providerID)
+
+		// Once the providerID has been set on the node, we are ready.
+		machineMgr.SetReady()
 	}
 
 	return ctrl.Result{}, err
