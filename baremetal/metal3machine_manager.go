@@ -94,7 +94,9 @@ type MachineManagerInterface interface {
 	HasAnnotation() bool
 	GetProviderIDAndBMHID() (string, *string)
 	SetNodeProviderID(context.Context, *string, ClientGetter) error
+	GetProviderID() (string, error)
 	SetProviderID(string)
+	SetReady()
 	SetPauseAnnotation(context.Context) error
 	RemovePauseAnnotation(context.Context) error
 	DissociateM3Metadata(context.Context) error
@@ -1369,10 +1371,24 @@ func (m *MachineManager) SetNodeProviderID(ctx context.Context, providerIDOnM3M 
 	return nil
 }
 
+func (m *MachineManager) GetProviderID() (string, error) {
+	namespace := m.Metal3Machine.GetNamespace()
+	m3mName := m.Metal3Machine.GetName()
+	bmhName, err := m.getBmhNameFromM3Machine()
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("metal3://%s/%s/%s", namespace, bmhName, m3mName), nil
+}
+
 // SetProviderID sets the metal3 provider ID on the Metal3Machine.
 func (m *MachineManager) SetProviderID(providerID string) {
 	m.Log.Info("ProviderID set on the Metal3Machine", "providerID", providerID)
 	m.Metal3Machine.Spec.ProviderID = &providerID
+}
+
+func (m *MachineManager) SetReady() {
+	m.Log.Info("Ready set on the Metal3Machine")
 	m.Metal3Machine.Status.Ready = true
 	m.SetConditionMetal3MachineToTrue(infrav1.KubernetesNodeReadyCondition)
 }
