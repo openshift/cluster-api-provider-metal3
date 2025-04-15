@@ -5,3 +5,4 @@ labels:
 
 resources:
 - capm3
+- ../ipam
