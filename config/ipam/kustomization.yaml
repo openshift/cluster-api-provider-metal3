@@ -8,3 +8,4 @@ resources:
 patches:
 - path: image_patch.yaml
 - path: pull_policy_patch.yaml
+- path: remove_ipam.yaml
