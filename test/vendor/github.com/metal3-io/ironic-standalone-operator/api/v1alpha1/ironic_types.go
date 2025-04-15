@@ -21,17 +21,31 @@ import (
 )
 
 const (
-	VersionLatest = "latest"
-	Version270    = "27.0"
+	majorVersion28 = 28
+	majorVersion27 = 27
+	majorVersion29 = 29
 )
 
-// Mapping of supported versions to container image tags.
-var SupportedVersions = map[string]string{
+var (
+	VersionLatest = Version{}
+	Version290    = Version{Major: majorVersion29, Minor: 0}
+	Version280    = Version{Major: majorVersion28, Minor: 0}
+	Version270    = Version{Major: majorVersion27, Minor: 0}
+)
+
+// SupportedVersions is a mapping of supported versions to container image tags.
+// This mapping must be updated each time a new ironic-image branch is created.
+// Also consider updating the version test(s) in test/suite_test.go to verify
+// that the new version is installable and its API version matches
+// expectations.
+var SupportedVersions = map[Version]string{
 	VersionLatest: "latest",
+	Version290:    "release-29.0",
+	Version280:    "release-28.0",
 	Version270:    "release-27.0",
 }
 
-// Inspection defines inspection settings
+// Inspection defines inspection settings.
 type Inspection struct {
 	// Collectors is a list of inspection collectors to enable.
 	// See https://docs.openstack.org/ironic-python-agent/latest/admin/how_it_works.html#inspection-data for details.
@@ -70,13 +84,9 @@ type DHCP struct {
 	NetworkCIDR string `json:"networkCIDR,omitempty"`
 
 	// RangeBegin is the first IP that can be given to hosts. Must be inside NetworkCIDR.
-	// If not set, the 10th IP from NetworkCIDR is used (e.g. .10 for /24).
-	// +optional
 	RangeBegin string `json:"rangeBegin,omitempty"`
 
 	// RangeEnd is the last IP that can be given to hosts. Must be inside NetworkCIDR.
-	// If not set, the 2nd IP from the end of NetworkCIDR is used (e.g. .253 for /24).
-	// +optional
 	RangeEnd string `json:"rangeEnd,omitempty"`
 
 	// ServeDNS is set to true to pass the provisioning host as the DNS server on the provisioning network.
@@ -92,7 +102,7 @@ const (
 	IPAddressManagerKeepalived IPAddressManager = "keepalived"
 )
 
-// Networking defines networking settings for Ironic
+// Networking defines networking settings for Ironic.
 type Networking struct {
 	// APIPort is the public port used for Ironic.
 	// +kubebuilder:default=6385
@@ -106,6 +116,7 @@ type Networking struct {
 
 	// DHCP is a configuration of DHCP for the network boot service (dnsmasq).
 	// The service is only deployed when this is set.
+	// This setting is currently incompatible with the highly available architecture.
 	DHCP *DHCP `json:"dhcp,omitempty"`
 
 	// ExternalIP is used for accessing API and the image server from remote hosts.
@@ -149,7 +160,7 @@ type Networking struct {
 	MACAddresses []string `json:"macAddresses,omitempty"`
 }
 
-// DeployRamdisk defines IPA ramdisk settings
+// DeployRamdisk defines IPA ramdisk settings.
 type DeployRamdisk struct {
 	// DisableDownloader tells the operator not to start the IPA downloader as the init container.
 	// The user will be responsible for providing the right image to BareMetal Operator.
@@ -176,12 +187,6 @@ type TLS struct {
 	// which may be required for hardware that cannot accept HTTPS links.
 	// +optional
 	DisableVirtualMediaTLS bool `json:"disableVirtualMediaTLS,omitempty"`
-
-	// DisableRPCHostValidation turns off TLS host validation for JSON RPC connections between Ironic instances.
-	// This reduces the security of TLS. Only use if you're unable to provide TLS certificates valid for JSON RPC.
-	// Has no effect if HighAvailability is not set to true.
-	// +optional
-	DisableRPCHostValidation bool `json:"disableRPCHostValidation,omitempty"`
 }
 
 type Images struct {
@@ -223,15 +228,41 @@ type ExtraConfig struct {
 	Value string `json:"value,omitempty"`
 }
 
-// IronicSpec defines the desired state of Ironic
+// Database is a reference to a MariaDB database to use.
+type Database struct {
+	// Name of a secret with database credentials.
+	CredentialsName string `json:"credentialsName"`
+
+	// IP address or host name of the database instance.
+	Host string `json:"host"`
+
+	// Database name.
+	Name string `json:"name"`
+
+	// Name of a secret with the a TLS certificate or a CA for verifying the database host.
+	// If unset, Ironic will request an unencrypted connections, which is insecure,
+	// and the server configuration may forbid it.
+	// +optional
+	TLSCertificateName string `json:"tlsCertificateName,omitempty"`
+}
+
+// IronicSpec defines the desired state of Ironic.
 type IronicSpec struct {
 	// APICredentialsName is a reference to the secret with Ironic API credentials.
 	// A new secret will be created if this field is empty.
 	// +optional
 	APICredentialsName string `json:"apiCredentialsName,omitempty"`
 
+	// Database is a reference to a MariaDB database to use for persisting Ironic data.
+	// Must be provided for a highly available architecture, optional otherwise.
+	// If missing, a local SQLite database will be used, and the Ironic state will be reset on each pod restart.
+	// +optional
+	Database *Database `json:"database,omitempty"`
+
 	// DatabaseName is a reference to the IronicDatabase object.
 	// If missing, a local SQLite database will be used. Must be provided for a highly available architecture.
+	//
+	// Deprecated: the IronicDatabase API is deprecated and will be removed soon in favour of explicit connection parameters.
 	// +optional
 	DatabaseName string `json:"databaseName,omitempty"`
 
@@ -245,7 +276,8 @@ type IronicSpec struct {
 
 	// HighAvailability causes Ironic to be deployed as a DaemonSet on control plane nodes instead of a deployment with 1 replica.
 	// Requires database to be installed and linked to DatabaseName.
-	// EXPERIMENTAL: do not use (validation will fail)!
+	// DHCP support is not yet implemented in the highly available architecture.
+	// EXPERIMENTAL: do not use, the implementation is incomplete.
 	// +optional
 	HighAvailability bool `json:"highAvailability,omitempty"`
 
@@ -253,7 +285,7 @@ type IronicSpec struct {
 	// +optional
 	Images Images `json:"images,omitempty"`
 
-	// Inspection defines inspection settings
+	// Inspection defines inspection settings.
 	// +optional
 	Inspection Inspection `json:"inspection,omitempty"`
 
@@ -278,7 +310,7 @@ type IronicSpec struct {
 	Version string `json:"version,omitempty"`
 }
 
-// IronicStatus defines the observed state of Ironic
+// IronicStatus defines the observed state of Ironic.
 type IronicStatus struct {
 	// Conditions describe the state of the Ironic deployment.
 	// +patchMergeKey=type
@@ -302,7 +334,7 @@ type IronicStatus struct {
 //+kubebuilder:printcolumn:name="Installed Version",type="string",JSONPath=".status.installedVersion",description="Currently installed version"
 //+kubebuilder:printcolumn:name="Ready",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`,description="Is ready"
 
-// Ironic is the Schema for the ironics API
+// Ironic is the Schema for the ironics API.
 type Ironic struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -313,7 +345,7 @@ type Ironic struct {
 
 //+kubebuilder:object:root=true
 
-// IronicList contains a list of Ironic
+// IronicList contains a list of Ironic.
 type IronicList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
@@ -321,5 +353,5 @@ type IronicList struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Ironic{}, &IronicList{})
+	objectTypes = append(objectTypes, &Ironic{}, &IronicList{})
 }
