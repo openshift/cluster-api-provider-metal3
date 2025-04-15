@@ -77,7 +77,7 @@ const (
 var (
 	// Capm3FastTrack is the variable fetched from the CAPM3_FAST_TRACK environment variable.
 	Capm3FastTrack    = os.Getenv("CAPM3_FAST_TRACK")
-	notFoundErr       *NotFoundError
+	errNotFound       *NotFoundError
 	associateBMHMutex sync.Mutex
 )
 
@@ -685,7 +685,7 @@ func (m *MachineManager) Update(ctx context.Context) error {
 		return err
 	}
 	if host == nil {
-		errMessage := fmt.Sprintf("BareMetalHost not found for machine %s", m.Machine.Name)
+		errMessage := "BareMetalHost not found for machine " + m.Machine.Name
 		return WithTransientError(errors.New(errMessage), requeueAfter)
 	}
 
@@ -1505,7 +1505,7 @@ func deleteOwnerRefFromList(refList []metav1.OwnerReference,
 	}
 	index, err := findOwnerRefFromList(refList, objType, objMeta)
 	if err != nil {
-		if ok := errors.As(err, &notFoundErr); !ok {
+		if ok := errors.As(err, &errNotFound); !ok {
 			return nil, err
 		}
 		return refList, nil
@@ -1536,7 +1536,7 @@ func setOwnerRefInList(refList []metav1.OwnerReference, controller bool,
 ) ([]metav1.OwnerReference, error) {
 	index, err := findOwnerRefFromList(refList, objType, objMeta)
 	if err != nil {
-		if ok := errors.As(err, &notFoundErr); !ok {
+		if ok := errors.As(err, &errNotFound); !ok {
 			return nil, err
 		}
 		refList = append(refList, metav1.OwnerReference{
@@ -1875,7 +1875,7 @@ func (m *MachineManager) getBmhNameFromM3Machine() (string, error) {
 func (m *MachineManager) getBmhUIDFromM3Machine(ctx context.Context) (string, error) {
 	host, err := getHost(ctx, m.Metal3Machine, m.client, m.Log)
 	if err != nil || host == nil {
-		errMessage := fmt.Sprintf("Failed to get a BaremetalHost for the metal3machine: %s", m.Metal3Machine.GetName())
+		errMessage := "Failed to get a BaremetalHost for the metal3machine: " + m.Metal3Machine.GetName()
 		return "", errors.New(errMessage)
 	}
 	if host.UID == "" {

@@ -2,7 +2,7 @@ name: golangci-lint
 
 on:
   pull_request:
-    types: [ opened, edited, synchronize, reopened ]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
 
 permissions: {}
 
@@ -25,12 +25,12 @@ jobs:
       id: vars
       run: echo "go_version=$(make go-version)" >> $GITHUB_OUTPUT
     - name: Set up Go
-      uses: actions/setup-go@3041bf56c941b39c61721a86cd11f3bb1338122a # v5.2.0
+      uses: actions/setup-go@0aaccfd150d50ccaeb58ebd88d36e91967a5f35b # v5.4.0
       with:
         go-version: ${{ steps.vars.outputs.go_version }}
     - name: golangci-lint-${{matrix.working-directory}}
-      uses: golangci/golangci-lint-action@971e284b6050e8a5849b72094c50ab08da042db8 # v6.1.1
+      uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6.5.2
       with:
-        version: v1.60.3
+        version: v1.64.7
         working-directory: ${{matrix.working-directory}}
         args: --timeout=15m

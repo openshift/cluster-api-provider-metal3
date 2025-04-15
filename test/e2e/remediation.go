@@ -75,8 +75,8 @@ type RemediationInput struct {
 func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	Logf("Starting remediation tests")
 	input := inputGetter()
-	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
-	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
+	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
 
 	bootstrapClient := input.BootstrapClusterProxy.GetClient()
@@ -254,7 +254,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	By("Testing Metal3DataTemplate reference")
 	Logf("Creating a new Metal3DataTemplate")
 	m3dataTemplate := infrav1.Metal3DataTemplate{}
-	m3dataTemplateName := fmt.Sprintf("%s-workers-template", input.ClusterName)
+	m3dataTemplateName := input.ClusterName + "-workers-template"
 	newM3dataTemplateName := "test-new-m3dt"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3dataTemplateName}, &m3dataTemplate)).To(Succeed())
 
@@ -274,7 +274,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	By("Creating a new Metal3MachineTemplate")
 	m3machineTemplate := infrav1.Metal3MachineTemplate{}
-	m3machineTemplateName := fmt.Sprintf("%s-workers", input.ClusterName)
+	m3machineTemplateName := input.ClusterName + "-workers"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3machineTemplateName}, &m3machineTemplate)).To(Succeed())
 	newM3MachineTemplateName := "test-new-m3mt"
 
@@ -296,7 +296,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	deployment.Spec.Template.Spec.InfrastructureRef = corev1.ObjectReference{
 		Kind:       "Metal3MachineTemplate",
-		APIVersion: input.E2EConfig.GetVariable("APIVersion"),
+		APIVersion: input.E2EConfig.MustGetVariable("APIVersion"),
 		Name:       newM3MachineTemplateName,
 	}
 	deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &intstr.IntOrString{IntVal: 1}

@@ -24,11 +24,11 @@ KUSTOMIZE="${SOURCE_DIR}/../hack/tools/bin/kustomize"
 
 # Cluster.
 export CLUSTER_NAME="${CLUSTER_NAME:-test1}"
-export KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.32.0}"
+export KUBERNETES_VERSION="${KUBERNETES_VERSION:-v1.32.1}"
 export CLUSTER_APIENDPOINT_HOST="${CLUSTER_APIENDPOINT_HOST:-192.168.111.249}"
 export CLUSTER_APIENDPOINT_PORT="${CLUSTER_APIENDPOINT_PORT:-6443}"
-export IMAGE_URL="${IMAGE_URL:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img}"
-export IMAGE_CHECKSUM="${IMAGE_CHECKSUM:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.0-raw.img.sha256sum}"
+export IMAGE_URL="${IMAGE_URL:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.1-raw.img}"
+export IMAGE_CHECKSUM="${IMAGE_CHECKSUM:-http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.32.1-raw.img.sha256sum}"
 export IMAGE_CHECKSUM_TYPE="${IMAGE_CHECKSUM_TYPE:-sha256}"
 export IMAGE_FORMAT="${IMAGE_FORMAT:-raw}"
 
@@ -127,7 +127,7 @@ echo "Generated ${METAL3CRDS_GENERATED_FILE}"
 echo "Generated ${METAL3PLANE_GENERATED_FILE}"
 
 # Get Cert-manager provider components file
-curl --fail -Ss -L -o "${COMPONENTS_CERT_MANAGER_GENERATED_FILE}" https://github.com/cert-manager/cert-manager/releases/download/v1.14.0/cert-manager.yaml
+curl --fail -Ss -L -o "${COMPONENTS_CERT_MANAGER_GENERATED_FILE}" https://github.com/cert-manager/cert-manager/releases/download/v1.17.1/cert-manager.yaml
 echo "Downloaded ${COMPONENTS_CERT_MANAGER_GENERATED_FILE}"
 
 # Generate Cluster API provider components file.
