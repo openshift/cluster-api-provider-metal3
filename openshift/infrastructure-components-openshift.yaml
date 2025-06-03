@@ -4475,7 +4475,7 @@ webhooks:
     - ippools
   sideEffects: None
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
   name: openshift-cluster-api-protect-metal3cluster
@@ -4499,7 +4499,7 @@ spec:
     message: InfraCluster resources with metadata.name corresponding to the cluster
       infrastructureName cannot be deleted.
 ---
-apiVersion: admissionregistration.k8s.io/v1beta1
+apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
   name: openshift-cluster-api-protect-metal3cluster
