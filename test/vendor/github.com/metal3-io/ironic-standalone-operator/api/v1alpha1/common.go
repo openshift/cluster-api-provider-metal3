@@ -14,7 +14,7 @@ const (
 )
 
 var (
-	IronicAppLabel      = IronicLabelPrefix + "/app"
-	IronicDatabaseLabel = IronicLabelPrefix + "/db"
-	IronicVersionLabel  = IronicLabelPrefix + "/version"
+	IronicAppLabel     = IronicLabelPrefix + "/app"
+	IronicServiceLabel = IronicLabelPrefix + "/ironic"
+	IronicVersionLabel = IronicLabelPrefix + "/version"
 )

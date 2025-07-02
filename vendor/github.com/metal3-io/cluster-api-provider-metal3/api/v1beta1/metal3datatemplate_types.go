@@ -19,6 +19,7 @@ package v1beta1
 import (
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -226,7 +227,7 @@ type NetworkDataLinkEthernet struct {
 	Type string `json:"type"`
 
 	// Id is the ID of the interface (used for naming)
-	Id string `json:"id"` //nolint:revive,stylecheck
+	Id string `json:"id"` //nolint:stylecheck,revive
 
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
@@ -252,7 +253,7 @@ type NetworkDataLinkBond struct {
 	BondXmitHashPolicy string `json:"bondXmitHashPolicy"`
 
 	// Id is the ID of the interface (used for naming)
-	Id string `json:"id"` //nolint:revive,stylecheck
+	Id string `json:"id"` //nolint:stylecheck,revive
 
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
@@ -264,10 +265,16 @@ type NetworkDataLinkBond struct {
 	// used to render it.
 	MACAddress *NetworkLinkEthernetMac `json:"macAddress"`
 
+	// params blob passed without any validation/modifications into cloud-init config
+	Parameters NetworkDataLinkBondParams `json:"parameters,omitempty"`
+
 	// BondLinks is the list of links that are part of the bond.
 	// +optional
 	BondLinks []string `json:"bondLinks"`
 }
+
+// NetworkDataLinkBondParams represent the set of bond params.
+type NetworkDataLinkBondParams map[string]apiextensionsv1.JSON
 
 // NetworkDataLinkVlan represents a vlan link object.
 type NetworkDataLinkVlan struct {
@@ -276,7 +283,7 @@ type NetworkDataLinkVlan struct {
 	VlanID int `json:"vlanID"`
 
 	// Id is the ID of the interface (used for naming)
-	Id string `json:"id"` //nolint:revive,stylecheck
+	Id string `json:"id"` //nolint:stylecheck,revive
 
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
@@ -520,7 +527,9 @@ type Metal3DataTemplateSpec struct {
 
 	// TemplateReference refers to the Template the Metal3MachineTemplate refers to.
 	// It can be matched against the key or it may also point to the name of the template
-	// Metal3Data refers to
+	// Metal3Data refers to.
+	//
+	// Deprecated: This field is deprecated and will be removed in a future release.
 	// +optional
 	TemplateReference string `json:"templateReference,omitempty"`
 
