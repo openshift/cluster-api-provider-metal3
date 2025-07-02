@@ -25,10 +25,7 @@ Things you should check before making a release:
    - Verify BMO's `apis` and `pkg/hardwareutils` dependencies are the latest. Prior
      art:
      [#1163](https://github.com/metal3-io/cluster-api-provider-metal3/pull/1163)
-   - Uplift IPAM `api` dependency,
-     [container image version](https://github.com/metal3-io/cluster-api-provider-metal3/blob/main/config/ipam/image_patch.yaml)
-     , and
-     [manifest resource](https://github.com/metal3-io/cluster-api-provider-metal3/blob/main/config/ipam/kustomization.yaml)
+   - Uplift IPAM `api` dependency
      . Prior art:
      [#999](https://github.com/metal3-io/cluster-api-provider-metal3/pull/999)
    - Verify any other direct or indirect dependency is uplifted to close any
@@ -153,6 +150,24 @@ release!
 ## Post-release actions for new release branches
 
 Some post-release actions are needed if new minor or major branch was created.
+
+### Dependabot configuration
+
+In `main` branch, Dependabot configuration must be amended to allow updates
+to release branch dependencies and GitHub Workflows.
+
+If project dependencies or modules have not changed, previous release branch
+configuration can be copied and amend the `target-branch` to point to our new
+release branch. Release branches that are End-of-Life should be removed in the
+same PR, as updating `dependabot.yml` causes Dependabot to run the rules,
+ignoring the configured schedules, causing unnecessary PR creation for EOL
+branches.
+
+If project dependencies have changed, then copy the configuration of `main`,
+and adjust the `ignore` rules to match release branches. As generic rule we
+don't allow major or minor bumps in release branches.
+
+[Prior art](https://github.com/metal3-io/cluster-api-provider-metal3/pull/2527)
 
 ### Branch protection rules
 

@@ -9,15 +9,18 @@ export WORKING_DIR=/opt/metal3-dev-env
 FORCE_REPO_UPDATE="${FORCE_REPO_UPDATE:-false}"
 
 export CAPM3RELEASEBRANCH="${CAPM3RELEASEBRANCH:-main}"
+export IPAMRELEASEBRANCH="${IPAMRELEASEBRANCH:-main}"
 
 # Extract release version from release-branch name
 if [[ "${CAPM3RELEASEBRANCH}" == release-* ]]; then
     CAPM3_RELEASE_PREFIX="${CAPM3RELEASEBRANCH#release-}"
     export CAPM3RELEASE="v${CAPM3_RELEASE_PREFIX}.99"
+    export IPAMRELEASE="v${CAPM3_RELEASE_PREFIX}.99"
     export CAPI_RELEASE_PREFIX="v${CAPM3_RELEASE_PREFIX}."
 else
-    export CAPM3RELEASE="v1.10.99"
-    export CAPI_RELEASE_PREFIX="v1.9."
+    export CAPM3RELEASE="v1.11.99"
+    export IPAMRELEASE="v1.11.99"
+    export CAPI_RELEASE_PREFIX="v1.10."
 fi
 
 # Default CAPI_CONFIG_FOLDER to $HOME/.config folder if XDG_CONFIG_HOME not set
@@ -45,27 +48,36 @@ export IMAGE_OS=${IMAGE_OS}
 export FORCE_REPO_UPDATE="false"
 export USE_IRSO="${USE_IRSO:-false}"
 EOF
-# if running a scalability test skip apply bmhs in dev-env and run fakeIPA
-if [[ ${GINKGO_FOCUS:-} == "clusterctl-upgrade" ]]; then
+
+case "${GINKGO_FOCUS:-}" in
+  clusterctl-upgrade|k8s-upgrade|basic|integration|remediation|k8s-conformance|capi-md-tests)
+    # if running basic, integration, k8s upgrade, clusterctl-upgrade, remediation, k8s conformance or capi-md tests, skip apply bmhs in dev-env
     echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
-fi
-if [[ ${GINKGO_FOCUS:-} == "features" ]]; then
-    mkdir -p "$CAPI_CONFIG_FOLDER"
-    echo "ENABLE_BMH_NAME_BASED_PREALLOCATION: true" >"$CAPI_CONFIG_FOLDER/clusterctl.yaml"
-fi
-# if running a scalability tests, configure dev-env with fakeIPA
-if [[ ${GINKGO_FOCUS:-} == "scalability" ]]; then
+  ;;
+
+  features)
+    mkdir -p "${CAPI_CONFIG_FOLDER}"
+    echo "ENABLE_BMH_NAME_BASED_PREALLOCATION: true" >"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
+    echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+  ;;
+
+  scalability)
+    # if running a scalability tests, configure dev-env with fakeIPA
     export NUM_NODES="${NUM_NODES:-100}"
     echo 'export NODES_PLATFORM="fake"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
     echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
     sed -i "s/^export NUM_NODES=.*/export NUM_NODES=${NUM_NODES:-100}/" "${M3_DEV_ENV_PATH}/config_${USER}.sh"
-    mkdir -p "$CAPI_CONFIG_FOLDER"
-    echo 'CLUSTER_TOPOLOGY: true' >"$CAPI_CONFIG_FOLDER/clusterctl.yaml"
+    mkdir -p "${CAPI_CONFIG_FOLDER}"
+    echo 'CLUSTER_TOPOLOGY: true' >"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
     echo 'export EPHEMERAL_CLUSTER="minikube"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
-else
-    # Don't run scalability tests if not asked for.
+  ;;
+esac
+
+if [[ ${GINKGO_FOCUS:-} != "scalability" ]]; then
+  # Don't run scalability tests if not asked for.
     export GINKGO_SKIP="${GINKGO_SKIP:-} scalability"
 fi
+
 # Run make devenv to boot the source cluster
 pushd "${M3_DEV_ENV_PATH}" || exit 1
 make
@@ -93,18 +105,83 @@ source "${M3_DEV_ENV_PATH}/lib/releases.sh"
 source "${M3_DEV_ENV_PATH}/lib/ironic_basic_auth.sh"
 # shellcheck disable=SC1091,SC1090
 source "${M3_DEV_ENV_PATH}/lib/ironic_tls_setup.sh"
+# shellcheck disable=SC1091,SC1090
+source "${M3_DEV_ENV_PATH}/lib/common.sh"
+# shellcheck disable=SC1091,SC1090
+source "${M3_DEV_ENV_PATH}/lib/network.sh"
+
+update_kustomize_image() {
+  local image_name="$1"      # e.g., quay.io/metal3-io/ironic
+  local env_var_name="$2"    # e.g., IRONIC_IMAGE
+  local kustomize_dir="$3"   # e.g., ./overlays/dev
+
+  local full_image="${!env_var_name}"  # Resolve the env var value
+
+  if [[ -z "${full_image}" ]]; then
+    echo "Environment variable ${env_var_name} is not set."
+    return 1
+  fi
+
+  if [[ ! -f "${kustomize_dir}/kustomization.yaml" ]]; then
+    echo "No kustomization.yaml found in ${kustomize_dir}"
+    return 1
+  fi
+
+  echo "Updating image for ${image_name} to ${full_image} in ${kustomize_dir}/kustomization.yaml"
+  (cd "${kustomize_dir}" && kustomize edit set image "${image_name}=${full_image}")
+}
+
+kustomize_envsubst() {
+  local kustomize_dir="$1"
+  local file="${kustomize_dir}/kustomization.yaml"
+
+  if [[ ! -f "${file}" ]]; then
+    echo "Error: ${file} does not exist."
+    return 1
+  fi
+
+  local tmp_file
+  tmp_file=$(mktemp)
+
+  envsubst < "${file}" > "${tmp_file}" && mv "${tmp_file}" "${file}"
+  echo "envsubst applied to ${file}"
+}
 
 # Generate credentials
 BMO_OVERLAYS=(
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.8"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.9"
+  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.10"
+  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/pr-test"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-latest"
 )
 IRONIC_OVERLAYS=(
   "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-26.0"
   "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-27.0"
+  "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-29.0"
+  "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/pr-test"
   "${REPO_ROOT}/test/e2e/data/ironic-deployment/overlays/release-latest"
 )
+
+# Update BMO and Ironic images in kustomization.yaml files to use the same image that was used before pivot in the metal3-dev-env
+case "${REPO_NAME:-}" in
+  baremetal-operator)
+    # shellcheck disable=SC2034
+    BARE_METAL_OPERATOR_IMAGE="${REGISTRY}/localimages/tested_repo:latest"
+    ;;
+
+  ironic-image)
+    # shellcheck disable=SC2034
+    IRONIC_IMAGE="${REGISTRY}/localimages/tested_repo:latest"
+    ;;
+esac
+
+update_kustomize_image quay.io/metal3-io/baremetal-operator BARE_METAL_OPERATOR_IMAGE "${REPO_ROOT}"/test/e2e/data/bmo-deployment/overlays/pr-test
+update_kustomize_image quay.io/metal3-io/ironic IRONIC_IMAGE "${REPO_ROOT}"/test/e2e/data/ironic-deployment/overlays/pr-test
+
+# Apply envsubst to kustomization.yaml files in BMO and Ironic overlays
+kustomize_envsubst "${REPO_ROOT}"/test/e2e/data/bmo-deployment/overlays/pr-test
+kustomize_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-deployment/overlays/pr-test
 
 # Create usernames and passwords and other files related to ironi basic auth if they
 # are missing

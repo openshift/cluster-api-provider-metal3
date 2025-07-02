@@ -20,7 +20,7 @@ SHELL:=/usr/bin/env bash
 
 .DEFAULT_GOAL:=help
 
-GO_VERSION ?= 1.23.4
+GO_VERSION ?= 1.24.4
 GO := $(shell type -P go)
 # Use GOPROXY environment variable if set
 GOPROXY := $(shell $(GO) env GOPROXY)
@@ -37,6 +37,7 @@ export GO111MODULE=on
 ROOT_DIR := $(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
 TOOLS_DIR := hack/tools
 APIS_DIR := api
+WEBHOOKS_DIR := internal/webhooks
 TEST_DIR := test
 BIN_DIR := bin
 TOOLS_BIN_DIR :=  $(abspath $(TOOLS_DIR)/$(BIN_DIR))
@@ -69,7 +70,7 @@ GINKGO_PKG := github.com/onsi/ginkgo/v2/ginkgo
 # Helper function to get dependency version from go.mod
 get_go_version = $(shell $(GO) list -m $1 | awk '{print $$2}')
 GINGKO_VER := $(call get_go_version,github.com/onsi/ginkgo/v2)
-ENVTEST_K8S_VERSION := 1.31.x
+ENVTEST_K8S_VERSION := 1.33.x
 
 # Define Docker related variables. Releases should modify and double check these vars.
 # REGISTRY ?= gcr.io/$(shell gcloud config get-value project)
@@ -113,7 +114,7 @@ help:  # Display this help
 ## --------------------------------------
 ##@ tests:
 
-export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.32.0
+export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.33.0
 KUBEBUILDER_ASSETS ?= $(shell $(SETUP_ENVTEST) use --use-env -p path $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION))
 
 .PHONY: setup-envtest
@@ -129,6 +130,11 @@ unit: $(SETUP_ENVTEST) ## Run unit test
 		$(GINKGO_TEST_FLAGS) \
 		-coverprofile ./cover.out && \
 	cd $(APIS_DIR) && \
+	$(GO) test ./... \
+		$(GO_TEST_FLAGS) \
+		-coverprofile ./cover.out && \
+	cd .. && \
+	cd $(WEBHOOKS_DIR) && \
 	$(GO) test ./... \
 		$(GO_TEST_FLAGS) \
 		-coverprofile ./cover.out
@@ -159,8 +165,6 @@ ARTIFACTS ?= $(ROOT_DIR)/_artifacts
 E2E_CONF_FILE ?= $(ROOT_DIR)/test/e2e/config/e2e_conf.yaml
 E2E_OUT_DIR ?= $(ROOT_DIR)/test/e2e/_out
 E2E_CONF_FILE_ENVSUBST ?= $(E2E_OUT_DIR)/$(notdir $(E2E_CONF_FILE))
-E2E_CONTAINERS ?= quay.io/metal3-io/cluster-api-provider-metal3 quay.io/metal3-io/baremetal-operator quay.io/metal3-io/ip-address-manager
-
 SKIP_CLEANUP ?= false
 EPHEMERAL_TEST ?= false
 SKIP_CREATE_MGMT_CLUSTER ?= true
@@ -211,10 +215,6 @@ e2e-tests: CONTAINER_RUNTIME?=docker # Env variable can override this default
 export CONTAINER_RUNTIME
 
 e2e-tests: $(GINKGO) e2e-substitutions cluster-templates # This target should be called from scripts/ci-e2e.sh
-	for image in $(E2E_CONTAINERS); do \
-		$(CONTAINER_RUNTIME) pull $$image; \
-	done
-
 	$(GINKGO) --timeout=$(GINKGO_TIMEOUT) -v --trace --tags=e2e  \
 		--show-node-events --no-color=$(GINKGO_NOCOLOR) \
 		--junit-report="junit.e2e_suite.1.xml" \
@@ -232,10 +232,6 @@ e2e-clusterclass-tests: CONTAINER_RUNTIME?=docker # Env variable can override th
 export CONTAINER_RUNTIME
 
 e2e-clusterclass-tests: $(GINKGO) e2e-substitutions clusterclass-templates # This target should be called from scripts/ci-e2e.sh
-	for image in $(E2E_CONTAINERS); do \
-		$(CONTAINER_RUNTIME) pull $$image; \
-	done
-
 	$(GINKGO) --timeout=$(GINKGO_TIMEOUT) -v --trace --tags=e2e  \
 		--show-node-events --no-color=$(GINKGO_NOCOLOR) \
 		--junit-report="junit.e2e_suite.1.xml" \
@@ -379,6 +375,8 @@ generate-go: $(CONTROLLER_GEN) $(MOCKGEN) $(CONVERSION_GEN) $(KUBEBUILDER) $(KUS
 	$(GO) generate ./...
 	cd $(APIS_DIR) && $(GO) generate ./...
 
+	cd $(WEBHOOKS_DIR) && $(GO) generate ./...
+
 	cd ./api && $(CONTROLLER_GEN) \
 		paths=./... \
 		object:headerFile=../hack/boilerplate/boilerplate.generatego.txt
@@ -438,6 +436,7 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 		paths=./ \
 		paths=./api/... \
 		paths=./controllers/... \
+		paths=./internal/webhooks/... \
 		crd:crdVersions=v1 \
 		rbac:roleName=manager-role \
 		output:crd:dir=$(CRD_ROOT) \
@@ -505,18 +504,12 @@ docker-push-manifest: ## Push the fat manifest docker image.
 .PHONY: set-manifest-image
 set-manifest-image:
 	$(info Updating kustomize image patch file for manager resource)
-	sed -i'' -e 's@image: .*@image: '"${MANIFEST_IMG}:$(MANIFEST_TAG)"'@' ./config/default/capm3/manager_image_patch.yaml
-
-.PHONY: set-manifest-image-ipam
-set-manifest-image-ipam:
-	$(info Updating kustomize image patch file for IPAM controller)
-	sed -i'' -e 's@image: .*@image: '"${MANIFEST_IMG_IPAM}:$(MANIFEST_TAG_IPAM)"'@' ./config/ipam/image_patch.yaml
+	sed -i'' -e 's@image: .*@image: \"'"${MANIFEST_IMG}:$(MANIFEST_TAG)"'\"@' ./config/default/capm3/manager_image_patch.yaml
 
 .PHONY: set-manifest-pull-policy
 set-manifest-pull-policy:
 	$(info Updating kustomize pull policy file for manager resource)
 	sed -i'' -e 's@imagePullPolicy: .*@imagePullPolicy: '"$(PULL_POLICY)"'@' ./config/default/capm3/manager_pull_policy_patch.yaml
-	sed -i'' -e 's@imagePullPolicy: .*@imagePullPolicy: '"$(PULL_POLICY)"'@' ./config/ipam/pull_policy_patch.yaml
 ## --------------------------------------
 ## Deploying
 ## --------------------------------------

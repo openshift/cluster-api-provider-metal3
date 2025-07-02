@@ -86,13 +86,16 @@ var _ = Describe("Testing features in ephemeral or target cluster [pivoting] [fe
 		})
 
 		It("Should get a management cluster then test cert rotation and node reuse", func() {
+			By("Apply BMH for workload cluster")
+			ApplyBmh(ctx, e2eConfig, bootstrapClusterProxy, namespace, specName)
+			By("Provision Workload cluster")
 			targetCluster, _ = CreateTargetCluster(ctx, func() CreateTargetClusterInput {
 				return CreateTargetClusterInput{
 					E2EConfig:             e2eConfig,
 					BootstrapClusterProxy: bootstrapClusterProxy,
 					SpecName:              specName,
 					ClusterName:           clusterName,
-					K8sVersion:            e2eConfig.GetVariable("KUBERNETES_PATCH_FROM_VERSION"),
+					K8sVersion:            e2eConfig.MustGetVariable("KUBERNETES_PATCH_FROM_VERSION"),
 					KCPMachineCount:       int64(numberOfControlplane),
 					WorkerMachineCount:    int64(numberOfWorkers),
 					ClusterctlLogFolder:   clusterctlLogFolder,
@@ -156,9 +159,11 @@ var _ = Describe("Testing features in ephemeral or target cluster [pivoting] [fe
 				// Dump the target cluster resources before re-pivoting.
 				Logf("Dump the target cluster resources before re-pivoting")
 				framework.DumpAllResources(ctx, framework.DumpAllResourcesInput{
-					Lister:    targetCluster.GetClient(),
-					Namespace: namespace,
-					LogPath:   filepath.Join(artifactFolder, "clusters", clusterName, "resources"),
+					Lister:               targetCluster.GetClient(),
+					Namespace:            namespace,
+					LogPath:              filepath.Join(artifactFolder, "clusters", clusterName, "resources"),
+					KubeConfigPath:       targetCluster.GetKubeconfigPath(),
+					ClusterctlConfigPath: clusterctlConfigPath,
 				})
 
 				rePivoting(ctx, func() RePivotingInput {
@@ -174,7 +179,7 @@ var _ = Describe("Testing features in ephemeral or target cluster [pivoting] [fe
 					}
 				})
 			}
-			DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup)
+			DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup, clusterctlConfigPath)
 		})
 
 	})

@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
@@ -29,10 +28,10 @@ func IPReuse(ctx context.Context, inputGetter func() IPReuseInput) {
 	input := inputGetter()
 	targetClusterClient := input.TargetCluster.GetClient()
 	managementClusterClient := input.BootstrapClusterProxy.GetClient()
-	fromK8sVersion := input.E2EConfig.GetVariable("FROM_K8S_VERSION")
-	toK8sVersion := input.E2EConfig.GetVariable("KUBERNETES_VERSION")
-	numberOfControlplane := *input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT")
-	numberOfWorkers := *input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT")
+	fromK8sVersion := input.E2EConfig.MustGetVariable("FROM_K8S_VERSION")
+	toK8sVersion := input.E2EConfig.MustGetVariable("KUBERNETES_VERSION")
+	numberOfControlplane := *input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT")
+	numberOfWorkers := *input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT")
 	numberOfAllBmh := numberOfControlplane + numberOfWorkers
 
 	// Download node image
@@ -41,8 +40,8 @@ func IPReuse(ctx context.Context, inputGetter func() IPReuseInput) {
 
 	// Upgrade KCP
 	By("Create new KCP Metal3MachineTemplate with upgraded image to boot")
-	KCPm3MachineTemplateName := fmt.Sprintf("%s-controlplane", input.ClusterName)
-	KCPNewM3MachineTemplateName := fmt.Sprintf("%s-new-controlplane", input.ClusterName)
+	KCPm3MachineTemplateName := input.ClusterName + "-controlplane"
+	KCPNewM3MachineTemplateName := input.ClusterName + "-new-controlplane"
 	CreateNewM3MachineTemplate(ctx, input.Namespace, KCPNewM3MachineTemplateName, KCPm3MachineTemplateName, managementClusterClient, imageURL, imageChecksum)
 
 	Byf("Update KCP to upgrade k8s version and binaries from %s to %s", fromK8sVersion, toK8sVersion)
@@ -119,7 +118,7 @@ func IPReuse(ctx context.Context, inputGetter func() IPReuseInput) {
 
 	By("Create new worker Metal3MachineTemplate with upgraded image to boot")
 	m3MachineTemplateName := md.Spec.Template.Spec.InfrastructureRef.Name
-	newM3MachineTemplateName := fmt.Sprintf("%s-new", m3MachineTemplateName)
+	newM3MachineTemplateName := m3MachineTemplateName + "-new"
 	CreateNewM3MachineTemplate(ctx, input.Namespace, newM3MachineTemplateName, m3MachineTemplateName, managementClusterClient, imageURL, imageChecksum)
 
 	Byf("Update MachineDeployment maxUnavailable to number of workers and k8s version from %s to %s", fromK8sVersion, toK8sVersion)

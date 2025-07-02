@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	infraremote "github.com/metal3-io/cluster-api-provider-metal3/baremetal/remote"
 	"github.com/metal3-io/cluster-api-provider-metal3/controllers"
+	webhooks "github.com/metal3-io/cluster-api-provider-metal3/internal/webhooks/v1beta1"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	"github.com/spf13/pflag"
 	appsv1 "k8s.io/api/apps/v1"
@@ -65,6 +67,11 @@ const (
 	// out-of-service taint strategy (GA from 1.28).
 	minK8sMajorVersionOutOfServiceTaint   = 1
 	minK8sMinorVersionGAOutOfServiceTaint = 28
+	leaderElectionLeaseTimeout            = 15 * time.Second
+	leaderElectionRenewTimeout            = 10 * time.Second
+	leaderElectionRetryTimeout            = 2 * time.Second
+	defaultMinSyncPeriod                  = 10 * time.Minute
+	apiGroupWaitTimeout                   = 10 * time.Second
 )
 
 var (
@@ -216,6 +223,12 @@ func main() {
 func initFlags(fs *pflag.FlagSet) {
 	logs.AddFlags(fs, logs.SkipLoggingConfigurationFlags())
 	logsv1.AddFlags(logOptions, fs)
+	var maxClusterCacheQPS float32 = 20
+	maxClusterCacheClientBurst := 30
+	defaultWebhookPort := 9443
+	defaultConcurrency := 10
+	var defaultKubeAPIQPS float32 = 20
+	defaultKubeAPIBurst := 30
 
 	fs.BoolVar(
 		&enableLeaderElection,
@@ -234,21 +247,21 @@ func initFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(
 		&leaderElectionLeaseDuration,
 		"leader-elect-lease-duration",
-		15*time.Second,
+		leaderElectionLeaseTimeout,
 		"Interval at which non-leader candidates will wait to force acquire leadership (duration string)",
 	)
 
 	fs.DurationVar(
 		&leaderElectionRenewDeadline,
 		"leader-elect-renew-deadline",
-		10*time.Second,
+		leaderElectionRenewTimeout,
 		"Duration that the leading controller manager will retry refreshing leadership before giving up (duration string)",
 	)
 
 	fs.DurationVar(
 		&leaderElectionRetryPeriod,
 		"leader-elect-retry-period",
-		2*time.Second,
+		leaderElectionRetryTimeout,
 		"Duration the LeaderElector clients should wait between tries of actions (duration string)",
 	)
 
@@ -269,28 +282,28 @@ func initFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(
 		&syncPeriod,
 		"sync-period",
-		10*time.Minute,
+		defaultMinSyncPeriod,
 		"The minimum interval at which watched resources are reconciled (e.g. 15m)",
 	)
 
 	fs.Float32Var(
 		&clusterCacheClientQPS,
 		"clustercache-client-qps",
-		20,
+		maxClusterCacheQPS,
 		"Maximum queries per second from the cluster cache clients to the Kubernetes API server of workload clusters.",
 	)
 
 	fs.IntVar(
 		&clusterCacheClientBurst,
 		"clustercache-client-burst",
-		30,
+		maxClusterCacheClientBurst,
 		"Maximum number of queries that should be allowed in one burst from the cluster cache clients to the Kubernetes API server of workload clusters.",
 	)
 
 	fs.IntVar(
 		&webhookPort,
 		"webhook-port",
-		9443,
+		defaultWebhookPort,
 		"Webhook Server port",
 	)
 
@@ -308,31 +321,31 @@ func initFlags(fs *pflag.FlagSet) {
 		"The address the health endpoint binds to.",
 	)
 
-	fs.IntVar(&metal3MachineConcurrency, "metal3machine-concurrency", 10,
+	fs.IntVar(&metal3MachineConcurrency, "metal3machine-concurrency", defaultConcurrency,
 		"Number of metal3machines to process simultaneously. WARNING! Currently not safe to set > 1.")
 
-	fs.IntVar(&metal3ClusterConcurrency, "metal3cluster-concurrency", 10,
+	fs.IntVar(&metal3ClusterConcurrency, "metal3cluster-concurrency", defaultConcurrency,
 		"Number of metal3clusters to process simultaneously")
 
-	fs.IntVar(&metal3DataTemplateConcurrency, "metal3datatemplate-concurrency", 10,
+	fs.IntVar(&metal3DataTemplateConcurrency, "metal3datatemplate-concurrency", defaultConcurrency,
 		"Number of metal3datatemplates to process simultaneously")
 
-	fs.IntVar(&metal3DataConcurrency, "metal3data-concurrency", 10,
+	fs.IntVar(&metal3DataConcurrency, "metal3data-concurrency", defaultConcurrency,
 		"Number of metal3data to process simultaneously")
 
-	fs.IntVar(&metal3LabelSyncConcurrency, "metal3labelsync-concurrency", 10,
+	fs.IntVar(&metal3LabelSyncConcurrency, "metal3labelsync-concurrency", defaultConcurrency,
 		"Number of metal3labelsyncs to process simultaneously")
 
-	fs.IntVar(&metal3MachineTemplateConcurrency, "metal3machinetemplate-concurrency", 10,
+	fs.IntVar(&metal3MachineTemplateConcurrency, "metal3machinetemplate-concurrency", defaultConcurrency,
 		"Number of metal3machinetemplates to process simultaneously")
 
-	fs.IntVar(&metal3RemediationConcurrency, "metal3remediation-concurrency", 10,
+	fs.IntVar(&metal3RemediationConcurrency, "metal3remediation-concurrency", defaultConcurrency,
 		"Number of metal3remediations to process simultaneously")
 
-	fs.Float32Var(&restConfigQPS, "kube-api-qps", 20,
+	fs.Float32Var(&restConfigQPS, "kube-api-qps", defaultKubeAPIQPS,
 		"Maximum queries per second from the controller client to the Kubernetes API server. Default 20")
 
-	fs.IntVar(&restConfigBurst, "kube-api-burst", 30,
+	fs.IntVar(&restConfigBurst, "kube-api-burst", defaultKubeAPIBurst,
 		"Maximum number of queries that should be allowed in one burst from the controller client to the Kubernetes API server. Default 30")
 
 	flags.AddManagerOptions(fs, &managerOptions)
@@ -353,7 +366,7 @@ func waitForAPIs(cfg *rest.Config) error {
 		err = discovery.ServerSupportsVersion(c, metal3GV)
 		if err != nil {
 			setupLog.Info(fmt.Sprintf("Waiting for API group %v to be available: %v", metal3GV, err))
-			time.Sleep(time.Second * 10)
+			time.Sleep(apiGroupWaitTimeout)
 			continue
 		}
 		setupLog.Info(fmt.Sprintf("Found API group %v", metal3GV))
@@ -501,47 +514,47 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 }
 
 func setupWebhooks(mgr ctrl.Manager) {
-	if err := (&infrav1.Metal3Cluster{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3Cluster{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3Cluster")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3Machine{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3Machine{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3Machine")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3MachineTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3MachineTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3MachineTemplate")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3DataTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3DataTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3DataTemplate")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3Data{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3Data{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3Data")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3DataClaim{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3DataClaim{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3DataClaim")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3Remediation{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3Remediation{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3Remediation")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3RemediationTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3RemediationTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3RemediationTemplate")
 		os.Exit(1)
 	}
 
-	if err := (&infrav1.Metal3ClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+	if err := (&webhooks.Metal3ClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "Metal3ClusterTemplate")
 		os.Exit(1)
 	}
@@ -555,7 +568,7 @@ func isOutOfServiceTaintSupported(config *rest.Config) (bool, error) {
 	cs, err := kubernetes.NewForConfig(config)
 	if err != nil || cs == nil {
 		if cs == nil {
-			err = fmt.Errorf("k8s client set is nil")
+			err = errors.New("k8s client set is nil")
 		}
 		setupLog.Error(err, "unable to get k8s client")
 		return false, err
@@ -564,7 +577,7 @@ func isOutOfServiceTaintSupported(config *rest.Config) (bool, error) {
 	k8sVersion, err := cs.Discovery().ServerVersion()
 	if err != nil || k8sVersion == nil {
 		if k8sVersion == nil {
-			err = fmt.Errorf("k8s server version is nil")
+			err = errors.New("k8s server version is nil")
 		}
 		setupLog.Error(err, "unable to get k8s server version")
 		return false, err

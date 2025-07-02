@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"context"
-	"fmt"
 	"reflect"
 	"time"
 
@@ -39,10 +38,10 @@ func nodeReuse(ctx context.Context, inputGetter func() NodeReuseInput) {
 	targetClusterClient := input.TargetCluster.GetClient()
 	managementClusterClient := input.ManagementCluster.GetClient()
 	clientSet := input.TargetCluster.GetClientSet()
-	fromK8sVersion := input.E2EConfig.GetVariable("KUBERNETES_PATCH_FROM_VERSION")
-	toK8sVersion := input.E2EConfig.GetVariable("KUBERNETES_PATCH_TO_VERSION")
-	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
-	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	fromK8sVersion := input.E2EConfig.MustGetVariable("KUBERNETES_PATCH_FROM_VERSION")
+	toK8sVersion := input.E2EConfig.MustGetVariable("KUBERNETES_PATCH_TO_VERSION")
+	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
+	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
 
 	var (
@@ -105,9 +104,9 @@ func nodeReuse(ctx context.Context, inputGetter func() NodeReuseInput) {
 	imageURL, imageChecksum := EnsureImage(toK8sVersion)
 
 	By("Set nodeReuse field to 'True' and create new KCP Metal3MachineTemplate with upgraded image to boot [node_reuse]")
-	m3MachineTemplateName := fmt.Sprintf("%s-controlplane", input.ClusterName)
+	m3MachineTemplateName := input.ClusterName + "-controlplane"
 	updateNodeReuse(ctx, input.Namespace, true, m3MachineTemplateName, managementClusterClient)
-	newM3MachineTemplateName := fmt.Sprintf("%s-new-controlplane", input.ClusterName)
+	newM3MachineTemplateName := input.ClusterName + "-new-controlplane"
 	CreateNewM3MachineTemplate(ctx, input.Namespace, newM3MachineTemplateName, m3MachineTemplateName, managementClusterClient, imageURL, imageChecksum)
 
 	Byf("Update KCP to upgrade k8s version and binaries from %s to %s [node_reuse]", fromK8sVersion, toK8sVersion)
@@ -233,7 +232,7 @@ func nodeReuse(ctx context.Context, inputGetter func() NodeReuseInput) {
 	helper, err = patch.NewHelper(kcpObj, managementClusterClient)
 	Expect(err).NotTo(HaveOccurred())
 	kcpObj.Spec.RolloutStrategy.RollingUpdate.MaxSurge.IntVal = 1
-	for retry := 0; retry < 3; retry++ {
+	for range 3 {
 		err = helper.Patch(ctx, kcpObj)
 		if err == nil {
 			break
@@ -282,7 +281,7 @@ func nodeReuse(ctx context.Context, inputGetter func() NodeReuseInput) {
 	machineDeploy := machineDeployments[0]
 
 	By("Get Metal3MachineTemplate name for MachineDeployment [node_reuse]")
-	m3MachineTemplateName = fmt.Sprintf("%s-workers", input.ClusterName)
+	m3MachineTemplateName = input.ClusterName + "-workers"
 
 	By("Point to proper Metal3MachineTemplate in MachineDeployment [node_reuse]")
 	pointMDtoM3mt(ctx, input.Namespace, input.ClusterName, m3MachineTemplateName, machineDeploy.Name, managementClusterClient)
@@ -329,7 +328,7 @@ func nodeReuse(ctx context.Context, inputGetter func() NodeReuseInput) {
 
 	By("Set nodeReuse field to 'True' and create new Metal3MachineTemplate for MD with upgraded image to boot [node_reuse]")
 	updateNodeReuse(ctx, input.Namespace, true, m3MachineTemplateName, managementClusterClient)
-	newM3MachineTemplateName = fmt.Sprintf("%s-new-workers", input.ClusterName)
+	newM3MachineTemplateName = input.ClusterName + "-new-workers"
 	CreateNewM3MachineTemplate(ctx, input.Namespace, newM3MachineTemplateName, m3MachineTemplateName, managementClusterClient, imageURL, imageChecksum)
 
 	Byf("Update MD to upgrade k8s version and binaries from %s to %s", fromK8sVersion, toK8sVersion)
@@ -474,7 +473,7 @@ func pointMDtoM3mt(ctx context.Context, namespace string, clusterName string, m3
 
 	// verify that MachineDeployment is pointing to exact m3mt where nodeReuse is set to 'True'
 	Expect(managementClusterClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: mdName}, &md)).To(Succeed())
-	Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(BeEquivalentTo(fmt.Sprintf("%s-workers", clusterName)))
+	Expect(md.Spec.Template.Spec.InfrastructureRef.Name).To(BeEquivalentTo(clusterName + "-workers"))
 }
 
 func untaintNodes(ctx context.Context, targetClusterClient client.Client, nodes *corev1.NodeList, taints []corev1.Taint) (count int) {

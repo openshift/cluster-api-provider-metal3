@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -13,8 +14,12 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 	corev1 "k8s.io/api/core/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubectl/pkg/describe"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
@@ -47,7 +52,7 @@ func (Metal3LogCollector) CollectMachineLog(ctx context.Context, cli client.Clie
 	if output, err := cmd.Output(); err != nil {
 		return fmt.Errorf("something went wrong when executing '%s': %w, output: %s", cmd.String(), err, output)
 	}
-	setPermsCmd := fmt.Sprintf("sudo chmod -v 777 %s", path.Join(qemuFolder, filepath.Base(serialLog)))
+	setPermsCmd := "sudo chmod -v 777 " + path.Join(qemuFolder, filepath.Base(serialLog))
 	cmd = exec.Command("/bin/sh", "-c", setPermsCmd) // #nosec G204:gosec
 	output, err := cmd.Output()
 	if err != nil {
@@ -61,7 +66,7 @@ func (Metal3LogCollector) CollectMachineLog(ctx context.Context, cli client.Clie
 	})
 
 	if len(kubeadmCP.Spec.KubeadmConfigSpec.Users) < 1 {
-		return fmt.Errorf("no valid credentials found: KubeadmConfigSpec.Users is empty")
+		return errors.New("no valid credentials found: KubeadmConfigSpec.Users is empty")
 	}
 	creds := kubeadmCP.Spec.KubeadmConfigSpec.Users[0]
 
@@ -92,26 +97,109 @@ func (Metal3LogCollector) CollectMachineLog(ctx context.Context, cli client.Clie
 }
 
 func (Metal3LogCollector) CollectInfrastructureLogs(_ context.Context, _ client.Client, _ *clusterv1.Cluster, _ string) error {
-	return fmt.Errorf("CollectInfrastructureLogs not implemented")
+	return errors.New("CollectInfrastructureLogs not implemented")
 }
 
 func (Metal3LogCollector) CollectMachinePoolLog(_ context.Context, _ client.Client, _ *expv1.MachinePool, _ string) error {
-	return fmt.Errorf("CollectMachinePoolLog not implemented")
+	return errors.New("CollectMachinePoolLog not implemented")
 }
 
-func FetchManifests(_ framework.ClusterProxy) error {
-	return fmt.Errorf("FetchManifests not implemented")
+// FetchManifests fetches relevant Metal3, CAPI, and Kubernetes core resources
+// and dumps them to a file.
+func FetchManifests(clusterProxy framework.ClusterProxy, outputPath string) error {
+	outputPath = filepath.Join(outputPath, clusterProxy.GetName())
+	ctx := context.Background()
+	restConfig := clusterProxy.GetRESTConfig()
+	dynamicClient, err := dynamic.NewForConfig(restConfig)
+	if err != nil {
+		return fmt.Errorf("could not create dynamic client: %w", err)
+	}
+
+	k8sCoreManifests := []string{
+		// This list must contain the plural form of the Kubernetes core
+		// resources
+		"deployments",
+		"replicasets",
+	}
+
+	// Set group and version to get Kubernetes core resources and dump them
+	for _, manifest := range k8sCoreManifests {
+		gvr := schema.GroupVersionResource{
+			Group:    "apps",
+			Version:  "v1",
+			Resource: manifest,
+		}
+
+		if err := DumpGVR(ctx, dynamicClient, gvr, outputPath); err != nil {
+			return err
+		}
+	}
+
+	manifests := []string{
+		// This list contains all resources of interest that are NOT Kubernetes
+		// core resources.
+		"bmh",
+		"hardwaredata",
+		"cluster",
+		"machine",
+		"machinedeployment",
+		"machinehealthchecks",
+		"machinesets",
+		"machinepools",
+		"m3cluster",
+		"m3machine",
+		"metal3machinetemplate",
+		"kubeadmconfig",
+		"kubeadmconfigtemplates",
+		"kubeadmcontrolplane",
+		"ippool",
+		"ipclaim",
+		"ipaddress",
+		"m3data",
+		"m3dataclaim",
+		"m3datatemplate",
+	}
+	client := clusterProxy.GetClient()
+
+	// Get all CustomResourceDefinitions (CRDs)
+	crds := apiextensionsv1.CustomResourceDefinitionList{}
+	if err := client.List(ctx, &crds); err != nil {
+		return fmt.Errorf("could not list CRDs: %w", err)
+	}
+	if len(crds.Items) == 0 {
+		return nil
+	}
+
+	// Check if the resource is in the manifest list.
+	// If it is, dump it to a file
+	for _, crd := range crds.Items {
+		if crdIsInList(crd, manifests) {
+			gvr := schema.GroupVersionResource{
+				Group:    crd.Spec.Group,
+				Version:  crd.Status.StoredVersions[0],
+				Resource: crd.Spec.Names.Plural,
+			}
+
+			if err := DumpGVR(ctx, dynamicClient, gvr, outputPath); err != nil {
+				return err
+			}
+		}
+	}
+	Logf("Successfully collected manifests for cluster %s.", clusterProxy.GetName())
+	return nil
 }
 
+// FetchClusterLogs fetches logs from all pods in the cluster and writes them
+// to files.
 func FetchClusterLogs(clusterProxy framework.ClusterProxy, outputPath string) error {
 	ctx := context.Background()
 	baseDir := filepath.Join(outputPath, clusterProxy.GetName())
-	err := os.MkdirAll(baseDir, 0775)
-	if err != nil {
-		return fmt.Errorf("couldn't create directory: %v", err)
+	// Ensure the base directory exists
+	if err := os.MkdirAll(baseDir, 0o750); err != nil {
+		return fmt.Errorf("couldn't create directory: %w", err)
 	}
 
-	// get the clientset
+	// Get the clientset
 	clientset := clusterProxy.GetClientSet()
 
 	// Print the Pods' information to file
@@ -120,20 +208,20 @@ func FetchClusterLogs(clusterProxy framework.ClusterProxy, outputPath string) er
 	outputFile := filepath.Join(baseDir, "pods.log")
 	file, err := os.Create(outputFile)
 	if err != nil {
-		return fmt.Errorf("failed to create output file: %v", err)
+		return fmt.Errorf("failed to create output file: %w", err)
 	}
 	defer file.Close()
 
 	// List pods across all namespaces
 	pods, err := clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to list pods: %v", err)
+		return fmt.Errorf("failed to list pods: %w", err)
 	}
 
 	// Print header to file
 	header := fmt.Sprintf("%-32s %-16s %-12s %-24s %-8s\n", "NAMESPACE", "NAME", "STATUS", "NODE", "AGE")
 	if _, err = file.WriteString(header); err != nil {
-		return fmt.Errorf("error writing to file: %v", err)
+		return fmt.Errorf("error writing to file: %w", err)
 	}
 
 	// Iterate through pods and print information
@@ -148,33 +236,23 @@ func FetchClusterLogs(clusterProxy framework.ClusterProxy, outputPath string) er
 		)
 
 		if _, err = file.WriteString(podInfo); err != nil {
-			return fmt.Errorf("error writing to file: %v", err)
+			return fmt.Errorf("error writing to file: %w", err)
 		}
 	}
 
 	// Get all namespaces
 	namespaces, err := clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		return fmt.Errorf("couldn't get namespaces: %v", err)
+		return fmt.Errorf("couldn't get namespaces: %w", err)
 	}
 	for _, namespace := range namespaces.Items {
 		// Get all pods in the namespace
 		pods, err := clientset.CoreV1().Pods(namespace.Name).List(ctx, metav1.ListOptions{})
 		if err != nil {
-			fmt.Printf("couldn't list pods in namespace %s: %v", namespace.Name, err)
+			Logf("couldn't list pods in namespace %s: %v", namespace.Name, err)
 			continue
 		}
 		for _, pod := range pods.Items {
-			machineName := pod.Spec.NodeName
-			// Create a directory for each pod and the path to it if
-			// it does not exist
-			podDir := filepath.Join(baseDir, "machines", machineName, namespace.Name, pod.Name)
-			err = os.MkdirAll(podDir, 0775)
-			if err != nil {
-				fmt.Printf("couldn't write to file: %v", err)
-				continue
-			}
-
 			// Get detailed information about the Pod
 			// This does the same thing as:
 			// kubectl --kubeconfig="${KUBECONFIG_WORKLOAD}" describe pods -n "${NAMESPACE}" "${POD}"
@@ -186,41 +264,43 @@ func FetchClusterLogs(clusterProxy framework.ClusterProxy, outputPath string) er
 			}
 			podDescription, err := podDescriber.Describe(namespace.Name, pod.Name, describerSettings)
 			if err != nil {
-				fmt.Printf("couldn't describe pod %s in namespace %s: %v", pod.Name, namespace.Name, err)
+				Logf("couldn't describe pod %s in namespace %s: %v", pod.Name, namespace.Name, err)
 				continue
 			}
 
-			// Print the Pod information to file
-			file := filepath.Join(podDir, "stdout_describe.log")
-			err = os.WriteFile(file, []byte(podDescription), 0600)
+			machineName := pod.Spec.NodeName
+			podDir := filepath.Join(baseDir, "machines", machineName, namespace.Name, pod.Name)
+			if err := os.MkdirAll(podDir, 0o750); err != nil {
+				return fmt.Errorf("couldn't create directory: %w", err)
+			}
+			err = writeToFile([]byte(podDescription), "stdout_describe.log", podDir)
 			if err != nil {
-				fmt.Printf("couldn't write to file: %v", err)
-				continue
+				return fmt.Errorf("couldn't write to file: %w", err)
 			}
 
 			// Get containers of the Pod
 			for _, container := range pod.Spec.Containers {
 				// Create a directory for each container
 				containerDir := filepath.Join(podDir, container.Name)
+				if err := os.MkdirAll(containerDir, 0o750); err != nil {
+					return fmt.Errorf("couldn't create directory: %w", err)
+				}
 
 				err := CollectContainerLogs(ctx, namespace.Name, pod.Name, container.Name, clientset, containerDir)
 				if err != nil {
-					fmt.Printf("Error %v.", err)
+					Logf("Error %v.", err)
 					continue
 				}
 			}
 		}
 	}
-	fmt.Printf("Successfully collected logs for cluster %s.", clusterProxy.GetName())
+	Logf("Successfully collected logs for cluster %s.", clusterProxy.GetName())
 	return nil
 }
 
+// CollectContainerLogs fetches logs from a specific container in a pod and
+// writes them to a file.
 func CollectContainerLogs(ctx context.Context, namespace string, podName string, containerName string, clientset *kubernetes.Clientset, outputPath string) error {
-	err := os.MkdirAll(outputPath, 0775)
-	if err != nil {
-		return fmt.Errorf("couldn't create directory: %v", err)
-	}
-
 	// Get logs of a container
 	// Does the same thing as:
 	// kubectl --kubeconfig="${KUBECONFIG_WORKLOAD}" logs -n "${NAMESPACE}" "${POD}" "${CONTAINER}"
@@ -229,7 +309,7 @@ func CollectContainerLogs(ctx context.Context, namespace string, podName string,
 	}
 	podLogs, err := clientset.CoreV1().Pods(namespace).GetLogs(podName, &podLogOptions).Stream(ctx)
 	if err != nil {
-		return fmt.Errorf("couldn't get container logs: %v", err)
+		return fmt.Errorf("couldn't get container logs: %w", err)
 	}
 	defer podLogs.Close()
 
@@ -237,16 +317,81 @@ func CollectContainerLogs(ctx context.Context, namespace string, podName string,
 	buf := new(bytes.Buffer)
 	_, err = io.Copy(buf, podLogs)
 	if err != nil {
-		return fmt.Errorf("couldn't buffer container logs: %v", err)
+		return fmt.Errorf("couldn't buffer container logs: %w", err)
 	}
 	podStr := buf.String()
 
-	// Print the Pod information to file
-	file := filepath.Join(outputPath, "stdout.log")
-	err = os.WriteFile(file, []byte(podStr), 0600)
+	err = writeToFile([]byte(podStr), "stdout.log", outputPath)
 	if err != nil {
-		return fmt.Errorf("couldn't write to file: %v", err)
+		return fmt.Errorf("couldn't write to file: %w", err)
 	}
 
+	return nil
+}
+
+// writeToFile writes content to a file,
+// creating any missing directories in the path.
+func writeToFile(content []byte, fileName string, filePath string) error {
+	// Create any missing directories in the path
+	err := os.MkdirAll(filePath, 0775)
+	if err != nil {
+		return fmt.Errorf("couldn't create directory: %w", err)
+	}
+	// Write content to file
+	file := filepath.Join(filePath, fileName)
+	err = os.WriteFile(file, content, 0600)
+	if err != nil {
+		return fmt.Errorf("couldn't write to file: %w", err)
+	}
+	return nil
+}
+
+// crdIsInList checks if a CustomResourceDefinition is in the provided list of
+// resource names.
+func crdIsInList(crd apiextensionsv1.CustomResourceDefinition, list []string) bool {
+	plural := crd.Spec.Names.Plural
+	singular := crd.Spec.Names.Singular
+	shortNames := crd.Spec.Names.ShortNames
+
+	for _, name := range list {
+		if name == plural {
+			return true
+		}
+		if name == singular {
+			return true
+		}
+		for _, shortName := range shortNames {
+			if name == shortName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// DumpGVR fetches resources of a given GroupVersionResource
+// and writes them to files.
+func DumpGVR(ctx context.Context, dynamicClient *dynamic.DynamicClient, gvr schema.GroupVersionResource, outputPath string) error {
+	resources, err := dynamicClient.Resource(gvr).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return fmt.Errorf("could not get resources: %w", err)
+	}
+	if len(resources.Items) == 0 {
+		return nil
+	}
+
+	// Write resource to file
+	for _, resource := range resources.Items {
+		filePath := filepath.Join(outputPath, resource.GetNamespace(), resource.GetKind())
+		fileName := resource.GetName() + ".yaml"
+		content, err := yaml.Marshal(resource)
+		if err != nil {
+			return fmt.Errorf("could not marshal content: %w", err)
+		}
+		err = writeToFile(content, fileName, filePath)
+		if err != nil {
+			return fmt.Errorf("couldn't write to file: %w", err)
+		}
+	}
 	return nil
 }

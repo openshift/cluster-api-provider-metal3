@@ -54,10 +54,12 @@ Below are the tests that you can use with `GINKGO_FOCUS` and `GINKGO_SKIP`
    - remediation
    - pivoting
 - k8s-upgrade
+- k8s-conformance
 - clusterctl-upgrade
 - scalability
 - integration
 - basic
+- capi-md-tests
 
 You can combine both `GINKGO_FOCUS` and `GINKGO_SKIP` to run multiple tests
 according to your requirements. For example following will run ip-reuse and
@@ -81,12 +83,14 @@ sudo rm -rf /opt/metal3-dev-env/
 
 ## Included tests
 
-The e2e tests currently include three different sets:
+The e2e tests currently include six different sets:
 
 1. Pivoting based feature tests
 1. Remediation based feature tests
 1. clusterctl upgrade tests
 1. K8s upgrade tests
+1. K8s conformance tests
+1. CAPI MachineDeployment tests
 
 ### Pivoting based feature tests
 
@@ -127,10 +131,11 @@ in the ephemeral cluster either before pivoting or after re-pivoting.
 
 <!-- markdownlint-disable MD013 -->
 
-| tests         | CAPM3 from             | CAPM3 to  | CAPI from             | CAPI to         |
-| --------------| ---------------------- | --------- | --------------------- |---------------- |
-| v1.9=>current | v1.9 latest patch      | main      | v1.9 latest patch     | latest release  |
-| v1.8=>current | v1.8 latest patch      | main      | v1.8 latest patch     | latest release  |
+| tests          | CAPM3 from             | CAPM3 to  | CAPI from             | CAPI to         |
+| ---------------| ---------------------- | --------- | --------------------- |---------------- |
+| v1.10=>current | v1.10 latest patch     | main      | v1.10 latest patch    | latest release  |
+| v1.9=>current  | v1.9 latest patch      | main      | v1.9 latest patch     | latest release  |
+| v1.8=>current  | v1.8 latest patch      | main      | v1.8 latest patch     | latest release  |
 
 <!-- markdownlint-disable MD013 -->
 
@@ -146,7 +151,11 @@ For example:
 
 Main branch k8s-upgrade tests:
 
-- `v1.31` => `v1.32`
+- `v1.32` => `v1.33`
+
+Release 1.10 branch k8s-upgrade test:
+
+- `v1.32` => `v1.33`
 
 Release 1.9 branch k8s-upgrade test:
 
@@ -156,12 +165,23 @@ Release 1.8 branch k8s-upgrade test:
 
 - `v1.29` => `v1.30`
 
-Release 1.7 branch k8s-upgrade test:
+When Kubernetes 1.34 is released, k8s-upgrade `v1.33` => `v1.34` will be
+supported in v1.10.x (but not in v1.9.x)
 
-- `v1.29` => `v1.30`
+### K8s conformance tests
 
-When Kubernetes 1.31 is released, k8s-upgrade `v1.30` => `v1.31` will be
-supported in v1.7.x (but not in v1.6.x)
+The conformance tests are a subset of Kubernetes' E2E test set. The standard set
+of conformance tests includes those defined by the [Conformance] tag in the
+[kubernetes e2e suite](https://github.com/kubernetes/kubernetes/blob/master/test/conformance/testdata/conformance.yaml).
+Refer to [Conformance Tests per Release](https://github.com/cncf/k8s-conformance/blob/master/docs/README.md)
+for more information on which tests are required for each Kubernetes release.
+
+### CAPI MachineDeployment tests
+
+Includes the following MachineDeployment tests adopted from the Cluster API's e2e tests:
+
+- [MachineDeployment rolling upgrades](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/md_rollout.go)
+- [MachineDeployment scale](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/md_scale.go)
 
 ## Guidelines to follow when adding new E2E tests
 
@@ -199,10 +219,10 @@ clusters:
 <!-- markdownlint-disable MD013 -->
 
 | tests               | bootstrap cluster | metal3 cluster init | metal3 cluster final |
-| ------------------- | ----------------- | ------------------- | -------------------- |
-| integration         | v1.32.0           | v1.32.0             | x                    |
-| remediation         | v1.32.0           | v1.31.2             | x                    |
-| pivot based feature | v1.32.0           | v1.31.2             | v1.32.0              |
-| upgrade             | v1.32.0           | v1.31.2             | v1.32.0              |
+| ------------------- | ----------------- | -------------------- | -------------------- |
+| integration         | v1.33.0           | v1.33.0              | x                    |
+| remediation         | v1.33.0           | v1.33.0              | x                    |
+| pivot based feature | v1.33.0           | v1.33.0              | v1.33.0              |
+| upgrade             | v1.33.0           | v1.33.0              | v1.33.0              |
 
 <!-- markdownlint-enable MD013 -->
