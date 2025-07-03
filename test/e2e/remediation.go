@@ -75,8 +75,8 @@ type RemediationInput struct {
 func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	Logf("Starting remediation tests")
 	input := inputGetter()
-	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
-	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
+	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
 
 	bootstrapClient := input.BootstrapClusterProxy.GetClient()
@@ -251,10 +251,9 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	ListMachines(ctx, bootstrapClient, client.InNamespace(input.Namespace))
 	ListNodes(ctx, targetClient)
 
-	By("Testing Metal3DataTemplate reference")
-	Logf("Creating a new Metal3DataTemplate")
+	By("Creating a new Metal3DataTemplate")
 	m3dataTemplate := infrav1.Metal3DataTemplate{}
-	m3dataTemplateName := fmt.Sprintf("%s-workers-template", input.ClusterName)
+	m3dataTemplateName := input.ClusterName + "-workers-template"
 	newM3dataTemplateName := "test-new-m3dt"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3dataTemplateName}, &m3dataTemplate)).To(Succeed())
 
@@ -264,7 +263,6 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	newM3DataTemplate.Spec.MetaData = m3dataTemplate.Spec.MetaData
 	newM3DataTemplate.Spec.NetworkData = m3dataTemplate.Spec.NetworkData
 	newM3DataTemplate.Spec.ClusterName = input.ClusterName
-	newM3DataTemplate.Spec.TemplateReference = m3dataTemplateName
 
 	newM3DataTemplate.ObjectMeta.Name = newM3dataTemplateName
 	newM3DataTemplate.ObjectMeta.Namespace = m3dataTemplate.Namespace
@@ -274,7 +272,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	By("Creating a new Metal3MachineTemplate")
 	m3machineTemplate := infrav1.Metal3MachineTemplate{}
-	m3machineTemplateName := fmt.Sprintf("%s-workers", input.ClusterName)
+	m3machineTemplateName := input.ClusterName + "-workers"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3machineTemplateName}, &m3machineTemplate)).To(Succeed())
 	newM3MachineTemplateName := "test-new-m3mt"
 
@@ -296,7 +294,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	deployment.Spec.Template.Spec.InfrastructureRef = corev1.ObjectReference{
 		Kind:       "Metal3MachineTemplate",
-		APIVersion: input.E2EConfig.GetVariable("APIVersion"),
+		APIVersion: input.E2EConfig.MustGetVariable("APIVersion"),
 		Name:       newM3MachineTemplateName,
 	}
 	deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &intstr.IntOrString{IntVal: 1}
@@ -310,12 +308,11 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 		Intervals: input.E2EConfig.GetIntervals(input.SpecName, "wait-machine-remediation"),
 	})
 
-	By("Waiting for single Metal3Data to refer to the old template")
+	By("Waiting for single new worker to become provisioned")
 	Eventually(func(g Gomega) {
 		datas := infrav1.Metal3DataList{}
 		g.Expect(bootstrapClient.List(ctx, &datas, client.InNamespace(input.Namespace))).To(Succeed())
-		filtered := filterM3DataByReference(datas.Items, m3dataTemplateName)
-		g.Expect(filtered).To(HaveLen(1))
+		g.Expect(datas.Items).NotTo(BeEmpty())
 	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-deployment")...).Should(Succeed())
 
 	ListMetal3Machines(ctx, bootstrapClient, client.InNamespace(input.Namespace))
@@ -414,15 +411,6 @@ func listVms(state vmState) []string {
 		}
 	}
 	return lines[:i]
-}
-
-func filterM3DataByReference(datas []infrav1.Metal3Data, referenceName string) (result []infrav1.Metal3Data) {
-	for _, data := range datas {
-		if data.Spec.TemplateReference == referenceName {
-			result = append(result, data)
-		}
-	}
-	return
 }
 
 func waitForVmsState(vmNames []string, state vmState, _ string, interval ...interface{}) {

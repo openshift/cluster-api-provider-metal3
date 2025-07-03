@@ -1,6 +1,5 @@
 run:
-  deadline: 15m
-  go: "1.23"
+  go: "1.24"
 linters:
   disable-all: true
   enable:
@@ -10,13 +9,24 @@ linters:
   - bodyclose
   - containedctx
   - copyloopvar
+  - decorder
   - dogsled
+  - dupl
   - dupword
   - durationcheck
   - errcheck
   - errchkjson
+  - errname
+  - errorlint
+  - exhaustive
+  - exptostd
+  - fatcontext
+  - forbidigo
+  - forcetypeassert
   - gci
   - ginkgolinter
+  - gocheckcompilerdirectives
+  - gochecksumtype
   - goconst
   - gocritic
   - godot
@@ -25,35 +35,48 @@ linters:
   - goprintffuncname
   - gosec
   - gosimple
+  - gosmopolitan
   - govet
+  - iface
   - importas
   - ineffassign
+  - intrange
   - loggercheck
+  - makezero
+  - mirror
   - misspell
+  - mnd
   - nakedret
   - nilerr
+  - nilnesserr
+  - nilnil
   - noctx
   - nolintlint
   - nosprintfhostport
+  - perfsprint
   - prealloc
   - predeclared
+  - reassign
   - revive
   - rowserrcheck
   - staticcheck
   - stylecheck
+  - tagliatelle
+  - testifylint
   - thelper
+  - tparallel
   - typecheck
   - unconvert
   - unparam
   - unused
   - usestdlibvars
+  - usetesting
   - whitespace
   # Run with --fast=false for more extensive checks
   fast: true
 
 linters-settings:
   gosec:
-    go: "1.23"
     severity: medium
     confidence: medium
     concurrency: 8
@@ -94,7 +117,6 @@ linters-settings:
       alias: bmov1alpha1
   nolintlint:
     allow-unused: false
-    allow-leading-space: false
     require-specific: true
   gocritic:
     enabled-tags:
@@ -113,8 +135,11 @@ linters-settings:
     - unnecessaryDefer
     - whyNoLint
     - wrapperFunc
-  unused:
-    go: "1.23"
+  tagliatelle:
+    case:
+      rules:
+        json: goCamel
+      
 issues:
   exclude-dirs:
   - mock*
@@ -125,11 +150,16 @@ issues:
   - path: test/e2e
     linters:
     - gosec
+  - path: e2e
+    linters:
+    - mnd
   - path: _test\.go
     linters:
     - unused
     - unparam
     - goconst
+    - dupl
+    - mnd
   # Specific exclude rules for deprecated fields that are still part of the codebase.
   # These should be removed as the referenced deprecated item is removed from the project.
   - linters:
@@ -178,6 +208,9 @@ issues:
     - stylecheck
     text: "ST1016: methods on the same type should have the same receiver name"
     path: .*(api|types)\/.*\/conversion.*\.go$
+  - linters:
+    - tagliatelle
+    text: "DHCP|SLAAC"
   include:
   - EXC0002 # include "missing comments" issues from golangci-lint
   max-issues-per-linter: 0

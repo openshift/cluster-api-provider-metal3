@@ -31,8 +31,8 @@ func certRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	clusterClient := input.ManagementCluster.GetClient()
 	mariadbEnabled := GetBoolVariable(input.E2EConfig, ironicMariadb)
 	By("Check if Ironic pod is running")
-	ironicNamespace := input.E2EConfig.GetVariable("NAMEPREFIX") + "-system"
-	ironicDeploymentName := input.E2EConfig.GetVariable("NAMEPREFIX") + ironicSuffix
+	ironicNamespace := input.E2EConfig.MustGetVariable("NAMEPREFIX") + "-system"
+	ironicDeploymentName := input.E2EConfig.MustGetVariable("NAMEPREFIX") + ironicSuffix
 	ironicDeployment, err := getDeployment(ctx, clusterClient, ironicDeploymentName, ironicNamespace)
 	Expect(err).ToNot(HaveOccurred(), "failed to get ironic deployment")
 	Eventually(func() error {
@@ -45,7 +45,7 @@ func certRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 		}
 
 		return errors.New("ironic pod is not in running state")
-	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-deployment")...).Should(BeNil())
+	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-deployment")...).Should(Succeed())
 
 	time.Sleep(5 * time.Minute)
 
@@ -86,7 +86,7 @@ func certRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 			return nil
 		}
 		return errors.New("not all containers are running")
-	}, 200*time.Second, 20*time.Second).Should(BeNil(), "not all containers are in running state in ironic pod")
+	}, 200*time.Second, 20*time.Second).Should(Succeed(), "not all containers are in running state in ironic pod")
 	By("CERTIFICATE ROTATION TESTS PASSED!")
 }
 

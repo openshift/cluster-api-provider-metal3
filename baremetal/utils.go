@@ -39,7 +39,9 @@ const (
 	// metal3SecretType defines the type of secret created by metal3.
 	metal3SecretType corev1.SecretType = "infrastructure.cluster.x-k8s.io/secret"
 	// metal3MachineKind is the Kind of the Metal3Machine.
-	metal3MachineKind = "Metal3Machine"
+	metal3MachineKind   = "Metal3Machine"
+	VerbosityLevelDebug = 4
+	VerbosityLevelTrace = 5
 )
 
 // Contains returns true if a list contains a string.
@@ -86,7 +88,11 @@ func patchIfFound(ctx context.Context, helper *patch.Helper, host client.Object)
 }
 
 func updateObject(ctx context.Context, cl client.Client, obj client.Object) error {
-	err := cl.Update(ctx, obj.DeepCopyObject().(client.Object))
+	copiedObj, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return errors.New("Type assertion to client.Object failed")
+	}
+	err := cl.Update(ctx, copiedObj)
 	if apierrors.IsConflict(err) {
 		return WithTransientError(errors.New("Update object conflicts"), requeueAfter)
 	}
@@ -94,7 +100,11 @@ func updateObject(ctx context.Context, cl client.Client, obj client.Object) erro
 }
 
 func createObject(ctx context.Context, cl client.Client, obj client.Object) error {
-	err := cl.Create(ctx, obj.DeepCopyObject().(client.Object))
+	copiedObj, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return errors.New("Type assertion to client.Object failed")
+	}
+	err := cl.Create(ctx, copiedObj)
 	if apierrors.IsAlreadyExists(err) {
 		return WithTransientError(errors.New("Object already exists"), requeueAfter)
 	}
@@ -102,7 +112,11 @@ func createObject(ctx context.Context, cl client.Client, obj client.Object) erro
 }
 
 func deleteObject(ctx context.Context, cl client.Client, obj client.Object) error {
-	err := cl.Delete(ctx, obj.DeepCopyObject().(client.Object))
+	copiedObj, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return errors.New("Type assertion to client.Object failed")
+	}
+	err := cl.Delete(ctx, copiedObj)
 	if apierrors.IsNotFound(err) {
 		return nil
 	}
@@ -186,7 +200,7 @@ func fetchM3DataTemplate(ctx context.Context,
 ) (*infrav1.Metal3DataTemplate, error) {
 	// If the user did not specify a Metal3DataTemplate, just keep going.
 	if templateRef == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	if templateRef.Name == "" {
 		return nil, errors.New("Metal3DataTemplate name not set")
@@ -280,7 +294,7 @@ func getM3Machine(ctx context.Context, cl client.Client, mLog logr.Logger,
 				mLog.Info(errMessage)
 				return nil, WithTransientError(errors.New(errMessage), requeueAfter)
 			}
-			return nil, nil
+			return nil, nil //nolint:nilnil
 		}
 		err := errors.Wrap(err, "Failed to get Metal3Machine")
 		return nil, err
@@ -292,14 +306,14 @@ func getM3Machine(ctx context.Context, cl client.Client, mLog logr.Logger,
 
 	// Verify that the Metal3Machine fulfills the conditions.
 	if tmpM3Machine.Spec.DataTemplate == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	if tmpM3Machine.Spec.DataTemplate.Name != dataTemplate.Name {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	if tmpM3Machine.Spec.DataTemplate.Namespace != "" &&
 		tmpM3Machine.Spec.DataTemplate.Namespace != dataTemplate.Namespace {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	return tmpM3Machine, nil
 }

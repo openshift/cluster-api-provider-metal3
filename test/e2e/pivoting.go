@@ -16,6 +16,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
 	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	"sigs.k8s.io/cluster-api/cmd/clusterctl/client/config"
@@ -35,6 +36,7 @@ const (
 	restartContainerCertUpdate   = "RESTART_CONTAINER_CERTIFICATE_UPDATED"
 	ironicNamespace              = "IRONIC_NAMESPACE"
 	clusterLogCollectionBasePath = "/tmp/target_cluster_logs"
+	Metal3ipamProviderName       = "metal3"
 )
 
 type PivotingInput struct {
@@ -52,8 +54,8 @@ type PivotingInput struct {
 func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	Logf("Starting pivoting tests")
 	input := inputGetter()
-	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
-	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
+	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
 
 	ListBareMetalHosts(ctx, input.BootstrapClusterProxy.GetClient(), client.InNamespace(input.Namespace))
@@ -82,19 +84,16 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 
 	By("Fetch container logs")
 	ephemeralCluster := os.Getenv("EPHEMERAL_CLUSTER")
-	fetchContainerLogs(&generalContainers, input.ArtifactFolder, input.E2EConfig.GetVariable("CONTAINER_RUNTIME"))
+	fetchContainerLogs(&generalContainers, input.ArtifactFolder, input.E2EConfig.MustGetVariable("CONTAINER_RUNTIME"))
 	if ephemeralCluster == Kind {
-		fetchContainerLogs(&ironicContainers, input.ArtifactFolder, input.E2EConfig.GetVariable("CONTAINER_RUNTIME"))
+		fetchContainerLogs(&ironicContainers, input.ArtifactFolder, input.E2EConfig.MustGetVariable("CONTAINER_RUNTIME"))
 	}
 
 	By("Fetch manifest for bootstrap cluster before pivot")
-	kconfigPathBootstrap := input.BootstrapClusterProxy.GetKubeconfigPath()
-	os.Setenv("KUBECONFIG_BOOTSTRAP", kconfigPathBootstrap)
-	path := filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
-	cmd := exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
-	cmd.Dir = path
-	_ = cmd.Run()
-
+	err = FetchManifests(input.BootstrapClusterProxy, "/tmp/manifests/")
+	if err != nil {
+		Logf("Error fetching manifests for bootstrap cluster before pivot: %v", err)
+	}
 	By("Fetch target cluster kubeconfig for target cluster log collection")
 	kconfigPathWorkload := input.TargetCluster.GetKubeconfigPath()
 	os.Setenv("KUBECONFIG_WORKLOAD", kconfigPathWorkload)
@@ -103,7 +102,7 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	// target log collection. There is possibility to handle the kubeconfig in better way.
 	// KubeconfigPathTemp will be used by project-infra target log collection only incase of failed e2e test
 	kubeconfigPathTemp := "/tmp/kubeconfig-test1.yaml"
-	cmd = exec.Command("cp", kconfigPathWorkload, kubeconfigPathTemp) // #nosec G204:gosec
+	cmd := exec.Command("cp", kconfigPathWorkload, kubeconfigPathTemp) // #nosec G204:gosec
 	stdoutStderr, er := cmd.CombinedOutput()
 	Logf("%s\n", stdoutStderr)
 	Expect(er).ToNot(HaveOccurred(), "Cannot fetch target cluster kubeconfig")
@@ -119,8 +118,8 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 		return RemoveIronicInput{
 			ManagementCluster: input.BootstrapClusterProxy,
 			DeploymentType:    ironicDeploymentType,
-			Namespace:         input.E2EConfig.GetVariable(ironicNamespace),
-			NamePrefix:        input.E2EConfig.GetVariable(NamePrefix),
+			Namespace:         input.E2EConfig.MustGetVariable(ironicNamespace),
+			NamePrefix:        input.E2EConfig.MustGetVariable(NamePrefix),
 		}
 	})
 
@@ -128,7 +127,7 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	targetClusterClientSet := input.TargetCluster.GetClientSet()
 	ironicNamespaceObj := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: input.E2EConfig.GetVariable(ironicNamespace),
+			Name: input.E2EConfig.MustGetVariable(ironicNamespace),
 		},
 	}
 	_, err = targetClusterClientSet.CoreV1().Namespaces().Create(ctx, ironicNamespaceObj, metav1.CreateOptions{})
@@ -137,11 +136,12 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	By("Initialize Provider component in target cluster")
 	clusterctl.Init(ctx, clusterctl.InitInput{
 		KubeconfigPath:          input.TargetCluster.GetKubeconfigPath(),
-		ClusterctlConfigPath:    input.E2EConfig.GetVariable("CONFIG_FILE_PATH"),
+		ClusterctlConfigPath:    input.E2EConfig.MustGetVariable("CONFIG_FILE_PATH"),
 		CoreProvider:            config.ClusterAPIProviderName + ":" + os.Getenv("CAPIRELEASE"),
 		BootstrapProviders:      []string{config.KubeadmBootstrapProviderName + ":" + os.Getenv("CAPIRELEASE")},
 		ControlPlaneProviders:   []string{config.KubeadmControlPlaneProviderName + ":" + os.Getenv("CAPIRELEASE")},
 		InfrastructureProviders: []string{config.Metal3ProviderName + ":" + os.Getenv("CAPM3RELEASE")},
+		IPAMProviders:           []string{Metal3ipamProviderName + ":" + os.Getenv("IPAMRELEASE")},
 		LogFolder:               filepath.Join(input.ArtifactFolder, "clusters", input.ClusterName+"-pivoting"),
 	})
 
@@ -155,7 +155,7 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	By("Install Ironic in the target cluster")
 	// TODO(dtantsur): support ironic-standalone-operator
 	ironicDeployLogFolder := filepath.Join(os.TempDir(), "target_cluster_logs", "ironic-deploy-logs", input.TargetCluster.GetName())
-	ironicKustomization := input.E2EConfig.GetVariable("IRONIC_RELEASE_LATEST")
+	ironicKustomization := input.E2EConfig.MustGetVariable("IRONIC_RELEASE_PR_TEST")
 	By(fmt.Sprintf("Installing Ironic from kustomization %s on the target cluster", ironicKustomization))
 	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
 		Kustomization:       ironicKustomization,
@@ -171,7 +171,7 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 
 	By("Install BMO in the target cluster")
 	bmoDeployLogFolder := filepath.Join(os.TempDir(), "target_cluster_logs", "bmo-deploy-logs", input.TargetCluster.GetName())
-	bmoKustomization := input.E2EConfig.GetVariable("BMO_RELEASE_LATEST")
+	bmoKustomization := input.E2EConfig.MustGetVariable("BMO_RELEASE_PR_TEST")
 	By(fmt.Sprintf("Installing BMO from kustomization %s on the target cluster", bmoKustomization))
 	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
 		Kustomization:       bmoKustomization,
@@ -196,11 +196,11 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	Consistently(func() error {
 		kubeSystem := &corev1.Namespace{}
 		return input.BootstrapClusterProxy.GetClient().Get(ctx, client.ObjectKey{Name: "kube-system"}, kubeSystem)
-	}, "5s", "100ms").Should(BeNil(), "Failed to assert bootstrap API server stability")
+	}, "5s", "100ms").Should(Succeed(), "Failed to assert bootstrap API server stability")
 	Consistently(func() error {
 		kubeSystem := &corev1.Namespace{}
 		return input.TargetCluster.GetClient().Get(ctx, client.ObjectKey{Name: "kube-system"}, kubeSystem)
-	}, "5s", "100ms").Should(BeNil(), "Failed to assert target API server stability")
+	}, "5s", "100ms").Should(Succeed(), "Failed to assert target API server stability")
 
 	By("Moving the cluster to self hosted")
 	clusterctl.Move(ctx, clusterctl.MoveInput{
@@ -216,8 +216,8 @@ func pivoting(ctx context.Context, inputGetter func() PivotingInput) {
 	RemoveDeployment(ctx, func() RemoveDeploymentInput {
 		return RemoveDeploymentInput{
 			ManagementCluster: input.BootstrapClusterProxy,
-			Namespace:         input.E2EConfig.GetVariable(ironicNamespace),
-			Name:              input.E2EConfig.GetVariable(NamePrefix) + "-controller-manager",
+			Namespace:         input.E2EConfig.MustGetVariable(ironicNamespace),
+			Name:              input.E2EConfig.MustGetVariable(NamePrefix) + "-controller-manager",
 		}
 	})
 	pivotingCluster := framework.DiscoveryAndWaitForCluster(ctx, framework.DiscoveryAndWaitForClusterInput{
@@ -363,8 +363,8 @@ type RePivotingInput struct {
 func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 	Logf("Start the re-pivoting test")
 	input := inputGetter()
-	numberOfWorkers := int(*input.E2EConfig.GetInt32PtrVariable("WORKER_MACHINE_COUNT"))
-	numberOfControlplane := int(*input.E2EConfig.GetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
+	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
 	numberOfAllBmh := numberOfWorkers + numberOfControlplane
 
 	By("Fetch logs from target cluster after pivot")
@@ -374,10 +374,11 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 	}
 
 	By("Fetch manifest for workload cluster after pivot")
-	path := filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
-	cmd := exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
-	cmd.Dir = path
-	_ = cmd.Run()
+	workloadClusterProxy := framework.NewClusterProxy("workload-cluster-after-pivot", os.Getenv("KUBECONFIG"), runtime.NewScheme())
+	err = FetchManifests(workloadClusterProxy, "/tmp/manifests/")
+	if err != nil {
+		Logf("Error fetching manifests for workload cluster after pivot: %v", err)
+	}
 	os.Unsetenv("KUBECONFIG_WORKLOAD")
 
 	By("Remove Ironic deployment from target cluster")
@@ -387,24 +388,24 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 		return RemoveIronicInput{
 			ManagementCluster: input.TargetCluster,
 			DeploymentType:    ironicDeploymentType,
-			Namespace:         input.E2EConfig.GetVariable(ironicNamespace),
-			NamePrefix:        input.E2EConfig.GetVariable(NamePrefix),
+			Namespace:         input.E2EConfig.MustGetVariable(ironicNamespace),
+			NamePrefix:        input.E2EConfig.MustGetVariable(NamePrefix),
 		}
 	})
 
 	By("Reinstate Ironic containers and BMH")
 	ephemeralCluster := os.Getenv("EPHEMERAL_CLUSTER")
 	if ephemeralCluster == Kind {
-		bmoPath := input.E2EConfig.GetVariable("BMOPATH")
+		bmoPath := input.E2EConfig.MustGetVariable("BMOPATH")
 		ironicCommand := bmoPath + "/tools/run_local_ironic.sh"
 		//#nosec G204:gosec
 		cmd := exec.Command("sh", "-c", "export CONTAINER_RUNTIME=docker; "+ironicCommand)
 		stdoutStderr, err := cmd.CombinedOutput()
-		fmt.Printf("%s\n", stdoutStderr)
+		Logf("Output: %s", stdoutStderr)
 		Expect(err).ToNot(HaveOccurred(), "Cannot run local ironic")
 	} else {
 		By("Install Ironic in the bootstrap cluster")
-		ironicKustomization := input.E2EConfig.GetVariable("IRONIC_RELEASE_LATEST")
+		ironicKustomization := input.E2EConfig.MustGetVariable("IRONIC_RELEASE_PR_TEST")
 		ironicDeployLogFolder := filepath.Join(os.TempDir(), "source_cluster_logs", "ironic-deploy-logs", input.TargetCluster.GetName())
 		err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
 			Kustomization:       ironicKustomization,
@@ -413,14 +414,14 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 			WatchDeploymentLogs: true,
 			LogPath:             ironicDeployLogFolder,
 			DeploymentName:      "baremetal-operator-ironic",
-			DeploymentNamespace: input.E2EConfig.GetVariable(ironicNamespace),
+			DeploymentNamespace: input.E2EConfig.MustGetVariable(ironicNamespace),
 			WaitIntervals:       input.E2EConfig.GetIntervals("default", "wait-deployment"),
 		})
 		Expect(err).NotTo(HaveOccurred())
 	}
 
 	By("Reinstate BMO in Source cluster")
-	bmoKustomization := input.E2EConfig.GetVariable("BMO_RELEASE_LATEST")
+	bmoKustomization := input.E2EConfig.MustGetVariable("BMO_RELEASE_PR_TEST")
 	bmoDeployLogFolder := filepath.Join(os.TempDir(), "source_cluster_logs", "bmo-deploy-logs", input.TargetCluster.GetName())
 	By(fmt.Sprintf("Installing BMO from kustomization %s on the source cluster", bmoKustomization))
 	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
@@ -430,7 +431,7 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 		WatchDeploymentLogs: true,
 		LogPath:             bmoDeployLogFolder,
 		DeploymentName:      "baremetal-operator-controller-manager",
-		DeploymentNamespace: input.E2EConfig.GetVariable(ironicNamespace),
+		DeploymentNamespace: input.E2EConfig.MustGetVariable(ironicNamespace),
 		WaitIntervals:       input.E2EConfig.GetIntervals("default", "wait-deployment"),
 	})
 	Expect(err).NotTo(HaveOccurred())
@@ -442,7 +443,7 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 	Consistently(func() error {
 		kubeSystem := &corev1.Namespace{}
 		return input.BootstrapClusterProxy.GetClient().Get(ctx, client.ObjectKey{Name: "kube-system"}, kubeSystem)
-	}, "5s", "100ms").Should(BeNil(), "Failed to assert bootstrap API server stability")
+	}, "5s", "100ms").Should(Succeed(), "Failed to assert bootstrap API server stability")
 
 	By("Move back to bootstrap cluster")
 	clusterctl.Move(ctx, clusterctl.MoveInput{
@@ -495,10 +496,10 @@ func rePivoting(ctx context.Context, inputGetter func() RePivotingInput) {
 	})
 
 	By("Fetch manifest for bootstrap cluster after re-pivot")
-	path = filepath.Join(os.Getenv("CAPM3PATH"), "scripts")
-	cmd = exec.Command("./fetch_manifests.sh") // #nosec G204:gosec
-	cmd.Dir = path
-	_ = cmd.Run()
+	err = FetchManifests(input.BootstrapClusterProxy, "/tmp/manifests/")
+	if err != nil {
+		Logf("Error fetching manifests for bootstrap cluster before pivot: %v", err)
+	}
 	os.Unsetenv("KUBECONFIG_BOOTSTRAP")
 
 	By("RE-PIVOTING TEST PASSED!")
@@ -518,7 +519,7 @@ func fetchContainerLogs(containerNames *[]string, folder string, containerComman
 		logDir := filepath.Join(folder, containerCommand, name)
 		By(fmt.Sprintf("Create log directory for container %s at %s", name, logDir))
 		createDirIfNotExist(logDir)
-		By(fmt.Sprintf("Fetch logs for container %s", name))
+		By("Fetch logs for container " + name)
 		cmd := exec.Command("sudo", containerCommand, "logs", name) // #nosec G204:gosec
 		out, err := cmd.Output()
 		if err != nil {

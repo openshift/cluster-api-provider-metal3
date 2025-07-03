@@ -77,7 +77,7 @@ const (
 var (
 	// Capm3FastTrack is the variable fetched from the CAPM3_FAST_TRACK environment variable.
 	Capm3FastTrack    = os.Getenv("CAPM3_FAST_TRACK")
-	notFoundErr       *NotFoundError
+	errNotFound       *NotFoundError
 	associateBMHMutex sync.Mutex
 )
 
@@ -553,7 +553,7 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 			return WithTransientError(errors.New(errMessage), 0*time.Second)
 		}
 
-		waiting := true
+		var waiting bool
 		switch host.Status.Provisioning.State {
 		case bmov1alpha1.StateRegistering,
 			bmov1alpha1.StateMatchProfile, bmov1alpha1.StateInspecting,
@@ -565,6 +565,12 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 			// We have no control over provisioning, so just wait until the
 			// host is powered off.
 			waiting = host.Status.PoweredOn
+		case bmov1alpha1.StatePreparing, bmov1alpha1.StateProvisioning, bmov1alpha1.StateProvisioned,
+			bmov1alpha1.StateDeprovisioning, bmov1alpha1.StatePoweringOffBeforeDelete,
+			bmov1alpha1.StateDeleting:
+			waiting = true
+		default:
+			waiting = true
 		}
 		if waiting {
 			errMessage := "Deprovisioning BareMetalHost, requeuing"
@@ -685,7 +691,7 @@ func (m *MachineManager) Update(ctx context.Context) error {
 		return err
 	}
 	if host == nil {
-		errMessage := fmt.Sprintf("BareMetalHost not found for machine %s", m.Machine.Name)
+		errMessage := "BareMetalHost not found for machine " + m.Machine.Name
 		return WithTransientError(errors.New(errMessage), requeueAfter)
 	}
 
@@ -755,11 +761,11 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 ) (*bmov1alpha1.BareMetalHost, error) {
 	annotations := m3Machine.ObjectMeta.GetAnnotations()
 	if annotations == nil {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	hostKey, ok := annotations[HostAnnotation]
 	if !ok {
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	}
 	hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
 	if err != nil {
@@ -775,7 +781,7 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 	err = cl.Get(ctx, key, &host)
 	if apierrors.IsNotFound(err) {
 		mLog.Info("Annotated host not found", "host", hostKey)
-		return nil, nil
+		return nil, nil //nolint:nilnil
 	} else if err != nil {
 		return nil, err
 	}
@@ -868,6 +874,11 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 			} else if !m.nodeReuseLabelExists(ctx, &host) {
 				switch host.Status.Provisioning.State {
 				case bmov1alpha1.StateReady, bmov1alpha1.StateAvailable:
+					// Break out of the switch
+				case bmov1alpha1.StateNone, bmov1alpha1.StateUnmanaged, bmov1alpha1.StateRegistering, bmov1alpha1.StateMatchProfile,
+					bmov1alpha1.StatePreparing, bmov1alpha1.StateProvisioning, bmov1alpha1.StateProvisioned, bmov1alpha1.StateExternallyProvisioned,
+					bmov1alpha1.StateDeprovisioning, bmov1alpha1.StateInspecting, bmov1alpha1.StatePoweringOffBeforeDelete, bmov1alpha1.StateDeleting:
+					continue
 				default:
 					continue
 				}
@@ -997,8 +1008,10 @@ func (m *MachineManager) nodeReuseLabelExists(_ context.Context, host *bmov1alph
 
 // getBMCSecret will return the BMCSecret associated with BMH.
 func (m *MachineManager) getBMCSecret(ctx context.Context, host *bmov1alpha1.BareMetalHost) (*corev1.Secret, error) {
-	if host == nil || host.Spec.BMC.CredentialsName == "" {
-		return nil, nil
+	if host == nil {
+		return nil, errors.New("Host is empty")
+	} else if host.Spec.BMC.CredentialsName == "" {
+		return nil, nil //nolint:nilnil
 	}
 	tmpBMCSecret := corev1.Secret{}
 	key := host.CredentialsKey()
@@ -1237,6 +1250,9 @@ func (m *MachineManager) nodeAddresses(host *bmov1alpha1.BareMetalHost) []cluste
 			Type:    clusterv1.MachineInternalIP,
 			Address: nic.IP,
 		}
+		if address.Address == "" {
+			continue
+		}
 		addrs = append(addrs, address)
 	}
 
@@ -1271,7 +1287,7 @@ func (m *MachineManager) GetProviderIDAndBMHID() (string, *string) {
 		m.Log.Info("ProviderID is in new format, it does not contain the BMH ID", "providerID", *providerID)
 		return *providerID, nil
 	}
-	m.Log.V(4).Info("ProviderID contains the BMH ID", "providerID", *providerID)
+	m.Log.V(VerbosityLevelDebug).Info("ProviderID contains the BMH ID", "providerID", *providerID)
 	return *providerID, ptr.To(bmhID)
 }
 
@@ -1333,6 +1349,7 @@ func (m *MachineManager) SetDefaultProviderID() error {
 	}
 
 	providerID := fmt.Sprintf("metal3://%s/%s/%s", namespace, bmhName, m3mName)
+	m.Log.Info("Setting default providerID on the Metal3Machine", "providerID", providerID, "m3mName", m3mName, "bmhName", bmhName)
 	m.SetProviderID(providerID)
 	return nil
 }
@@ -1355,7 +1372,7 @@ func (m *MachineManager) getPossibleProviderIDs(ctx context.Context) (providerID
 		err = errors.Wrap(err, errMessage)
 		return
 	}
-	providerIDLegacy = "metal3://%s" + bmhUID
+	providerIDLegacy = "metal3://" + bmhUID
 	providerIDNew = fmt.Sprintf("metal3://%s/%s/%s", namespace, bmhName, m3mName)
 
 	return
@@ -1467,7 +1484,7 @@ func (m *MachineManager) SetProviderIDFromNodeLabel(ctx context.Context, clientF
 			return true, nil
 		}
 
-		m.Log.Info("node using unsupported providerID format", "providerID", providerIDOnNode)
+		m.Log.Info("node using unsupported providerID format", "providerID", providerIDOnNode, "providerIDLegacy", providerIDLegacy, "providerIDNew", providerIDNew)
 		return false, errors.Wrap(err, "node using unsupported providerID format")
 	}
 
@@ -1505,7 +1522,7 @@ func deleteOwnerRefFromList(refList []metav1.OwnerReference,
 	}
 	index, err := findOwnerRefFromList(refList, objType, objMeta)
 	if err != nil {
-		if ok := errors.As(err, &notFoundErr); !ok {
+		if ok := errors.As(err, &errNotFound); !ok {
 			return nil, err
 		}
 		return refList, nil
@@ -1536,7 +1553,7 @@ func setOwnerRefInList(refList []metav1.OwnerReference, controller bool,
 ) ([]metav1.OwnerReference, error) {
 	index, err := findOwnerRefFromList(refList, objType, objMeta)
 	if err != nil {
-		if ok := errors.As(err, &notFoundErr); !ok {
+		if ok := errors.As(err, &errNotFound); !ok {
 			return nil, err
 		}
 		refList = append(refList, metav1.OwnerReference{
@@ -1863,6 +1880,7 @@ func (m *MachineManager) getMachineSet(ctx context.Context) (*clusterv1.MachineS
 func (m *MachineManager) getBmhNameFromM3Machine() (string, error) {
 	annotationValue := m.Metal3Machine.ObjectMeta.GetAnnotations()[HostAnnotation]
 	valueParts := strings.Split(annotationValue, "/")
+	//nolint:mnd
 	if (len(valueParts) < 2) || (valueParts[0] != m.Metal3Machine.GetNamespace()) {
 		errMessage := fmt.Sprintf("unable to retrieve bmh name from metal3machine: %s , using annotation: %s", m.Metal3Machine.GetName(), annotationValue)
 		return "", errors.New(errMessage)
@@ -1875,7 +1893,7 @@ func (m *MachineManager) getBmhNameFromM3Machine() (string, error) {
 func (m *MachineManager) getBmhUIDFromM3Machine(ctx context.Context) (string, error) {
 	host, err := getHost(ctx, m.Metal3Machine, m.client, m.Log)
 	if err != nil || host == nil {
-		errMessage := fmt.Sprintf("Failed to get a BaremetalHost for the metal3machine: %s", m.Metal3Machine.GetName())
+		errMessage := "Failed to get a BaremetalHost for the metal3machine: " + m.Metal3Machine.GetName()
 		return "", errors.New(errMessage)
 	}
 	if host.UID == "" {
