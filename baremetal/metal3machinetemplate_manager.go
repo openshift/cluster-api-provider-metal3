@@ -20,7 +20,7 @@ import (
 	"github.com/go-logr/logr"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	"github.com/pkg/errors"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -68,6 +68,7 @@ func (m *MachineTemplateManager) UpdateAutomatedCleaningMode(ctx context.Context
 	// without this ListOption, all namespaces would be included in the listing
 	opts := &client.ListOptions{
 		Namespace: m.Metal3MachineTemplate.Namespace,
+		Limit:     DefaultListLimit,
 	}
 
 	if err := m.client.List(ctx, m3ms, opts); err != nil {
