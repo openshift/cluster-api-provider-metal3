@@ -42,7 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/predicates"
 )
 
@@ -436,9 +436,9 @@ func (cc *clusterCache) Reconcile(ctx context.Context, req reconcile.Request) (r
 	}
 
 	// Return if infrastructure is not ready yet to avoid trying to open a connection when it cannot succeed.
-	// Requeue is not needed as there will be a new reconcile.Request when Cluster.status.infrastructureReady is set.
-	if !cluster.Status.InfrastructureReady {
-		log.V(6).Info("Can't connect yet, Cluster infrastructure is not ready")
+	// Requeue is not needed as there will be a new reconcile.Request when Cluster.status.initialization.infrastructureProvisioned is set.
+	if cluster.Status.Initialization == nil || !cluster.Status.Initialization.InfrastructureProvisioned {
+		log.V(6).Info("Can't connect yet, Cluster infrastructure is not provisioned")
 		return reconcile.Result{}, nil
 	}
 

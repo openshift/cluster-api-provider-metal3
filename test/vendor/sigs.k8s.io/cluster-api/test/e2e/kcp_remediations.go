@@ -34,7 +34,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/e2e/internal/log"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
@@ -75,7 +75,7 @@ type KCPRemediationSpecInput struct {
 	//   NOTE: In order for this to work communications from workload cluster to management cluster must be enabled.
 	// - An MHC targeting control plane machines with the mhc-test=fail labels and
 	//     nodeStartupTimeout: 30s
-	// 	   unhealthyConditions:
+	// 	   unhealthyNodeConditions:
 	//     - type: e2e.remediation.condition
 	//       status: "False"
 	// 	     timeout: 10s

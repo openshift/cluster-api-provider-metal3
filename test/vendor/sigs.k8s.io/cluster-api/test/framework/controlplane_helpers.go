@@ -30,9 +30,9 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	bootstrapv1 "sigs.k8s.io/cluster-api/bootstrap/kubeadm/api/v1beta1"
-	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
+	bootstrapv1 "sigs.k8s.io/cluster-api/api/bootstrap/kubeadm/v1beta2"
+	controlplanev1 "sigs.k8s.io/cluster-api/api/controlplane/kubeadm/v1beta2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework/internal/log"
 	"sigs.k8s.io/cluster-api/util/patch"
 )
@@ -172,20 +172,19 @@ func WaitForControlPlaneToBeReady(ctx context.Context, input WaitForControlPlane
 			return false, errors.Wrapf(err, "failed to get KCP")
 		}
 
-		desiredReplicas := controlplane.Spec.Replicas
-		statusReplicas := controlplane.Status.Replicas
-		updatedReplicas := controlplane.Status.UpdatedReplicas
-		readyReplicas := controlplane.Status.ReadyReplicas
-		unavailableReplicas := controlplane.Status.UnavailableReplicas
+		desiredReplicas := ptr.Deref(controlplane.Spec.Replicas, 0)
+		statusReplicas := ptr.Deref(controlplane.Status.Replicas, 0)
+		upToDatedReplicas := ptr.Deref(controlplane.Status.UpToDateReplicas, 0)
+		readyReplicas := ptr.Deref(controlplane.Status.ReadyReplicas, 0)
+		availableReplicas := ptr.Deref(controlplane.Status.AvailableReplicas, 0)
 
 		// Control plane is still rolling out (and thus not ready) if:
-		// * .spec.replicas, .status.replicas, .status.updatedReplicas,
-		//   .status.readyReplicas are not equal and
-		// * unavailableReplicas > 0
-		if statusReplicas != *desiredReplicas ||
-			updatedReplicas != *desiredReplicas ||
-			readyReplicas != *desiredReplicas ||
-			unavailableReplicas > 0 {
+		// * .spec.replicas, .status.replicas, .status.upToDateReplicas,
+		//   .status.readyReplicas, .status.availableReplicas are not equal.
+		if statusReplicas != desiredReplicas ||
+			upToDatedReplicas != desiredReplicas ||
+			readyReplicas != desiredReplicas ||
+			availableReplicas != desiredReplicas {
 			return false, nil
 		}
 
@@ -208,9 +207,9 @@ func AssertControlPlaneFailureDomains(ctx context.Context, input AssertControlPl
 
 	By("Checking all the control plane machines are in the expected failure domains")
 	controlPlaneFailureDomains := sets.Set[string]{}
-	for fd, fdSettings := range input.Cluster.Status.FailureDomains {
-		if fdSettings.ControlPlane {
-			controlPlaneFailureDomains.Insert(fd)
+	for _, fd := range input.Cluster.Status.FailureDomains {
+		if fd.ControlPlane {
+			controlPlaneFailureDomains.Insert(fd.Name)
 		}
 	}
 
@@ -348,10 +347,10 @@ func UpgradeControlPlaneAndWaitForUpgrade(ctx context.Context, input UpgradeCont
 	}
 
 	if input.EtcdImageTag != "" {
-		input.ControlPlane.Spec.KubeadmConfigSpec.ClusterConfiguration.Etcd.Local.ImageMeta.ImageTag = input.EtcdImageTag
+		input.ControlPlane.Spec.KubeadmConfigSpec.ClusterConfiguration.Etcd.Local.ImageTag = input.EtcdImageTag
 	}
 	if input.DNSImageTag != "" {
-		input.ControlPlane.Spec.KubeadmConfigSpec.ClusterConfiguration.DNS.ImageMeta.ImageTag = input.DNSImageTag
+		input.ControlPlane.Spec.KubeadmConfigSpec.ClusterConfiguration.DNS.ImageTag = input.DNSImageTag
 	}
 
 	Eventually(func() error {

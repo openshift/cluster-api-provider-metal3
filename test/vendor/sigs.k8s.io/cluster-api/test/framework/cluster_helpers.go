@@ -30,12 +30,12 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlclient "sigs.k8s.io/cluster-api/cmd/clusterctl/client"
 	cmdtree "sigs.k8s.io/cluster-api/internal/util/tree"
 	. "sigs.k8s.io/cluster-api/test/framework/ginkgoextensions"
 	"sigs.k8s.io/cluster-api/test/framework/internal/log"
-	v1beta2conditions "sigs.k8s.io/cluster-api/util/conditions/v1beta2"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/patch"
 )
 
@@ -208,7 +208,7 @@ func dumpArtifactsOnDeletionTimeout(ctx context.Context, clusterProxy ClusterPro
 
 	// Try to get more details about why Cluster deletion timed out.
 	if err := clusterProxy.GetClient().Get(ctx, client.ObjectKeyFromObject(cluster), cluster); err == nil {
-		if c := v1beta2conditions.Get(cluster, clusterv1.MachineDeletingV1Beta2Condition); c != nil {
+		if c := conditions.Get(cluster, clusterv1.MachineDeletingCondition); c != nil {
 			return fmt.Sprintf("waiting for cluster deletion timed out:\ncondition: %s\nmessage: %s", c.Type, c.Message)
 		}
 	}
@@ -368,7 +368,6 @@ func DescribeCluster(ctx context.Context, input DescribeClusterInput) {
 		AddTemplateVirtualNode:  true,
 		Echo:                    true,
 		Grouping:                false,
-		V1Beta2:                 true,
 	})
 	Expect(err).ToNot(HaveOccurred(), "Failed to run clusterctl describe")
 
@@ -380,9 +379,9 @@ func DescribeCluster(ctx context.Context, input DescribeClusterInput) {
 	defer f.Close()
 
 	w := bufio.NewWriter(f)
-	cmdtree.PrintObjectTreeV1Beta2(tree, w)
+	cmdtree.PrintObjectTree(tree, w)
 	if CurrentSpecReport().Failed() {
-		cmdtree.PrintObjectTreeV1Beta2(tree, GinkgoWriter)
+		cmdtree.PrintObjectTree(tree, GinkgoWriter)
 	}
 	Expect(w.Flush()).To(Succeed(), "Failed to save clusterctl describe output")
 }
@@ -402,6 +401,19 @@ func DescribeAllCluster(ctx context.Context, input DescribeAllClusterInput) {
 	Expect(input.ClusterctlConfigPath).ToNot(BeNil(), "Invalid argument. input.ClusterctlConfigPath can't be nil when calling DescribeAllCluster")
 	Expect(input.LogFolder).ToNot(BeEmpty(), "Invalid argument. input.LogFolder can't be empty when calling DescribeAllCluster")
 	Expect(input.Namespace).ToNot(BeNil(), "Invalid argument. input.Namespace can't be nil when calling DescribeAllCluster")
+
+	types := getClusterAPITypes(ctx, input.Lister)
+	clusterAPIVersion := ""
+	for t := range types {
+		if t.Kind == "Cluster" {
+			clusterAPIVersion = t.APIVersion
+			break
+		}
+	}
+	if clusterAPIVersion != clusterv1.GroupVersion.String() {
+		log.Logf("Skipping DescribeCluster because detected Cluster CR in APIVersion %q but require %q", clusterAPIVersion, clusterv1.GroupVersion.String())
+		return
+	}
 
 	clusters := &clusterv1.ClusterList{}
 	Eventually(func() error {

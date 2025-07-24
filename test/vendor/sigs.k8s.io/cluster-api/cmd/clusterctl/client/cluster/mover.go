@@ -37,7 +37,7 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlv1 "sigs.k8s.io/cluster-api/cmd/clusterctl/api/v1alpha3"
 	logf "sigs.k8s.io/cluster-api/cmd/clusterctl/log"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -240,19 +240,19 @@ func (o *objectMover) checkProvisioningCompleted(ctx context.Context, graph *obj
 			return err
 		}
 
-		if !clusterObj.Status.InfrastructureReady {
+		if clusterObj.Status.Initialization == nil || !clusterObj.Status.Initialization.InfrastructureProvisioned {
 			errList = append(errList, errors.Errorf("cannot start the move operation while %q %s/%s is still provisioning the infrastructure", clusterObj.GroupVersionKind(), clusterObj.GetNamespace(), clusterObj.GetName()))
 			continue
 		}
 
 		// Note: can't use IsFalse here because we need to handle the absence of the condition as well as false.
-		if !conditions.IsTrue(clusterObj, clusterv1.ControlPlaneInitializedCondition) {
+		if !conditions.IsTrue(clusterObj, clusterv1.ClusterControlPlaneInitializedCondition) {
 			errList = append(errList, errors.Errorf("cannot start the move operation while the control plane for %q %s/%s is not yet initialized", clusterObj.GroupVersionKind(), clusterObj.GetNamespace(), clusterObj.GetName()))
 			continue
 		}
 
-		if clusterObj.Spec.ControlPlaneRef != nil && !clusterObj.Status.ControlPlaneReady {
-			errList = append(errList, errors.Errorf("cannot start the move operation while the control plane for %q %s/%s is not yet ready", clusterObj.GroupVersionKind(), clusterObj.GetNamespace(), clusterObj.GetName()))
+		if clusterObj.Spec.ControlPlaneRef != nil && clusterObj.Status.Initialization == nil || !clusterObj.Status.Initialization.ControlPlaneInitialized {
+			errList = append(errList, errors.Errorf("cannot start the move operation while the control plane for %q %s/%s is not yet initialized", clusterObj.GroupVersionKind(), clusterObj.GetNamespace(), clusterObj.GetName()))
 			continue
 		}
 	}

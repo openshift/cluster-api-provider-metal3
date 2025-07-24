@@ -38,7 +38,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	clusterctlclient "sigs.k8s.io/cluster-api/cmd/clusterctl/client"
 	"sigs.k8s.io/cluster-api/test/framework/internal/log"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -92,7 +92,7 @@ func ApplyAutoscalerToWorkloadCluster(ctx context.Context, input ApplyAutoscaler
 	Expect(err).ToNot(HaveOccurred(), "failed to load %s", workloadYamlTemplate)
 
 	if input.InfrastructureAPIGroup == "" {
-		input.InfrastructureAPIGroup = "infrastructure.cluster.x-k8s.io"
+		input.InfrastructureAPIGroup = clusterv1.GroupVersionInfrastructure.Group
 	}
 
 	// Get a server address for the Management Cluster.
@@ -167,9 +167,6 @@ func AddScaleUpDeploymentAndWait(ctx context.Context, input AddScaleUpDeployment
 	var memory *resource.Quantity
 	for _, n := range nodes.Items {
 		if _, ok := n.Labels[nodeRoleControlPlane]; ok {
-			continue
-		}
-		if _, ok := n.Labels[nodeRoleOldControlPlane]; ok {
 			continue
 		}
 		memory = n.Status.Allocatable.Memory() // Assume that all nodes have the same memory.

@@ -35,14 +35,16 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/conversion"
 	"k8s.io/apimachinery/pkg/runtime"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
+	controlplanev1 "sigs.k8s.io/cluster-api/api/controlplane/kubeadm/v1beta2"
+	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/e2e/internal/log"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
@@ -347,7 +349,7 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 		// then deploy the ClusterClass in this namespace.
 		if !deployClusterInSeparateNamespaces || useCrossNamespaceClusterClass {
 			if len(baseClusterClassYAML) > 0 {
-				clusterClassYAML := bytes.Replace(baseClusterClassYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespace.Name), -1)
+				clusterClassYAML := bytes.ReplaceAll(baseClusterClassYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespace.Name))
 				log.Logf("Apply ClusterClass")
 				Eventually(func() error {
 					return input.BootstrapClusterProxy.CreateOrUpdate(ctx, clusterClassYAML)
@@ -357,7 +359,7 @@ func ScaleSpec(ctx context.Context, inputGetter func() ScaleSpecInput) {
 				for i := range additionalClusterClassCount {
 					additionalName := fmt.Sprintf("%s-%d", input.ClusterClassName, i+1)
 					log.Logf("Apply additional ClusterClass %s/%s", namespace.Name, additionalName)
-					additionalClassYAML := bytes.Replace(clusterClassYAML, []byte(input.ClusterClassName), []byte(additionalName), -1)
+					additionalClassYAML := bytes.ReplaceAll(clusterClassYAML, []byte(input.ClusterClassName), []byte(additionalName))
 					Eventually(func() error {
 						return input.BootstrapClusterProxy.CreateOrUpdate(ctx, additionalClassYAML)
 					}, 1*time.Minute).Should(Succeed())
@@ -720,7 +722,7 @@ func createClusterWorker(ctx context.Context, clusterProxy framework.ClusterProx
 				// * Deploy ClusterClass in new namespace.
 				if deployClusterInSeparateNamespaces && !enableCrossNamespaceClusterClass {
 					log.Logf("Apply ClusterClass in namespace %s", namespaceName)
-					clusterClassYAML := bytes.Replace(customizedClusterClassYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespaceName), -1)
+					clusterClassYAML := bytes.ReplaceAll(customizedClusterClassYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespaceName))
 					Eventually(func() error {
 						return clusterProxy.CreateOrUpdate(ctx, clusterClassYAML)
 					}, 1*time.Minute).Should(Succeed())
@@ -729,7 +731,7 @@ func createClusterWorker(ctx context.Context, clusterProxy framework.ClusterProx
 					for i := range additionalClusterClasses {
 						additionalName := fmt.Sprintf("%s-%d", clusterClassName, i+1)
 						log.Logf("Apply additional ClusterClass %s/%s", namespaceName, additionalName)
-						additionalClassYAML := bytes.Replace(clusterClassYAML, []byte(clusterClassName), []byte(additionalName), -1)
+						additionalClassYAML := bytes.ReplaceAll(clusterClassYAML, []byte(clusterClassName), []byte(additionalName))
 						Eventually(func() error {
 							return clusterProxy.CreateOrUpdate(ctx, additionalClassYAML)
 						}, 1*time.Minute).Should(Succeed())
@@ -740,12 +742,12 @@ func createClusterWorker(ctx context.Context, clusterProxy framework.ClusterProx
 				clusterTemplateYAML := customizedClusterTemplateYAML
 				if enableCrossNamespaceClusterClass {
 					// Set classNamespace to the defaultNamespace where the ClusterClass is located.
-					clusterTemplateYAML = bytes.Replace(clusterTemplateYAML,
+					clusterTemplateYAML = bytes.ReplaceAll(clusterTemplateYAML,
 						[]byte(fmt.Sprintf("classNamespace: %s", scaleClusterNamespacePlaceholder)),
-						[]byte(fmt.Sprintf("classNamespace: %s", defaultNamespace)), -1)
+						[]byte(fmt.Sprintf("classNamespace: %s", defaultNamespace)))
 				}
-				clusterTemplateYAML = bytes.Replace(clusterTemplateYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespaceName), -1)
-				clusterTemplateYAML = bytes.Replace(clusterTemplateYAML, []byte(scaleClusterNamePlaceholder), []byte(clusterName), -1)
+				clusterTemplateYAML = bytes.ReplaceAll(clusterTemplateYAML, []byte(scaleClusterNamespacePlaceholder), []byte(namespaceName))
+				clusterTemplateYAML = bytes.ReplaceAll(clusterTemplateYAML, []byte(scaleClusterNamePlaceholder), []byte(clusterName))
 
 				// Deploy Cluster.
 				create(ctx, namespaceName, clusterName, clusterTemplateYAML)
@@ -945,7 +947,13 @@ func modifyMachineDeployments(baseClusterTemplateYAML []byte, count int64) []byt
 	scheme := runtime.NewScheme()
 	framework.TryAddDefaultSchemes(scheme)
 	cluster := &clusterv1.Cluster{}
+	// Adding v1beta1 scheme and registering the conversion function to allow auto-converting to v1beta2.
+	_ = clusterv1beta1.AddToScheme(scheme)
+	Expect(scheme.AddConversionFunc((*clusterv1beta1.Cluster)(nil), (*clusterv1.Cluster)(nil), func(a, b interface{}, _ conversion.Scope) error {
+		return clusterv1beta1.Convert_v1beta1_Cluster_To_v1beta2_Cluster(a.(*clusterv1beta1.Cluster), b.(*clusterv1.Cluster), nil)
+	})).To(Succeed())
 	Expect(scheme.Convert(&objs[0], cluster, nil)).Should(Succeed())
+
 	// Verify the Cluster Topology.
 	Expect(cluster.Spec.Topology).NotTo(BeNil(), "Should be a ClusterClass based Cluster")
 	Expect(cluster.Spec.Topology.Workers).NotTo(BeNil(), "ClusterTopology should have exactly one MachineDeployment. Cannot be empty")
