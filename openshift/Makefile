@@ -1,23 +1,27 @@
 BIN_DIR := bin
 TOOLS_DIR := tools
 
+include provider-version.mk
+
 $(RELEASE_DIR):
 	mkdir -p $(RELEASE_DIR)/
 
 KUSTOMIZE := tools/bin/kustomize
 MANIFESTS_GEN := go run ./vendor/github.com/openshift/cluster-capi-operator/manifests-gen/
 
+.PHONY: verify
+verify: verify-ocp-manifests
+
+.PHONY: verify-%
+verify-%: ## Ensure no diff after running some other target
+	$(MAKE) $*
+	./verify-diff.sh
+
 $(KUSTOMIZE):
 	./tools/ensure-kustomize.sh
 
-.PHONY: check-env
-check-env:
-ifndef PROVIDER_VERSION
-	$(error PROVIDER_VERSION is undefined)
-endif
-
 .PHONY: ocp-manifests
-ocp-manifests: $(RELEASE_DIR) $(KUSTOMIZE) check-env ## Builds openshift specific manifests
+ocp-manifests: $(RELEASE_DIR) $(KUSTOMIZE) ## Builds openshift specific manifests
 	# Build core-components.
 	$(KUSTOMIZE) build ../config/default > infrastructure-components.yaml
 	# Generate provider manifests.
