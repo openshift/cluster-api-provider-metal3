@@ -66,6 +66,10 @@ tilt_config.json
 
 github/
 
+# Always track vendor dependencies
+!vendor/**
+!openshift/tools/vendor/**
+
 go.work
 go.work.sum
 
