@@ -24,8 +24,16 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// DeviceTaintRules returns a DeviceTaintRuleInformer.
-	DeviceTaintRules() DeviceTaintRuleInformer
+	// DeviceClasses returns a DeviceClassInformer.
+	DeviceClasses() DeviceClassInformer
+	// PodSchedulingContexts returns a PodSchedulingContextInformer.
+	PodSchedulingContexts() PodSchedulingContextInformer
+	// ResourceClaims returns a ResourceClaimInformer.
+	ResourceClaims() ResourceClaimInformer
+	// ResourceClaimTemplates returns a ResourceClaimTemplateInformer.
+	ResourceClaimTemplates() ResourceClaimTemplateInformer
+	// ResourceSlices returns a ResourceSliceInformer.
+	ResourceSlices() ResourceSliceInformer
 }
 
 type version struct {
@@ -39,7 +47,27 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// DeviceTaintRules returns a DeviceTaintRuleInformer.
-func (v *version) DeviceTaintRules() DeviceTaintRuleInformer {
-	return &deviceTaintRuleInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+// DeviceClasses returns a DeviceClassInformer.
+func (v *version) DeviceClasses() DeviceClassInformer {
+	return &deviceClassInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
+}
+
+// PodSchedulingContexts returns a PodSchedulingContextInformer.
+func (v *version) PodSchedulingContexts() PodSchedulingContextInformer {
+	return &podSchedulingContextInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// ResourceClaims returns a ResourceClaimInformer.
+func (v *version) ResourceClaims() ResourceClaimInformer {
+	return &resourceClaimInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// ResourceClaimTemplates returns a ResourceClaimTemplateInformer.
+func (v *version) ResourceClaimTemplates() ResourceClaimTemplateInformer {
+	return &resourceClaimTemplateInformer{factory: v.factory, namespace: v.namespace, tweakListOptions: v.tweakListOptions}
+}
+
+// ResourceSlices returns a ResourceSliceInformer.
+func (v *version) ResourceSlices() ResourceSliceInformer {
+	return &resourceSliceInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

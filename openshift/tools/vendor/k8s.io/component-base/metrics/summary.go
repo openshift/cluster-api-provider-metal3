@@ -18,7 +18,6 @@ package metrics
 
 import (
 	"context"
-	"sync"
 
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/client_golang/prometheus"
@@ -110,6 +109,11 @@ func NewSummaryVec(opts *SummaryOpts, labels []string) *SummaryVec {
 	opts.StabilityLevel.setDefaults()
 
 	fqName := BuildFQName(opts.Namespace, opts.Subsystem, opts.Name)
+	allowListLock.RLock()
+	if allowList, ok := labelValueAllowLists[fqName]; ok {
+		opts.LabelValueAllowLists = allowList
+	}
+	allowListLock.RUnlock()
 
 	v := &SummaryVec{
 		SummaryOpts:    opts,
@@ -154,17 +158,6 @@ func (v *SummaryVec) WithLabelValues(lvs ...string) ObserverMetric {
 	if !v.IsCreated() {
 		return noop
 	}
-
-	// Initialize label allow lists if not already initialized
-	v.initializeLabelAllowListsOnce.Do(func() {
-		allowListLock.RLock()
-		if allowList, ok := labelValueAllowLists[v.FQName()]; ok {
-			v.LabelValueAllowLists = allowList
-		}
-		allowListLock.RUnlock()
-	})
-
-	// Constrain label values to allowed values
 	if v.LabelValueAllowLists != nil {
 		v.LabelValueAllowLists.ConstrainToAllowedList(v.originalLabels, lvs)
 	}
@@ -179,15 +172,6 @@ func (v *SummaryVec) With(labels map[string]string) ObserverMetric {
 	if !v.IsCreated() {
 		return noop
 	}
-
-	v.initializeLabelAllowListsOnce.Do(func() {
-		allowListLock.RLock()
-		if allowList, ok := labelValueAllowLists[v.FQName()]; ok {
-			v.LabelValueAllowLists = allowList
-		}
-		allowListLock.RUnlock()
-	})
-
 	if v.LabelValueAllowLists != nil {
 		v.LabelValueAllowLists.ConstrainLabelMap(labels)
 	}
@@ -215,13 +199,6 @@ func (v *SummaryVec) Reset() {
 	}
 
 	v.SummaryVec.Reset()
-}
-
-// ResetLabelAllowLists resets the label allow list for the SummaryVec.
-// NOTE: This should only be used in test.
-func (v *SummaryVec) ResetLabelAllowLists() {
-	v.initializeLabelAllowListsOnce = sync.Once{}
-	v.LabelValueAllowLists = nil
 }
 
 // WithContext returns wrapped SummaryVec with context

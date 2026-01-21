@@ -19,16 +19,16 @@ limitations under the License.
 package v1
 
 import (
-	context "context"
+	"context"
 	time "time"
 
-	apiadmissionregistrationv1 "k8s.io/api/admissionregistration/v1"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	internalinterfaces "k8s.io/client-go/informers/internalinterfaces"
 	kubernetes "k8s.io/client-go/kubernetes"
-	admissionregistrationv1 "k8s.io/client-go/listers/admissionregistration/v1"
+	v1 "k8s.io/client-go/listers/admissionregistration/v1"
 	cache "k8s.io/client-go/tools/cache"
 )
 
@@ -36,7 +36,7 @@ import (
 // ValidatingAdmissionPolicyBindings.
 type ValidatingAdmissionPolicyBindingInformer interface {
 	Informer() cache.SharedIndexInformer
-	Lister() admissionregistrationv1.ValidatingAdmissionPolicyBindingLister
+	Lister() v1.ValidatingAdmissionPolicyBindingLister
 }
 
 type validatingAdmissionPolicyBindingInformer struct {
@@ -61,28 +61,16 @@ func NewFilteredValidatingAdmissionPolicyBindingInformer(client kubernetes.Inter
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().List(context.Background(), options)
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().List(context.TODO(), options)
 			},
 			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Watch(context.Background(), options)
-			},
-			ListWithContextFunc: func(ctx context.Context, options metav1.ListOptions) (runtime.Object, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().List(ctx, options)
-			},
-			WatchFuncWithContext: func(ctx context.Context, options metav1.ListOptions) (watch.Interface, error) {
-				if tweakListOptions != nil {
-					tweakListOptions(&options)
-				}
-				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Watch(ctx, options)
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Watch(context.TODO(), options)
 			},
 		},
-		&apiadmissionregistrationv1.ValidatingAdmissionPolicyBinding{},
+		&admissionregistrationv1.ValidatingAdmissionPolicyBinding{},
 		resyncPeriod,
 		indexers,
 	)
@@ -93,9 +81,9 @@ func (f *validatingAdmissionPolicyBindingInformer) defaultInformer(client kubern
 }
 
 func (f *validatingAdmissionPolicyBindingInformer) Informer() cache.SharedIndexInformer {
-	return f.factory.InformerFor(&apiadmissionregistrationv1.ValidatingAdmissionPolicyBinding{}, f.defaultInformer)
+	return f.factory.InformerFor(&admissionregistrationv1.ValidatingAdmissionPolicyBinding{}, f.defaultInformer)
 }
 
-func (f *validatingAdmissionPolicyBindingInformer) Lister() admissionregistrationv1.ValidatingAdmissionPolicyBindingLister {
-	return admissionregistrationv1.NewValidatingAdmissionPolicyBindingLister(f.Informer().GetIndexer())
+func (f *validatingAdmissionPolicyBindingInformer) Lister() v1.ValidatingAdmissionPolicyBindingLister {
+	return v1.NewValidatingAdmissionPolicyBindingLister(f.Informer().GetIndexer())
 }

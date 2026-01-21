@@ -25,7 +25,6 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:categories=gateway-api,scope=Cluster,shortName=gc
 // +kubebuilder:subresource:status
-// +kubebuilder:storageversion
 // +kubebuilder:printcolumn:name="Controller",type=string,JSONPath=`.spec.controllerName`
 // +kubebuilder:printcolumn:name="Accepted",type=string,JSONPath=`.status.conditions[?(@.type=="Accepted")].status`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
@@ -95,10 +94,6 @@ type GatewayClassSpec struct {
 	//
 	// If the referent cannot be found, the GatewayClass's "InvalidParameters"
 	// status condition will be true.
-	//
-	// A Gateway for this GatewayClass may provide its own `parametersRef`. When both are specified,
-	// the merging behavior is implementation specific.
-	// It is generally recommended that GatewayClass provides defaults that can be overridden by a Gateway.
 	//
 	// Support: Implementation-specific
 	//
@@ -271,4 +266,5 @@ type GatewayClassList struct {
 
 // SupportedFeature is used to describe distinct features that are covered by
 // conformance tests.
+// +kubebuilder:validation:Enum=Gateway;GatewayPort8080;GatewayStaticAddresses;HTTPRoute;HTTPRouteDestinationPortMatching;HTTPRouteHostRewrite;HTTPRouteMethodMatching;HTTPRoutePathRedirect;HTTPRoutePathRewrite;HTTPRoutePortRedirect;HTTPRouteQueryParamMatching;HTTPRouteRequestMirror;HTTPRouteRequestMultipleMirrors;HTTPRouteResponseHeaderModification;HTTPRouteSchemeRedirect;Mesh;ReferenceGrant;TLSRoute
 type SupportedFeature string
