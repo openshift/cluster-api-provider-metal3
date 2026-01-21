@@ -35,8 +35,74 @@ const (
 	endpointsResourceLock             = "endpoints"
 	configMapsResourceLock            = "configmaps"
 	LeasesResourceLock                = "leases"
-	endpointsLeasesResourceLock       = "endpointsleases"
-	configMapsLeasesResourceLock      = "configmapsleases"
+	// When using endpointsLeasesResourceLock, you need to ensure that
+	// API Priority & Fairness is configured with non-default flow-schema
+	// that will catch the necessary operations on leader-election related
+	// endpoint objects.
+	//
+	// The example of such flow scheme could look like this:
+	//   apiVersion: flowcontrol.apiserver.k8s.io/v1beta2
+	//   kind: FlowSchema
+	//   metadata:
+	//     name: my-leader-election
+	//   spec:
+	//     distinguisherMethod:
+	//       type: ByUser
+	//     matchingPrecedence: 200
+	//     priorityLevelConfiguration:
+	//       name: leader-election   # reference the <leader-election> PL
+	//     rules:
+	//     - resourceRules:
+	//       - apiGroups:
+	//         - ""
+	//         namespaces:
+	//         - '*'
+	//         resources:
+	//         - endpoints
+	//         verbs:
+	//         - get
+	//         - create
+	//         - update
+	//       subjects:
+	//       - kind: ServiceAccount
+	//         serviceAccount:
+	//           name: '*'
+	//           namespace: kube-system
+	endpointsLeasesResourceLock = "endpointsleases"
+	// When using configMapsLeasesResourceLock, you need to ensure that
+	// API Priority & Fairness is configured with non-default flow-schema
+	// that will catch the necessary operations on leader-election related
+	// configmap objects.
+	//
+	// The example of such flow scheme could look like this:
+	//   apiVersion: flowcontrol.apiserver.k8s.io/v1beta2
+	//   kind: FlowSchema
+	//   metadata:
+	//     name: my-leader-election
+	//   spec:
+	//     distinguisherMethod:
+	//       type: ByUser
+	//     matchingPrecedence: 200
+	//     priorityLevelConfiguration:
+	//       name: leader-election   # reference the <leader-election> PL
+	//     rules:
+	//     - resourceRules:
+	//       - apiGroups:
+	//         - ""
+	//         namespaces:
+	//         - '*'
+	//         resources:
+	//         - configmaps
+	//         verbs:
+	//         - get
+	//         - create
+	//         - update
+	//       subjects:
+	//       - kind: ServiceAccount
+	//         serviceAccount:
+	//           name: '*'
+	//           namespace: kube-system
+	configMapsLeasesResourceLock = "configmapsleases"
 )
 
 // LeaderElectionRecord is the record that is stored in the leader election annotation.
@@ -99,8 +165,8 @@ type Interface interface {
 	Describe() string
 }
 
-// new will create a lock of a given type according to the input parameters
-func new(lockType string, ns string, name string, coreClient corev1.CoreV1Interface, coordinationClient coordinationv1.CoordinationV1Interface, rlc ResourceLockConfig, labels map[string]string) (Interface, error) {
+// Manufacture will create a lock of a given type according to the input parameters
+func New(lockType string, ns string, name string, coreClient corev1.CoreV1Interface, coordinationClient coordinationv1.CoordinationV1Interface, rlc ResourceLockConfig) (Interface, error) {
 	leaseLock := &LeaseLock{
 		LeaseMeta: metav1.ObjectMeta{
 			Namespace: ns,
@@ -108,13 +174,12 @@ func new(lockType string, ns string, name string, coreClient corev1.CoreV1Interf
 		},
 		Client:     coordinationClient,
 		LockConfig: rlc,
-		Labels:     labels,
 	}
 	switch lockType {
 	case endpointsResourceLock:
-		return nil, fmt.Errorf("endpoints lock is removed, migrate to %s", LeasesResourceLock)
+		return nil, fmt.Errorf("endpoints lock is removed, migrate to %s (using version v0.27.x)", endpointsLeasesResourceLock)
 	case configMapsResourceLock:
-		return nil, fmt.Errorf("configmaps lock is removed, migrate to %s", LeasesResourceLock)
+		return nil, fmt.Errorf("configmaps lock is removed, migrate to %s (using version v0.27.x)", configMapsLeasesResourceLock)
 	case LeasesResourceLock:
 		return leaseLock, nil
 	case endpointsLeasesResourceLock:
@@ -124,17 +189,6 @@ func new(lockType string, ns string, name string, coreClient corev1.CoreV1Interf
 	default:
 		return nil, fmt.Errorf("Invalid lock-type %s", lockType)
 	}
-}
-
-// New will create a lock of a given type according to the input parameters
-func New(lockType string, ns string, name string, coreClient corev1.CoreV1Interface, coordinationClient coordinationv1.CoordinationV1Interface, rlc ResourceLockConfig) (Interface, error) {
-	return new(lockType, ns, name, coreClient, coordinationClient, rlc, nil)
-}
-
-// NewWithLabels will create a lock of a given type according to the input parameters
-// When the holder of the lock changes, that holder will apply their labels
-func NewWithLabels(lockType string, ns string, name string, coreClient corev1.CoreV1Interface, coordinationClient coordinationv1.CoordinationV1Interface, rlc ResourceLockConfig, labels map[string]string) (Interface, error) {
-	return new(lockType, ns, name, coreClient, coordinationClient, rlc, labels)
 }
 
 // NewFromKubeconfig will create a lock of a given type according to the input parameters.

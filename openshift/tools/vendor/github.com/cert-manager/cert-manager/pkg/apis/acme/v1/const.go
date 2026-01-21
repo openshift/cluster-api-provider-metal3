@@ -17,6 +17,5 @@ limitations under the License.
 package v1
 
 const (
-	ACMELegacyFinalizer          = "finalizer.acme.cert-manager.io"
-	ACMEDomainQualifiedFinalizer = "acme.cert-manager.io/finalizer"
+	ACMEFinalizer = "finalizer.acme.cert-manager.io"
 )

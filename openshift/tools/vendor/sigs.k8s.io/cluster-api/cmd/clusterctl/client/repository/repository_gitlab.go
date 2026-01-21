@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-	"golang.org/x/oauth2"
 
 	"sigs.k8s.io/cluster-api/cmd/clusterctl/client/config"
 )
@@ -43,21 +42,21 @@ const (
 // We support GitLab repositories that use the generic packages feature to publish artifacts and versions.
 // Repositories must use versioned releases.
 type gitLabRepository struct {
-	providerConfig           config.Provider
-	configVariablesClient    config.VariablesClient
-	authenticatingHTTPClient *http.Client
-	host                     string
-	projectSlug              string
-	packageName              string
-	defaultVersion           string
-	rootPath                 string
-	componentsPath           string
+	providerConfig        config.Provider
+	configVariablesClient config.VariablesClient
+	httpClient            *http.Client
+	host                  string
+	projectSlug           string
+	packageName           string
+	defaultVersion        string
+	rootPath              string
+	componentsPath        string
 }
 
 var _ Repository = &gitLabRepository{}
 
 // NewGitLabRepository returns a gitLabRepository implementation.
-func NewGitLabRepository(ctx context.Context, providerConfig config.Provider, configVariablesClient config.VariablesClient) (Repository, error) {
+func NewGitLabRepository(providerConfig config.Provider, configVariablesClient config.VariablesClient) (Repository, error) {
 	if configVariablesClient == nil {
 		return nil, errors.New("invalid arguments: configVariablesClient can't be nil")
 	}
@@ -88,29 +87,18 @@ func NewGitLabRepository(ctx context.Context, providerConfig config.Provider, co
 	componentsPath := urlSplit[8]
 
 	repo := &gitLabRepository{
-		providerConfig:           providerConfig,
-		configVariablesClient:    configVariablesClient,
-		authenticatingHTTPClient: httpClient,
-		host:                     host,
-		projectSlug:              projectSlug,
-		packageName:              packageName,
-		defaultVersion:           defaultVersion,
-		rootPath:                 rootPath,
-		componentsPath:           componentsPath,
-	}
-	if token, err := configVariablesClient.Get(config.GitLabAccessTokenVariable); err == nil {
-		repo.setClientToken(ctx, token)
+		providerConfig:        providerConfig,
+		configVariablesClient: configVariablesClient,
+		httpClient:            httpClient,
+		host:                  host,
+		projectSlug:           projectSlug,
+		packageName:           packageName,
+		defaultVersion:        defaultVersion,
+		rootPath:              rootPath,
+		componentsPath:        componentsPath,
 	}
 
 	return repo, nil
-}
-
-// setClientToken sets authenticatingHTTPClient field of gitLabRepository struct.
-func (g *gitLabRepository) setClientToken(ctx context.Context, token string) {
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token, TokenType: "Bearer"},
-	)
-	g.authenticatingHTTPClient = oauth2.NewClient(ctx, ts)
 }
 
 // Host returns host field of gitLabRepository struct.
@@ -159,14 +147,14 @@ func (g *gitLabRepository) GetFile(ctx context.Context, version, path string) ([
 		return content, nil
 	}
 
-	timeoutctx, cancel := context.WithTimeoutCause(ctx, 30*time.Second, errors.New("http request timeout expired"))
+	timeoutctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	request, err := http.NewRequestWithContext(timeoutctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get file %q with version %q from %q: failed to create request", path, version, url)
 	}
 
-	response, err := g.authenticatingHTTPClient.Do(request)
+	response, err := g.httpClient.Do(request)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to get file %q with version %q from %q", path, version, url)
 	}
@@ -174,10 +162,6 @@ func (g *gitLabRepository) GetFile(ctx context.Context, version, path string) ([
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
-		// explicitly check for 401 and return a more specific error
-		if response.StatusCode == http.StatusUnauthorized {
-			return nil, errors.Errorf("failed to get file %q with version %q from %q: unauthorized access, please check your credentials", path, version, url)
-		}
 		return nil, errors.Errorf("failed to get file %q with version %q from %q, got %d", path, version, url, response.StatusCode)
 	}
 
