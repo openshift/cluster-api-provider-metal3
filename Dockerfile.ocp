@@ -5,7 +5,10 @@ RUN CGO_ENABLED=0 GO111MODULE=on go build -a -o bin/manager .
 
 FROM registry.ci.openshift.org/ocp/4.22:base-rhel9
 COPY --from=builder /go/src/github.com/metal3-io/cluster-api-provider-metal3/bin/manager /
-COPY --from=builder /go/src/github.com/metal3-io/cluster-api-provider-metal3/openshift/manifests /manifests
+
+# The metal3 capi-provider is currently untested and not working in a manner
+# which breaks release builds. This disables it until it is fixed.
+# COPY --from=builder /go/src/github.com/metal3-io/cluster-api-provider-metal3/openshift/manifests /manifests
 
 ENTRYPOINT ["/manager"]
 

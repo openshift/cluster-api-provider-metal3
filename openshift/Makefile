@@ -20,6 +20,9 @@ verify-%: ## Ensure no diff after running some other target
 update-manifests-gen:
 	cd tools && go get github.com/openshift/cluster-capi-operator/manifests-gen && go mod tidy && go mod vendor
 
+# NOTE(mdbooth): MANIFESTS WILL NOT BE INCLUDED IN THE RELEASE IMAGE AND WILL
+# NOT BE INSTALLED"! They are disabled in the Dockerfile. They can be
+# re-included when they are fixed.
 .PHONY: ocp-manifests
 ocp-manifests: $(RELEASE_DIR) ## Builds openshift specific manifests
 	# Generate provider manifests.
