@@ -401,7 +401,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 	}
 
 	// Set up a ClusterCache and ClusterCacheReconciler to provide to controllers
-	// requiring a connection to a remote cluster
+	// requiring a connection to a remote cluster.
 
 	clusterCache, err := clustercache.SetupWithManager(ctx, mgr, clustercache.Options{
 		SecretClient: secretCachingClient,
