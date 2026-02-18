@@ -1,0 +1,7 @@
+attributes:
+  type: infrastructure
+  version: v1.11.0
+installOrder: 20
+name: cluster-api-provider-metal3
+ocpPlatform: BareMetal
+selfImageRef: registry.ci.openshift.org/openshift:baremetal-cluster-api-controllers
