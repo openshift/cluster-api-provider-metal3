@@ -76,11 +76,11 @@ For example:
 #### NODE_DRAIN_TIMEOUT
 
 This variable sets the nodeDrainTimout for cluster, controlplane and
-machinedeployment template. Users can set desired value in seconds ("300s") or
-minutes ("5m"). If it is not set, default value will be "0s" which will not make
+machinedeployment template. Users can set desired value in seconds `300`.
+If it is not set, default value will be `0` which will not make
 any change in the current deployment. For example:
 
-`NODE_DRAIN_TIMEOUT="300s"`
+`NODE_DRAIN_TIMEOUT=300`
 
 #### CTLPLANE_KUBEADM_EXTRA_CONFIG
 
@@ -95,8 +95,6 @@ critical to maintain the indentation. The allowed keys are :
 - format
 
 Here is an example for Ubuntu:
-
-<!-- markdownlint-disable MD013 -->
 
 ```bash
 CTLPLANE_KUBEADM_EXTRA_CONFIG="
@@ -171,8 +169,6 @@ CTLPLANE_KUBEADM_EXTRA_CONFIG="
 "
 ```
 
-<!-- markdownlint-enable MD013 -->
-
 #### WORKERS_KUBEADM_EXTRA_CONFIG
 
 This contains the extra configuration to pass in KubeadmConfig for workers. It
@@ -186,8 +182,6 @@ is critical to maintain the indentation. The allowed keys are :
 - format
 
 Here is an example for Ubuntu:
-
-<!-- markdownlint-disable MD013 -->
 
 ```bash
 WORKERS_KUBEADM_EXTRA_CONFIG="
@@ -221,8 +215,6 @@ WORKERS_KUBEADM_EXTRA_CONFIG="
                 version: 2
 "
 ```
-
-<!-- markdownlint-enable MD013 -->
 
 ## Pivoting or updating Ironic
 

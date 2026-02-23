@@ -18,6 +18,7 @@ GitHub pull requests. Those guidelines are the same as the
       - [Support and guarantees](#support-and-guarantees)
       - [Removal of v1alpha5 apiVersion](#removal-of-v1alpha5-apiversion)
    - [Contributing a Patch](#contributing-a-patch)
+      - [Logging Guidelines](#logging-guidelines)
    - [Backporting a Patch](#backporting-a-patch)
    - [Breaking Changes](#breaking-changes)
       - [Merge Approval](#merge-approval)
@@ -147,14 +148,10 @@ is defined above.
 - The EOL date of each API Version is determined from the last release available
   once a new API version is published.
 
-<!-- markdownlint-disable MD013 -->
-
 | API Version  | Supported Until                                                              |
 | ------------ | ---------------------------------------------------------------------------- |
 | **v1beta1**  | TBD (current latest)                                                         |
 | **v1alpha5** | EOL since 2022-09-30 ([apiVersion removal](#removal-of-v1alpha5-apiversion)) |
-
-<!-- markdownlint-enable MD013 -->
 
 - For the current stable API version (v1beta1) we support the two most recent
   minor releases; older minor releases are immediately unsupported when a new
@@ -166,8 +163,6 @@ is defined above.
   emergency patch release. For example, if v1.7 and v1.6 are currently
   supported, we will also maintain test coverage for v1.5 for one additional
   release cycle. When v1.7 is released, tests for v1.4 will be removed.
-
-<!-- markdownlint-disable MD013 -->
 
 | Minor Release | API Version  | Supported Until                              |
 | ------------- | ------------ | -------------------------------------------- |
@@ -183,8 +178,6 @@ is defined above.
 | v1.1.x        | **v1beta1**  | EOL since 2023-05-17                         |
 | v0.5.x        | **v1alpha4** | EOL since 2022-09-30 - API version EOL       |
 | v0.4.x        | **v1alpha3** | EOL since 2022-02-23 - API version EOL       |
-
-<!-- markdownlint-enable MD013 -->
 
 (\*) Previous support policy applies, older minor releases were immediately
 unsupported when a new major/minor release was available
@@ -228,6 +221,45 @@ explained in the official
 Expect reviewers to request that you avoid common
 [go style mistakes](https://github.com/golang/go/wiki/CodeReviewComments) in
 your PRs.
+
+### Logging Guidelines
+
+This project uses structured logging with defined verbosity levels. When adding
+or modifying log statements, follow these conventions:
+
+#### Verbosity Levels
+
+| Level | Constant | Usage |
+|-------|----------|-------|
+| Error | `.Error()` | Actual errors requiring attention |
+| Info | `.Info()` | Important operational events, major state changes |
+| Debug | `.V(4)` / `VerbosityLevelDebug` | Internal state, fetched objects, intermediate results |
+| Trace | `.V(5)` / `VerbosityLevelTrace` | Function entry/exit, detailed flow tracing |
+
+#### Structured Logging Fields
+
+Use the predefined `LogField*` constants from `baremetal/utils.go` for
+consistent field names:
+
+```go
+log.V(baremetal.VerbosityLevelDebug).Info("Processing machine",
+    baremetal.LogFieldMachine, machine.Name,
+    baremetal.LogFieldNamespace, machine.Namespace)
+```
+
+Common fields include: `LogFieldMachine`, `LogFieldMetal3Machine`,
+`LogFieldCluster`, `LogFieldBMH`, `LogFieldError`, `LogFieldPhase`, etc.
+
+#### Best Practices
+
+- **Trace level**: Use for entering/exiting functions and processing individual
+  items
+- **Debug level**: Use for state checks, configuration values, and successful
+  operations
+- **Info level**: Use sparingly for user-facing operational events
+- **Error level**: Always include the error and relevant context
+- **Context**: Populate logger with NamespacedName at the start of Reconcile
+  functions
 
 ## Backporting a Patch
 

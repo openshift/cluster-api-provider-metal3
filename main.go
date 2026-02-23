@@ -26,16 +26,18 @@ import (
 	"time"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	infraremote "github.com/metal3-io/cluster-api-provider-metal3/baremetal/remote"
 	"github.com/metal3-io/cluster-api-provider-metal3/controllers"
-	webhooks "github.com/metal3-io/cluster-api-provider-metal3/internal/webhooks/v1beta1"
+	webhooks "github.com/metal3-io/cluster-api-provider-metal3/internal/webhooks/v1beta2"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	"github.com/spf13/pflag"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,10 +52,12 @@ import (
 	logsv1 "k8s.io/component-base/logs/api/v1"
 	_ "k8s.io/component-base/logs/json/register"
 	"k8s.io/klog/v2"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	capipamv1beta1 "sigs.k8s.io/cluster-api/api/ipam/v1beta1"
+	capipamv1 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
+	"sigs.k8s.io/cluster-api/controllers/crdmigrator"
 	"sigs.k8s.io/cluster-api/controllers/remote"
-	caipamv1 "sigs.k8s.io/cluster-api/exp/ipam/api/v1alpha1"
 	"sigs.k8s.io/cluster-api/util/flags"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -104,20 +108,37 @@ var (
 	logOptions                       = logs.NewOptions()
 	enableBMHNameBasedPreallocation  bool
 	managerOptions                   = flags.ManagerOptions{}
+	skipCRDMigrationPhases           []string
 )
 
 func init() {
 	_ = scheme.AddToScheme(myscheme)
+
+	// metal3Ipam and capipam schemes
 	_ = ipamv1.AddToScheme(myscheme)
-	_ = caipamv1.AddToScheme(myscheme)
+	_ = capipamv1beta1.AddToScheme(myscheme)
+	_ = capipamv1.AddToScheme(myscheme)
+
+	// infra provider schemes
+	_ = infrav1beta1.AddToScheme(myscheme)
 	_ = infrav1.AddToScheme(myscheme)
+
+	// cluster-api schemes
 	_ = clusterv1.AddToScheme(myscheme)
+
+	// BMO Operator schemes
 	_ = bmov1alpha1.AddToScheme(myscheme)
+
+	// Add apiextensions scheme
+	_ = apiextensionsv1.AddToScheme(myscheme)
 }
 
 // Add RBAC for the authorized diagnostics endpoint.
 // +kubebuilder:rbac:groups=authentication.k8s.io,resources=tokenreviews,verbs=create
 // +kubebuilder:rbac:groups=authorization.k8s.io,resources=subjectaccessreviews,verbs=create
+// ADD CRD RBAC for CRD Migrator.
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions,verbs=get;list;watch
+// +kubebuilder:rbac:groups=apiextensions.k8s.io,resources=customresourcedefinitions;customresourcedefinitions/status,verbs=update;patch,resourceNames=metal3clusters.infrastructure.cluster.x-k8s.io;metal3clustertemplates.infrastructure.cluster.x-k8s.io;metal3machines.infrastructure.cluster.x-k8s.io;metal3machinetemplates.infrastructure.cluster.x-k8s.io;metal3datas.infrastructure.cluster.x-k8s.io;metal3datatemplates.infrastructure.cluster.x-k8s.io
 
 func main() {
 	initFlags(pflag.CommandLine)
@@ -133,7 +154,7 @@ func main() {
 	restConfig := ctrl.GetConfigOrDie()
 	restConfig.QPS = restConfigQPS
 	restConfig.Burst = restConfigBurst
-	restConfig.UserAgent = "controllerName"
+	restConfig.UserAgent = controllerName
 
 	tlsOptions, metricsOptions, err := flags.GetManagerOptions(managerOptions)
 	if err != nil {
@@ -349,6 +370,9 @@ func initFlags(fs *pflag.FlagSet) {
 		"Maximum number of queries that should be allowed in one burst from the controller client to the Kubernetes API server. Default 30")
 
 	flags.AddManagerOptions(fs, &managerOptions)
+
+	fs.StringArrayVar(&skipCRDMigrationPhases, "skip-crd-migration-phases", []string{},
+		"List of CRD migration phases to skip. Valid values are: StorageVersionMigration, CleanupManagedFields.")
 }
 
 func waitForAPIs(cfg *rest.Config) error {
@@ -389,6 +413,43 @@ func setupChecks(mgr ctrl.Manager) {
 }
 
 func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
+	crdMigratorConfig := map[client.Object]crdmigrator.ByObjectConfig{
+		&infrav1.Metal3Cluster{}: {
+			UseCache: true,
+		},
+		&infrav1.Metal3ClusterTemplate{}: {
+			UseCache: false,
+		},
+		&infrav1.Metal3Machine{}: {
+			UseCache: true,
+		},
+		&infrav1.Metal3MachineTemplate{}: {
+			UseCache: true,
+		},
+		&infrav1.Metal3Data{}: {
+			UseCache: true,
+		},
+		&infrav1.Metal3DataTemplate{}: {
+			UseCache: true,
+		},
+	}
+
+	crdMigratorSkipPhases := make([]crdmigrator.Phase, 0, len(skipCRDMigrationPhases))
+	for _, p := range skipCRDMigrationPhases {
+		crdMigratorSkipPhases = append(crdMigratorSkipPhases, crdmigrator.Phase(p))
+	}
+	if err := (&crdmigrator.CRDMigrator{
+		Client:                 mgr.GetClient(),
+		APIReader:              mgr.GetAPIReader(),
+		SkipCRDMigrationPhases: crdMigratorSkipPhases,
+		Config:                 crdMigratorConfig,
+		// The CRDMigrator is run with only concurrency 1 to ensure we don't overwhelm the apiserver by patching a
+		// lot of CRs concurrently.
+	}).SetupWithManager(ctx, mgr, concurrency(1)); err != nil {
+		setupLog.Error(err, "Unable to create controller", "controller", "CRDMigrator")
+		os.Exit(1)
+	}
+
 	secretCachingClient, err := client.New(mgr.GetConfig(), client.Options{
 		HTTPClient: mgr.GetHTTPClient(),
 		Cache: &client.CacheOptions{
@@ -431,7 +492,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		setupLog.Error(err, "Unable to create ClusterCache")
 		os.Exit(1)
 	}
-	if err := (&controllers.Metal3MachineReconciler{
+	if err = (&controllers.Metal3MachineReconciler{
 		Client:           mgr.GetClient(),
 		ClusterCache:     clusterCache,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
@@ -443,7 +504,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.Metal3ClusterReconciler{
+	if err = (&controllers.Metal3ClusterReconciler{
 		Client:           mgr.GetClient(),
 		ClusterCache:     clusterCache,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
@@ -454,7 +515,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.Metal3DataTemplateReconciler{
+	if err = (&controllers.Metal3DataTemplateReconciler{
 		Client:           mgr.GetClient(),
 		ClusterCache:     clusterCache,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
@@ -465,8 +526,9 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.Metal3DataReconciler{
+	if err = (&controllers.Metal3DataReconciler{
 		Client:           mgr.GetClient(),
+		ClientReader:     mgr.GetAPIReader(),
 		ClusterCache:     clusterCache,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
 		Log:              ctrl.Log.WithName("controllers").WithName("Metal3Data"),
@@ -476,7 +538,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.Metal3LabelSyncReconciler{
+	if err = (&controllers.Metal3LabelSyncReconciler{
 		Client:           mgr.GetClient(),
 		ClusterCache:     clusterCache,
 		ManagerFactory:   baremetal.NewManagerFactory(mgr.GetClient()),
@@ -487,7 +549,7 @@ func setupReconcilers(ctx context.Context, mgr ctrl.Manager) {
 		os.Exit(1)
 	}
 
-	if err := (&controllers.Metal3MachineTemplateReconciler{
+	if err = (&controllers.Metal3MachineTemplateReconciler{
 		Client:         mgr.GetClient(),
 		ClusterCache:   clusterCache,
 		ManagerFactory: baremetal.NewManagerFactory(mgr.GetClient()),

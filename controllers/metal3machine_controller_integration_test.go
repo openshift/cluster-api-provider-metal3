@@ -24,11 +24,10 @@ import (
 
 	"github.com/go-logr/logr"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,9 +36,10 @@ import (
 	clientfake "k8s.io/client-go/kubernetes/fake"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util/conditions"
+	deprecatedv1beta1conditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -50,6 +50,8 @@ var bmhuid = types.UID("63856098-4b80-11ec-81d3-0242ac130003")
 var providerID = fmt.Sprintf("%s%s", baremetal.ProviderIDPrefix, bmhuid)
 
 var bootstrapDataSecretName = "testdatasecret"
+
+var v1beta1BootstrapReadyTrue = clusterv1.Conditions{clusterv1.Condition{Type: clusterv1.BootstrapReadyV1Beta1Condition, Status: corev1.ConditionTrue}}
 
 func m3mOwnerRefs() []metav1.OwnerReference {
 	return []metav1.OwnerReference{
@@ -155,11 +157,15 @@ func machineWithBootstrap() *clusterv1.Machine {
 		clusterName, machineName, metal3machineName, "",
 	)
 	machine.Spec.Bootstrap = clusterv1.Bootstrap{
-		ConfigRef:      &corev1.ObjectReference{},
+		ConfigRef:      clusterv1.ContractVersionedObjectReference{},
 		DataSecretName: &bootstrapDataSecretName,
 	}
 	machine.Status = clusterv1.MachineStatus{
-		BootstrapReady: true,
+		Deprecated: &clusterv1.MachineDeprecatedStatus{
+			V1Beta1: &clusterv1.MachineV1Beta1DeprecatedStatus{
+				Conditions: v1beta1BootstrapReadyTrue,
+			},
+		},
 	}
 	return machine
 }
@@ -172,7 +178,11 @@ func machineWithDataSecret() *clusterv1.Machine {
 		DataSecretName: &bootstrapDataSecretName,
 	}
 	machine.Status = clusterv1.MachineStatus{
-		BootstrapReady: true,
+		Deprecated: &clusterv1.MachineDeprecatedStatus{
+			V1Beta1: &clusterv1.MachineV1Beta1DeprecatedStatus{
+				Conditions: v1beta1BootstrapReadyTrue,
+			},
+		},
 	}
 	return machine
 }
@@ -187,7 +197,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 		ErrorReasonExpected        bool
 		ErrorReason                capierrors.MachineStatusError
 		ErrorType                  error
-		ConditionsExpected         clusterv1.Conditions
+		ConditionsExpected         []metav1.Condition
 		ExpectedRequeueDuration    time.Duration
 		LabelExpected              bool
 		ClusterInfraReady          bool
@@ -242,7 +252,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 			if tc.ErrorExpected {
 				Expect(err).To(HaveOccurred())
 				if tc.ErrorType != nil {
-					Expect(reflect.TypeOf(tc.ErrorType)).To(BeIdenticalTo(reflect.TypeOf(errors.Cause(err))))
+					Expect(reflect.TypeOf(tc.ErrorType)).To(BeIdenticalTo(reflect.TypeOf(baremetal.RootCause(err))))
 				}
 			} else {
 				Expect(err).NotTo(HaveOccurred())
@@ -254,13 +264,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				Expect(res.Requeue).To(BeFalse())
 			}
 			if tc.ErrorReasonExpected {
-				Expect(testBMmachine.Status.FailureReason).NotTo(BeNil())
-				Expect(tc.ErrorReason).To(Equal(*testBMmachine.Status.FailureReason))
+				Expect(testBMmachine.Status.Deprecated).NotTo(BeNil())
+				Expect(testBMmachine.Status.Deprecated.V1Beta1).NotTo(BeNil())
+				Expect(testBMmachine.Status.Deprecated.V1Beta1.FailureReason).NotTo(BeNil())
+				Expect(tc.ErrorReason).To(Equal(*testBMmachine.Status.Deprecated.V1Beta1.FailureReason))
 			}
 			for _, condExp := range tc.ConditionsExpected {
 				_ = fakeClient.Get(ctx, *getKey(metal3ClusterName), testBMmachine)
 				condGot := conditions.Get(testBMmachine, condExp.Type)
-				Expect(condGot).NotTo(BeNil())
+				Expect(condGot).NotTo(BeNil(), fmt.Sprintf("Expected condition type=%s status=%s reason=%s", condExp.Type, string(condExp.Status), condExp.Reason))
 				Expect(condGot.Status).To(Equal(condExp.Status))
 				if condExp.Reason != "" {
 					Expect(condGot.Reason).To(Equal(condExp.Reason))
@@ -289,9 +301,13 @@ var _ = Describe("Reconcile metal3machine", func() {
 				}
 			}
 			if tc.CheckBootStrapReady {
-				Expect(testmachine.Status.BootstrapReady).To(BeTrue())
+				// Expect(testmachine.Status.BootstrapReady).To(BeTrue())
+				bootstrapReadyCondition := deprecatedv1beta1conditions.Get(testmachine, clusterv1.BootstrapReadyV1Beta1Condition)
+				Expect(bootstrapReadyCondition.Status).To(Equal(corev1.ConditionTrue))
 			} else {
-				Expect(testmachine.Status.BootstrapReady).To(BeFalse())
+				// Expect(testmachine.Status.BootstrapReady).To(BeFalse())
+				bootstrapReadyCondition := deprecatedv1beta1conditions.Get(testmachine, clusterv1.BootstrapReadyV1Beta1Condition)
+				Expect(bootstrapReadyCondition).To(BeNil())
 			}
 			if tc.CheckBMHostCleaned {
 				Expect(testBMHost.Spec.Image).To(BeNil())
@@ -311,11 +327,14 @@ var _ = Describe("Reconcile metal3machine", func() {
 				Expect(testBMHost.Spec.ConsumerRef.Name).To(Equal(testBMmachine.Name))
 			}
 			if tc.ClusterInfraReady {
-				Expect(testcluster.Status.InfrastructureReady).To(BeTrue())
+				infrastructureReadyCondition := deprecatedv1beta1conditions.Get(testcluster, clusterv1.InfrastructureReadyV1Beta1Condition)
+				Expect(infrastructureReadyCondition.Status).To(Equal(corev1.ConditionTrue))
 			} else {
-				Expect(testcluster.Status.InfrastructureReady).To(BeFalse())
+				infrastructureReadyCondition := deprecatedv1beta1conditions.Get(testcluster, clusterv1.InfrastructureReadyV1Beta1Condition)
+				if infrastructureReadyCondition != nil {
+					Expect(infrastructureReadyCondition.Status).To(Equal(corev1.ConditionFalse))
+				}
 			}
-
 		},
 		//Given: machine with a metal3machine in Spec.Infra. No metal3machine object
 		//Expected: No error. NotFound error is consumed by reconciler and returns nil.
@@ -371,7 +390,12 @@ var _ = Describe("Reconcile metal3machine", func() {
 			TestCaseReconcile{
 				Objects: []client.Object{
 					newCluster(clusterName, nil, &clusterv1.ClusterStatus{
-						InfrastructureReady: false,
+						Conditions: []metav1.Condition{
+							{
+								Type:   clusterv1.InfrastructureReadyCondition,
+								Status: metav1.ConditionFalse,
+							},
+						},
 					}),
 					metal3machineWithOwnerRefs(),
 					machineWithInfra(),
@@ -379,15 +403,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				ErrorExpected:     false,
 				RequeueExpected:   false,
 				ClusterInfraReady: false,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionFalse,
-						Reason: infrav1.WaitingForClusterInfrastructureReason,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Status: metav1.ConditionFalse,
+						Reason: infrav1.WaitingForClusterInfrastructureReadyV1Beta2Reason,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionFalse,
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},
@@ -406,15 +430,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				RequeueExpected:     false,
 				ClusterInfraReady:   true,
 				CheckBootStrapReady: false,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionFalse,
-						Reason: infrav1.WaitingForBootstrapReadyReason,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Status: metav1.ConditionFalse,
+						Reason: infrav1.WaitingForBootstrapDataV1Beta2Reason,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionFalse,
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},
@@ -465,15 +489,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				RequeueExpected:         true,
 				ExpectedRequeueDuration: requeueAfter,
 				ClusterInfraReady:       true,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionFalse,
-						Reason: infrav1.Metal3MachinePausedReason,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   clusterv1.PausedCondition,
+						Status: metav1.ConditionTrue,
+						Reason: clusterv1.PausedReason,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionFalse,
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},
@@ -637,10 +661,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBMProviderID:    true,
 				CheckBMProviderIDNew: true,
 				CheckBootStrapReady:  true,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionTrue,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Status: metav1.ConditionTrue,
 					},
 				},
 			},
@@ -689,14 +713,18 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBMProviderID:    true,
 				CheckBMProviderIDNew: true,
 				CheckBootStrapReady:  true,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionTrue,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Status: metav1.ConditionTrue,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionTrue,
+					{
+						Type:   infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition,
+						Status: metav1.ConditionTrue,
+					},
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionTrue,
 					},
 				},
 			},
@@ -840,10 +868,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBMFinalizer:        true,
 				CheckBMProviderID:       false,
 				CheckBootStrapReady:     true,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionTrue,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Status: metav1.ConditionTrue,
 					},
 				},
 			},
@@ -916,7 +944,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 						ConsumerRef: &corev1.ObjectReference{
 							Name:       metal3machineName,
 							Namespace:  namespaceName,
-							Kind:       "Metal3Machine",
+							Kind:       metal3MachineKind,
 							APIVersion: infrav1.GroupVersion.String(),
 						},
 						Online:                true,
@@ -946,15 +974,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady:     true,
 				ClusterInfraReady:       true,
 				ExpectedRequeueDuration: time.Second * 0,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionFalse,
-						Reason: infrav1.PauseAnnotationRemoveFailedReason,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   clusterv1.PausedCondition,
+						Status: metav1.ConditionFalse,
+						Reason: infrav1.BareMetalHostPauseAnnotationRemoveFailedV1Beta2Reason,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionFalse,
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},
@@ -974,15 +1002,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady:     true,
 				ClusterInfraReady:       true,
 				ExpectedRequeueDuration: time.Second * 0,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.AssociateBMHCondition,
-						Status: corev1.ConditionFalse,
-						Reason: infrav1.PauseAnnotationSetFailedReason,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   clusterv1.PausedCondition,
+						Status: metav1.ConditionFalse,
+						Reason: infrav1.BareMetalHostPauseAnnotationSetFailedV1Beta2Reason,
 					},
-					clusterv1.Condition{
-						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionFalse,
+					{
+						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Status: metav1.ConditionFalse,
 					},
 				},
 			},

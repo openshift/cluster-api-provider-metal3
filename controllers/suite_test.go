@@ -18,10 +18,11 @@ package controllers
 
 import (
 	"path/filepath"
+	"slices"
 	"testing"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,7 +35,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -101,7 +102,7 @@ func TestControllers(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	done := make(chan interface{})
+	done := make(chan any)
 
 	go func() {
 		logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
@@ -142,12 +143,11 @@ var deletionTimestamp = metav1.Now()
 
 func clusterPauseSpec() *clusterv1.ClusterSpec {
 	return &clusterv1.ClusterSpec{
-		Paused: true,
-		InfrastructureRef: &corev1.ObjectReference{
-			Name:       metal3ClusterName,
-			Namespace:  namespaceName,
-			Kind:       "Metal3Cluster",
-			APIVersion: infrav1.GroupVersion.String(),
+		Paused: ptr.To(true),
+		InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+			Name:     metal3ClusterName,
+			Kind:     "Metal3Cluster",
+			APIGroup: infrav1.GroupVersion.Group,
 		},
 	}
 }
@@ -183,12 +183,7 @@ func bmcOwnerRef() *metav1.OwnerReference {
 }
 
 func contains(haystack []string, needle string) bool {
-	for _, straw := range haystack {
-		if straw == needle {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(haystack, needle)
 }
 
 func getKey(objectName string) *client.ObjectKey {
@@ -201,17 +196,25 @@ func getKey(objectName string) *client.ObjectKey {
 func newCluster(clusterName string, spec *clusterv1.ClusterSpec, status *clusterv1.ClusterStatus) *clusterv1.Cluster {
 	if spec == nil {
 		spec = &clusterv1.ClusterSpec{
-			InfrastructureRef: &corev1.ObjectReference{
-				Name:       metal3ClusterName,
-				Namespace:  namespaceName,
-				Kind:       "Metal3Cluster",
-				APIVersion: infrav1.GroupVersion.String(),
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				Name:     metal3ClusterName,
+				Kind:     "Metal3Cluster",
+				APIGroup: infrav1.GroupVersion.Group,
 			},
 		}
 	}
 	if status == nil {
 		status = &clusterv1.ClusterStatus{
-			InfrastructureReady: true,
+			Deprecated: &clusterv1.ClusterDeprecatedStatus{
+				V1Beta1: &clusterv1.ClusterV1Beta1DeprecatedStatus{
+					Conditions: clusterv1.Conditions{
+						clusterv1.Condition{
+							Type:   clusterv1.InfrastructureReadyV1Beta1Condition,
+							Status: corev1.ConditionTrue,
+						},
+					},
+				},
+			},
 		}
 	}
 	return &clusterv1.Cluster{
@@ -291,16 +294,14 @@ func newMachine(clusterName, machineName string, metal3machineName string, nodeR
 	}
 	if metal3machineName != "" {
 		machine.Spec.ClusterName = clusterName
-		machine.Spec.InfrastructureRef = corev1.ObjectReference{
-			Name:       metal3machineName,
-			Namespace:  namespaceName,
-			Kind:       "Metal3Machine",
-			APIVersion: infrav1.GroupVersion.String(),
+		machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+			Name:     metal3machineName,
+			Kind:     metal3MachineKind,
+			APIGroup: infrav1.GroupVersion.Group,
 		}
 	}
 	if nodeRefName != "" {
-		machine.Status.NodeRef = &corev1.ObjectReference{
-			Kind: "Node",
+		machine.Status.NodeRef = clusterv1.MachineNodeReference{
 			Name: nodeRefName,
 		}
 	}
@@ -361,7 +362,7 @@ func newMetal3Machine(name string, meta *metav1.ObjectMeta,
 
 	return &infrav1.Metal3Machine{
 		TypeMeta: metav1.TypeMeta{
-			Kind:       "Metal3Machine",
+			Kind:       metal3MachineKind,
 			APIVersion: infrav1.GroupVersion.String(),
 		},
 		ObjectMeta: *meta,
@@ -422,5 +423,17 @@ func evaluateTestError(expected *string, actual error) {
 	} else {
 		Expect(expected).ToNot(BeNil())
 		Expect(actual.Error()).To(ContainSubstring(*expected))
+	}
+}
+
+func Metal3ClusterStatusWithPausedConditionFalse() *infrav1.Metal3ClusterStatus {
+	return &infrav1.Metal3ClusterStatus{
+		Conditions: []metav1.Condition{
+			{
+				Type:   clusterv1.PausedCondition,
+				Status: metav1.ConditionFalse,
+				Reason: clusterv1.NotPausedReason,
+			},
+		},
 	}
 }

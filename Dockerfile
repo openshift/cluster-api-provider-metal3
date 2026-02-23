@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Support FROM override
-ARG BUILD_IMAGE=docker.io/golang:1.24.4@sha256:10c131810f80a4802c49cab0961bbe18a16f4bb2fb99ef16deaa23e4246fc817
+ARG BUILD_IMAGE=docker.io/golang:1.24.13@sha256:c29cdf32d47053ab0d914852d9c2ed2da12b3cf13079aaef1704ef21335e68a3
 ARG BASE_IMAGE=gcr.io/distroless/static:nonroot@sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f
 
 # Build the manager binary on golang image
@@ -23,6 +23,7 @@ WORKDIR /workspace
 # Run this with docker build --build_arg $(go env GOPROXY) to override the goproxy
 ARG goproxy=https://proxy.golang.org
 ENV GOPROXY=$goproxy
+ARG LDFLAGS=-s -w -extldflags=-static
 
 # Copy the Go Modules manifests
 COPY go.mod go.sum ./
@@ -42,7 +43,7 @@ COPY internal/ internal/
 # Build
 ARG ARCH
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
-    go build -a -ldflags '-extldflags "-static"' \
+    go build -a -ldflags "${LDFLAGS}" \
     -o manager .
 
 # Copy the controller-manager into a thin image

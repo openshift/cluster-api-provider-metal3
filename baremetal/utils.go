@@ -18,19 +18,23 @@ package baremetal
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	// comment for go-lint.
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
-	"github.com/pkg/errors"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	capipamv1 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -39,19 +43,98 @@ const (
 	// metal3SecretType defines the type of secret created by metal3.
 	metal3SecretType corev1.SecretType = "infrastructure.cluster.x-k8s.io/secret"
 	// metal3MachineKind is the Kind of the Metal3Machine.
-	metal3MachineKind   = "Metal3Machine"
+	metal3MachineKind = "Metal3Machine"
+
+	// Logging verbosity levels follow the Kubernetes logging conventions:
+	// - Level 0 (Info): Always logged - errors, warnings, important state changes
+	// - Level 1-3: Progressively more detailed operational information
+	// - Level 4 (Debug): Detailed debugging information for developers
+	// - Level 5 (Trace): Very verbose tracing information
+	//
+	// Use VerbosityLevelDebug for internal state checks, fetched objects, and
+	// intermediate processing steps that are useful for debugging but too
+	// verbose for normal operation.
+	//
+	// Use VerbosityLevelTrace for very detailed flow tracing, such as entering/
+	// exiting functions or processing individual list items.
 	VerbosityLevelDebug = 4
 	VerbosityLevelTrace = 5
+
+	// Standard log field keys for consistent structured logging.
+	// Use these constants when adding context to log statements to ensure
+	// consistency across the codebase.
+	LogFieldController            = "controller"
+	LogFieldName                  = "name"
+	LogFieldMachine               = "machine"
+	LogFieldMetal3Machine         = "metal3Machine"
+	LogFieldHost                  = "host"
+	LogFieldHostNamespace         = "hostNamespace"
+	LogFieldCluster               = "cluster"
+	LogFieldMetal3Cluster         = "metal3Cluster"
+	LogFieldMetal3Remediation     = "metal3Remediation"
+	LogFieldNamespace             = "namespace"
+	LogFieldNode                  = "node"
+	LogFieldRemediation           = "remediation"
+	LogFieldProviderID            = "providerID"
+	LogFieldBMH                   = "bareMetalHost"
+	LogFieldError                 = "error"
+	LogFieldState                 = "state"
+	LogFieldPhase                 = "phase"
+	LogFieldDataTemplate          = "dataTemplate"
+	LogFieldData                  = "data"
+	LogFieldDataClaim             = "dataClaim"
+	LogFieldStep                  = "step"
+	LogFieldResult                = "result"
+	LogFieldCount                 = "count"
+	LogFieldDuration              = "duration"
+	LogFieldSecretName            = "secret"
+	LogFieldAnnotation            = "annotation"
+	LogFieldLabel                 = "label"
+	LogFieldCondition             = "condition"
+	LogFieldOwner                 = "owner"
+	LogFieldImage                 = "image"
+	LogFieldOnline                = "online"
+	LogFieldPoweredOn             = "poweredOn"
+	LogFieldRetryCount            = "retryCount"
+	LogFieldTimeout               = "timeout"
+	LogFieldFailureDomain         = "failureDomain"
+	LogFieldMachineSet            = "machineSet"
+	LogFieldMachineDeployment     = "machineDeployment"
+	LogFieldControlPlane          = "controlPlane"
+	LogFieldPod                   = "pod"
+	LogFieldVolumeAttachment      = "volumeAttachment"
+	LogFieldMetal3Data            = "metal3Data"
+	LogFieldMetal3DataTemplate    = "metal3DataTemplate"
+	LogFieldMetal3DataClaim       = "metal3DataClaim"
+	LogFieldMetal3MachineTemplate = "metal3MachineTemplate"
+	LogFieldIPClaim               = "ipClaim"
+	LogFieldIPAddress             = "ipAddress"
+	LogFieldPoolRef               = "poolRef"
+	LogFieldPool                  = "pool"
+	LogFieldIndex                 = "index"
+	LogFieldReason                = "reason"
+	LogFieldMessage               = "message"
+	LogFieldAPIEndpoint           = "apiEndpoint"
+)
+
+var (
+	// ErrNoCluster is returned when the cluster
+	// label could not be found on the object passed in.
+	ErrNoCluster = fmt.Errorf("no %q label present", clusterv1.ClusterNameLabel)
 )
 
 // Contains returns true if a list contains a string.
 func Contains(list []string, strToSearch string) bool {
-	for _, item := range list {
-		if item == strToSearch {
-			return true
-		}
+	return slices.Contains(list, strToSearch)
+}
+
+// RootCause unwraps an error chain to return the underlying root cause.
+// If the error does not wrap another error, it returns the original error.
+func RootCause(err error) error {
+	for errors.Unwrap(err) != nil {
+		err = errors.Unwrap(err)
 	}
-	return false
+	return err
 }
 
 // NotFoundError represents that an object was not found.
@@ -74,7 +157,7 @@ func patchIfFound(ctx context.Context, helper *patch.Helper, host client.Object)
 					notFound = false
 				}
 				if apierrors.IsConflict(kerr) {
-					return WithTransientError(errors.New("Updating object failed"), 0*time.Second)
+					return WithTransientError(errors.New("updating object failed"), 0*time.Second)
 				}
 			}
 		} else {
@@ -90,11 +173,11 @@ func patchIfFound(ctx context.Context, helper *patch.Helper, host client.Object)
 func updateObject(ctx context.Context, cl client.Client, obj client.Object) error {
 	copiedObj, ok := obj.DeepCopyObject().(client.Object)
 	if !ok {
-		return errors.New("Type assertion to client.Object failed")
+		return errors.New("type assertion to client.Object failed")
 	}
 	err := cl.Update(ctx, copiedObj)
 	if apierrors.IsConflict(err) {
-		return WithTransientError(errors.New("Update object conflicts"), requeueAfter)
+		return WithTransientError(errors.New("update object conflicts"), requeueAfter)
 	}
 	return err
 }
@@ -102,11 +185,11 @@ func updateObject(ctx context.Context, cl client.Client, obj client.Object) erro
 func createObject(ctx context.Context, cl client.Client, obj client.Object) error {
 	copiedObj, ok := obj.DeepCopyObject().(client.Object)
 	if !ok {
-		return errors.New("Type assertion to client.Object failed")
+		return errors.New("type assertion to client.Object failed")
 	}
 	err := cl.Create(ctx, copiedObj)
 	if apierrors.IsAlreadyExists(err) {
-		return WithTransientError(errors.New("Object already exists"), requeueAfter)
+		return WithTransientError(errors.New("object already exists"), requeueAfter)
 	}
 	return err
 }
@@ -114,7 +197,7 @@ func createObject(ctx context.Context, cl client.Client, obj client.Object) erro
 func deleteObject(ctx context.Context, cl client.Client, obj client.Object) error {
 	copiedObj, ok := obj.DeepCopyObject().(client.Object)
 	if !ok {
-		return errors.New("Type assertion to client.Object failed")
+		return errors.New("type assertion to client.Object failed")
 	}
 	err := cl.Delete(ctx, copiedObj)
 	if apierrors.IsNotFound(err) {
@@ -203,7 +286,7 @@ func fetchM3DataTemplate(ctx context.Context,
 		return nil, nil //nolint:nilnil
 	}
 	if templateRef.Name == "" {
-		return nil, errors.New("Metal3DataTemplate name not set")
+		return nil, errors.New("metal3DataTemplate name not set")
 	}
 
 	// Fetch the Metal3DataTemplate.
@@ -218,13 +301,13 @@ func fetchM3DataTemplate(ctx context.Context,
 			mLog.Info(errMessage)
 			return nil, WithTransientError(errors.New(errMessage), requeueAfter)
 		}
-		err := errors.Wrap(err, "Failed to get Metal3DataTemplate")
+		err = fmt.Errorf("failed to get Metal3DataTemplate: %w", err)
 		return nil, err
 	}
 
 	// Verify that this Metal3DataTemplate belongs to the correct cluster.
 	if clusterName != metal3DataTemplate.Spec.ClusterName {
-		return nil, errors.New("Metal3DataTemplate associated with another cluster")
+		return nil, errors.New("metal3DataTemplate associated with another cluster")
 	}
 
 	return metal3DataTemplate, nil
@@ -246,7 +329,7 @@ func fetchM3DataClaim(ctx context.Context, cl client.Client, mLog logr.Logger,
 			mLog.Info(errMessage)
 			return nil, WithTransientError(errors.New(errMessage), requeueAfter)
 		}
-		err := errors.Wrap(err, "Failed to get Metal3DataClaim")
+		err = fmt.Errorf("failed to get Metal3DataClaim: %w", err)
 		return nil, err
 	}
 	return m3DataClaim, nil
@@ -268,7 +351,7 @@ func fetchM3Data(ctx context.Context, cl client.Client, mLog logr.Logger,
 			mLog.Info(errMessage)
 			return nil, WithTransientError(errors.New(errMessage), requeueAfter)
 		}
-		err := errors.Wrap(err, "Failed to get Metal3Data")
+		err = fmt.Errorf("failed to get Metal3Data: %w", err)
 		return nil, err
 	}
 	return m3Data, nil
@@ -296,7 +379,7 @@ func getM3Machine(ctx context.Context, cl client.Client, mLog logr.Logger,
 			}
 			return nil, nil //nolint:nilnil
 		}
-		err := errors.Wrap(err, "Failed to get Metal3Machine")
+		err = fmt.Errorf("failed to get Metal3Machine: %w", err)
 		return nil, err
 	}
 
@@ -320,4 +403,36 @@ func getM3Machine(ctx context.Context, cl client.Client, mLog logr.Logger,
 
 func parseProviderID(providerID string) string {
 	return strings.TrimPrefix(providerID, ProviderIDPrefix)
+}
+
+func ConvertTypedLocalObjectReferenceToIPPoolReference(
+	ref corev1.TypedLocalObjectReference,
+) capipamv1.IPPoolReference {
+	if ref.APIGroup == nil || *ref.APIGroup == "" {
+		ref.APIGroup = ptr.To("ipam.metal3.io")
+	}
+	if ref.Kind == "" {
+		ref.Kind = "IPPool"
+	}
+	return capipamv1.IPPoolReference{
+		Name:     ref.Name,
+		APIGroup: *ref.APIGroup,
+		Kind:     ref.Kind,
+	}
+}
+
+func ConvertIPPoolReferenceToTypedLocalObjectReference(
+	ref capipamv1.IPPoolReference,
+) corev1.TypedLocalObjectReference {
+	if ref.APIGroup == "" {
+		ref.APIGroup = "ipam.metal3.io"
+	}
+	if ref.Kind == "" {
+		ref.Kind = "IPPool"
+	}
+	return corev1.TypedLocalObjectReference{
+		Name:     ref.Name,
+		APIGroup: &ref.APIGroup,
+		Kind:     ref.Kind,
+	}
 }

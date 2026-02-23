@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -70,9 +70,9 @@ type RemediationInput struct {
  * 		Logf("REMEDIATION TESTS PASSED!")
  * 	}
  *
- * The remediation test ensures that the CAPM3 can effectively remediate worker nodes by performing necessary actions and annotations. It helps ensure the stability and resiliency of the cluster by allowing the cluster to recover from failure scenarios and successfully restore nodes to the desired state.
+ * The Remediation test ensures that the CAPM3 can effectively remediate worker nodes by performing necessary actions and annotations. It helps ensure the stability and resiliency of the cluster by allowing the cluster to recover from failure scenarios and successfully restore nodes to the desired state.
  */
-func remediation(ctx context.Context, inputGetter func() RemediationInput) {
+func Remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	Logf("Starting remediation tests")
 	input := inputGetter()
 	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
@@ -86,7 +86,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	Expect(controlplaneM3Machines).To(HaveLen(numberOfControlplane))
 	Expect(workerM3Machines).To(HaveLen(numberOfWorkers))
 
-	getBmhFromM3Machine := func(m3Machine infrav1.Metal3Machine) (result bmov1alpha1.BareMetalHost) {
+	getBmhFromM3Machine := func(m3Machine infrav1beta1.Metal3Machine) (result bmov1alpha1.BareMetalHost) {
 		Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: Metal3MachineToBmhName(m3Machine)}, &result)).To(Succeed())
 		return result
 	}
@@ -150,13 +150,13 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	ListNodes(ctx, targetClient)
 
 	// Calling an inspection tests here for now until we have a parallelism enabled in e2e framework.
-	inspection(ctx, func() InspectionInput {
+	Inspection(ctx, func() InspectionInput {
 		return InspectionInput{
-			E2EConfig:             input.E2EConfig,
-			BootstrapClusterProxy: input.BootstrapClusterProxy,
-			SpecName:              input.SpecName,
-			Namespace:             input.Namespace,
-			ClusterctlConfigPath:  input.ClusterctlConfigPath,
+			E2EConfig:            input.E2EConfig,
+			ClusterProxy:         input.BootstrapClusterProxy,
+			SpecName:             input.SpecName,
+			Namespace:            input.Namespace,
+			ClusterctlConfigPath: input.ClusterctlConfigPath,
 		}
 	})
 
@@ -208,7 +208,8 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	Logf("Verifying that the unhealthy BMH doesn't go to provisioning")
 	Consistently(func(g Gomega) {
-		bmhs, err := GetAllBmhs(ctx, bootstrapClient, input.Namespace)
+		var bmhs []bmov1alpha1.BareMetalHost
+		bmhs, err = GetAllBmhs(ctx, bootstrapClient, input.Namespace)
 		g.Expect(err).NotTo(HaveOccurred())
 		g.Expect(FilterBmhsByProvisioningState(bmhs, bmov1alpha1.StateProvisioned)).To(HaveLen(3))
 		g.Expect(FilterBmhsByProvisioningState(bmhs, bmov1alpha1.StateProvisioning)).To(BeEmpty())
@@ -252,7 +253,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	ListNodes(ctx, targetClient)
 
 	By("Creating a new Metal3DataTemplate")
-	m3dataTemplate := infrav1.Metal3DataTemplate{}
+	m3dataTemplate := infrav1beta1.Metal3DataTemplate{}
 	m3dataTemplateName := input.ClusterName + "-workers-template"
 	newM3dataTemplateName := "test-new-m3dt"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3dataTemplateName}, &m3dataTemplate)).To(Succeed())
@@ -271,7 +272,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	Expect(err).NotTo(HaveOccurred())
 
 	By("Creating a new Metal3MachineTemplate")
-	m3machineTemplate := infrav1.Metal3MachineTemplate{}
+	m3machineTemplate := infrav1beta1.Metal3MachineTemplate{}
 	m3machineTemplateName := input.ClusterName + "-workers"
 	Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: m3machineTemplateName}, &m3machineTemplate)).To(Succeed())
 	newM3MachineTemplateName := "test-new-m3mt"
@@ -292,12 +293,12 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 	helper, err := patch.NewHelper(&deployment, bootstrapClient)
 	Expect(err).NotTo(HaveOccurred())
 
-	deployment.Spec.Template.Spec.InfrastructureRef = corev1.ObjectReference{
-		Kind:       "Metal3MachineTemplate",
-		APIVersion: input.E2EConfig.MustGetVariable("APIVersion"),
-		Name:       newM3MachineTemplateName,
+	deployment.Spec.Template.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+		Kind:     "Metal3MachineTemplate",
+		APIGroup: infrav1beta1.GroupVersion.Group,
+		Name:     newM3MachineTemplateName,
 	}
-	deployment.Spec.Strategy.RollingUpdate.MaxUnavailable = &intstr.IntOrString{IntVal: 1}
+	deployment.Spec.Rollout.Strategy.RollingUpdate.MaxUnavailable = &intstr.IntOrString{IntVal: 1}
 	Expect(helper.Patch(ctx, &deployment)).To(Succeed())
 
 	By("Waiting for the old worker to deprovision")
@@ -310,7 +311,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 	By("Waiting for single new worker to become provisioned")
 	Eventually(func(g Gomega) {
-		datas := infrav1.Metal3DataList{}
+		datas := infrav1beta1.Metal3DataList{}
 		g.Expect(bootstrapClient.List(ctx, &datas, client.InNamespace(input.Namespace))).To(Succeed())
 		g.Expect(datas.Items).NotTo(BeEmpty())
 	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-deployment")...).Should(Succeed())
@@ -341,7 +342,7 @@ func remediation(ctx context.Context, inputGetter func() RemediationInput) {
 
 type bmhToMachine struct {
 	baremetalhost *bmov1alpha1.BareMetalHost
-	metal3machine *infrav1.Metal3Machine
+	metal3machine *infrav1beta1.Metal3Machine
 }
 type bmhToMachineSlice []bmhToMachine
 
@@ -389,13 +390,13 @@ func listVms(state vmState) []string {
 	var cmd *exec.Cmd // gosec Subprocess launched with variable
 	switch state {
 	case running:
-		cmd = exec.Command("sudo", "virsh", "list", "--name", "--state-running")
+		cmd = exec.CommandContext(context.Background(), "sudo", "virsh", "list", "--name", "--state-running")
 	case shutoff:
-		cmd = exec.Command("sudo", "virsh", "list", "--name", "--state-shutoff")
+		cmd = exec.CommandContext(context.Background(), "sudo", "virsh", "list", "--name", "--state-shutoff")
 	case paused:
-		cmd = exec.Command("sudo", "virsh", "list", "--name", "--state-paused")
+		cmd = exec.CommandContext(context.Background(), "sudo", "virsh", "list", "--name", "--state-paused")
 	case other:
-		cmd = exec.Command("sudo", "virsh", "list", "--name", "--state-other")
+		cmd = exec.CommandContext(context.Background(), "sudo", "virsh", "list", "--name", "--state-other")
 	}
 
 	result, err := cmd.Output()
@@ -413,14 +414,14 @@ func listVms(state vmState) []string {
 	return lines[:i]
 }
 
-func waitForVmsState(vmNames []string, state vmState, _ string, interval ...interface{}) {
+func waitForVmsState(vmNames []string, state vmState, _ string, interval ...any) {
 	Byf("Waiting for VMs %v to become '%s'", vmNames, state)
 	Eventually(func() []string {
 		return listVms(state)
 	}, interval...).Should(ContainElements(vmNames))
 }
 
-func monitorNodesStatus(ctx context.Context, g Gomega, c client.Client, namespace string, names []string, status corev1.ConditionStatus, _ string, interval ...interface{}) {
+func monitorNodesStatus(ctx context.Context, g Gomega, c client.Client, namespace string, names []string, status corev1.ConditionStatus, _ string, interval ...any) {
 	Byf("Ensuring Nodes %v consistently have ready=%s status", names, status)
 	g.Consistently(
 		func() error {
@@ -449,7 +450,7 @@ func assertNodeStatus(ctx context.Context, client client.Client, name client.Obj
 	return fmt.Errorf("node %s missing condition \"Ready\"", name.Name)
 }
 
-func waitForNodeStatus(ctx context.Context, client client.Client, name client.ObjectKey, status corev1.ConditionStatus, _ string, interval ...interface{}) {
+func waitForNodeStatus(ctx context.Context, client client.Client, name client.ObjectKey, status corev1.ConditionStatus, _ string, interval ...any) {
 	Byf("Waiting for Node '%s' to have ready=%s status", name, status)
 	Eventually(
 		func() error { return assertNodeStatus(ctx, client, name, status) },

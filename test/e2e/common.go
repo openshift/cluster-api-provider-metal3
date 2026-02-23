@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -21,25 +23,28 @@ import (
 
 	"github.com/blang/semver"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
+	irsov1alpha1 "github.com/metal3-io/ironic-standalone-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
-	v1 "k8s.io/api/apps/v1"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/apimachinery/pkg/types"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	controlplanev1 "sigs.k8s.io/cluster-api/controlplane/kubeadm/api/v1beta1"
+	controlplanev1 "sigs.k8s.io/cluster-api/api/controlplane/kubeadm/v1beta2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	testexec "sigs.k8s.io/cluster-api/test/framework/exec"
@@ -62,17 +67,21 @@ const (
 	ironicImageDir         = "/opt/metal3-dev-env/ironic/html/images"
 	osTypeCentos           = "centos"
 	osTypeUbuntu           = "ubuntu"
+	osTypeLeap             = "opensuse-leap"
 	ironicSuffix           = "-ironic"
 	// Out-of-service Taint test actions.
 	oostAdded   = "added"
 	oostRemoved = "removed"
+
+	retryableOperationInterval = 3 * time.Second
+	retryableOperationTimeout  = 3 * time.Minute
 )
 
-func Byf(format string, a ...interface{}) {
+func Byf(format string, a ...any) {
 	By(fmt.Sprintf(format, a...))
 }
 
-func Logf(format string, a ...interface{}) {
+func Logf(format string, a ...any) {
 	fmt.Fprintf(GinkgoWriter, "INFO: "+format+"\n", a...)
 }
 
@@ -107,7 +116,7 @@ func getSha256Hash(filename string) ([]byte, error) {
 		return nil, err
 	}
 	defer func() {
-		err := file.Close()
+		err = file.Close()
 		Expect(err).ToNot(HaveOccurred(), "Error closing file: "+filename)
 	}()
 	hash := sha256.New()
@@ -132,7 +141,7 @@ func GetBoolVariable(e2eConfig *clusterctl.E2EConfig, varName string) bool {
 }
 
 // TODO change this function to handle multiple workload(target) clusters.
-func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrapClusterProxy framework.ClusterProxy, targetClusterProxy framework.ClusterProxy, artifactFolder string, namespace string, intervalsGetter func(spec, key string) []interface{}, clusterName, clusterctlLogFolder string, skipCleanup bool, clusterctlConfigPath string) {
+func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrapClusterProxy framework.ClusterProxy, targetClusterProxy framework.ClusterProxy, artifactFolder string, namespace string, intervalsGetter func(spec, key string) []any, clusterName, clusterctlLogFolder string, skipCleanup bool, clusterctlConfigPath string) {
 	Expect(os.RemoveAll(clusterctlLogFolder)).Should(Succeed())
 	clusterClient := bootstrapClusterProxy.GetClient()
 
@@ -170,9 +179,9 @@ func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrap
 		By("Checking leftover Metal3Datas, Metal3DataTemplates and Metal3DataClaims")
 		Eventually(func(g Gomega) {
 			opts := &client.ListOptions{}
-			datas := infrav1.Metal3DataList{}
-			dataTemplates := infrav1.Metal3DataTemplateList{}
-			dataClaims := infrav1.Metal3DataClaimList{}
+			datas := infrav1beta1.Metal3DataList{}
+			dataTemplates := infrav1beta1.Metal3DataTemplateList{}
+			dataClaims := infrav1beta1.Metal3DataClaimList{}
 			g.Expect(clusterClient.List(ctx, &datas, opts)).To(Succeed())
 			g.Expect(clusterClient.List(ctx, &dataTemplates, opts)).To(Succeed())
 			g.Expect(clusterClient.List(ctx, &dataClaims, opts)).To(Succeed())
@@ -196,10 +205,15 @@ func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrap
 
 func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 	osType := strings.ToLower(os.Getenv("OS"))
-	Expect(osType).To(BeElementOf([]string{osTypeUbuntu, osTypeCentos}))
-	imageNamePrefix := "CENTOS_9_NODE_IMAGE_K8S"
-	if osType != osTypeCentos {
-		imageNamePrefix = "UBUNTU_22.04_NODE_IMAGE_K8S"
+	Expect(osType).To(BeElementOf([]string{osTypeUbuntu, osTypeCentos, osTypeLeap}))
+	imageNamePrefix := ""
+	switch osType {
+	case osTypeCentos:
+		imageNamePrefix = "CENTOS_10_NODE_IMAGE_K8S"
+	case osTypeUbuntu:
+		imageNamePrefix = "UBUNTU_24.04_NODE_IMAGE_K8S"
+	case osTypeLeap:
+		imageNamePrefix = "LEAP_15_6_NODE_IMAGE_K8S"
 	}
 	imageName := fmt.Sprintf("%s_%s.qcow2", imageNamePrefix, k8sVersion)
 	rawImageName := fmt.Sprintf("%s_%s-raw.img", imageNamePrefix, k8sVersion)
@@ -216,10 +230,11 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 		Logf("Local image %v is not found \nDownloading..", rawImagePath)
 		err = DownloadFile(imagePath, fmt.Sprintf("%s/%s", imageLocation, imageName))
 		Expect(err).ToNot(HaveOccurred())
-		cmd := exec.Command("qemu-img", "convert", "-O", "raw", imagePath, rawImagePath) // #nosec G204:gosec
+		cmd := exec.CommandContext(context.Background(), "qemu-img", "convert", "-O", "raw", imagePath, rawImagePath) // #nosec G204:gosec
 		err = cmd.Run()
 		Expect(err).ToNot(HaveOccurred())
-		sha256sum, err := getSha256Hash(rawImagePath)
+		var sha256sum []byte
+		sha256sum, err = getSha256Hash(rawImagePath)
 		Expect(err).ToNot(HaveOccurred())
 		formattedSha256sum := hex.EncodeToString(sha256sum)
 		err = os.WriteFile(fmt.Sprintf("%s/%s.sha256sum", ironicImageDir, rawImageName), []byte(formattedSha256sum), 0544) //#nosec G306:gosec
@@ -236,7 +251,7 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 func DownloadFile(filePath string, url string) error {
 	// TODO: Lets change the wget to use go's native http client when network
 	// more resilient
-	cmd := exec.Command("wget", "-O", filePath, url)
+	cmd := exec.CommandContext(context.Background(), "wget", "-O", filePath, url)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("wget failed: %w, output: %s", err, string(output))
@@ -316,7 +331,7 @@ func ScaleMachineDeployment(ctx context.Context, clusterClient client.Client, cl
 	})
 	Expect(machineDeployments).To(HaveLen(1), "Expected exactly 1 MachineDeployment")
 	machineDeploy := machineDeployments[0]
-	patch := []byte(fmt.Sprintf(`{"spec": {"replicas": %d}}`, newReplicas))
+	patch := fmt.Appendf(nil, `{"spec": {"replicas": %d}}`, newReplicas)
 	err := clusterClient.Patch(ctx, machineDeploy, client.RawPatch(types.MergePatchType, patch))
 	Expect(err).ToNot(HaveOccurred(), "Failed to patch workers MachineDeployment")
 }
@@ -389,7 +404,7 @@ func ListBareMetalHosts(ctx context.Context, c client.Client, opts ...client.Lis
 // ListMetal3Machines logs the names, ready status and provider ID of all Metal3Machines in the namespace.
 // Similar to kubectl get metal3machines.
 func ListMetal3Machines(ctx context.Context, c client.Client, opts ...client.ListOption) {
-	metal3Machines := infrav1.Metal3MachineList{}
+	metal3Machines := infrav1beta1.Metal3MachineList{}
 	Expect(c.List(ctx, &metal3Machines, opts...)).To(Succeed())
 
 	rows := make([][]string, len(metal3Machines.Items)+1)
@@ -416,10 +431,10 @@ func ListMachines(ctx context.Context, c client.Client, opts ...client.ListOptio
 	rows[0] = []string{"Name:", "Status:", "Provider ID:", "Version:"}
 	for i, machine := range machines.Items {
 		providerID := ""
-		if machine.Spec.ProviderID != nil {
-			providerID = *machine.Spec.ProviderID
+		if machine.Spec.ProviderID != "" {
+			providerID = machine.Spec.ProviderID
 		}
-		rows[i+1] = []string{machine.GetName(), fmt.Sprint(machine.Status.GetTypedPhase()), providerID, *machine.Spec.Version}
+		rows[i+1] = []string{machine.GetName(), fmt.Sprint(machine.Status.GetTypedPhase()), providerID, machine.Spec.Version}
 	}
 	logTable("Listing Machines", rows)
 }
@@ -451,7 +466,7 @@ func CreateNewM3MachineTemplate(ctx context.Context, namespace string, newM3Mach
 	checksumType := "sha256"
 	imageFormat := "raw"
 
-	m3MachineTemplate := infrav1.Metal3MachineTemplate{}
+	m3MachineTemplate := infrav1beta1.Metal3MachineTemplate{}
 	Expect(clusterClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: m3MachineTemplateName}, &m3MachineTemplate)).To(Succeed())
 
 	newM3MachineTemplate := m3MachineTemplate.DeepCopy()
@@ -470,7 +485,7 @@ type WaitForNumInput struct {
 	Client    client.Client
 	Options   []client.ListOption
 	Replicas  int
-	Intervals []interface{}
+	Intervals []any
 }
 
 // WaitForNumBmhInState will wait for the given number of BMHs to be in the given state.
@@ -488,7 +503,7 @@ func WaitForNumBmhInState(ctx context.Context, state bmov1alpha1.ProvisioningSta
 func WaitForNumMetal3MachinesReady(ctx context.Context, input WaitForNumInput) {
 	Logf("Waiting for %d Metal3Machines to be ready", input.Replicas)
 	Eventually(func(g Gomega) {
-		m3mList := infrav1.Metal3MachineList{}
+		m3mList := infrav1beta1.Metal3MachineList{}
 		g.Expect(input.Client.List(ctx, &m3mList, input.Options...)).To(Succeed())
 		numReady := 0
 		for _, m3m := range m3mList.Items {
@@ -528,9 +543,9 @@ func GetMachine(ctx context.Context, c client.Client, name client.ObjectKey) (re
 	return
 }
 
-func GetMetal3Machines(ctx context.Context, c client.Client, _, namespace string) ([]infrav1.Metal3Machine, []infrav1.Metal3Machine) {
-	var controlplane, workers []infrav1.Metal3Machine
-	allMachines := &infrav1.Metal3MachineList{}
+func GetMetal3Machines(ctx context.Context, c client.Client, _, namespace string) ([]infrav1beta1.Metal3Machine, []infrav1beta1.Metal3Machine) {
+	var controlplane, workers []infrav1beta1.Metal3Machine
+	allMachines := &infrav1beta1.Metal3MachineList{}
 	Expect(c.List(ctx, allMachines, client.InNamespace(namespace))).To(Succeed())
 
 	for _, machine := range allMachines.Items {
@@ -565,7 +580,7 @@ func GetIPPools(ctx context.Context, c client.Client, _, namespace string) ([]ip
 // key and an IPAddress as a value.
 func GenerateIPPoolPreallocations(ctx context.Context, ippool ipamv1.IPPool, poolName string, c client.Client) (map[string]ipamv1.IPAddressStr, error) {
 	allocations := ippool.Status.Allocations
-	m3DataList, m3MachineList := infrav1.Metal3DataList{}, infrav1.Metal3MachineList{}
+	m3DataList, m3MachineList := infrav1beta1.Metal3DataList{}, infrav1beta1.Metal3MachineList{}
 	Expect(c.List(ctx, &m3DataList, &client.ListOptions{})).To(Succeed())
 	Expect(c.List(ctx, &m3MachineList, &client.ListOptions{})).To(Succeed())
 	newAllocations := make(map[string]ipamv1.IPAddressStr)
@@ -581,7 +596,7 @@ func GenerateIPPoolPreallocations(ctx context.Context, ippool ipamv1.IPPool, poo
 
 // Metal3DataToMachineName finds the relevant owner reference in Metal3Data
 // and returns the name of corresponding Metal3Machine.
-func Metal3DataToMachineName(m3data infrav1.Metal3Data) (string, error) {
+func Metal3DataToMachineName(m3data infrav1beta1.Metal3Data) (string, error) {
 	ownerReferences := m3data.GetOwnerReferences()
 	for _, reference := range ownerReferences {
 		if reference.Kind == "Metal3Machine" {
@@ -592,7 +607,7 @@ func Metal3DataToMachineName(m3data infrav1.Metal3Data) (string, error) {
 }
 
 // FilterMetal3DatasByName returns a filtered list of m3data objects with specific name.
-func FilterMetal3DatasByName(m3datas []infrav1.Metal3Data, name string) (result []infrav1.Metal3Data) {
+func FilterMetal3DatasByName(m3datas []infrav1beta1.Metal3Data, name string) (result []infrav1beta1.Metal3Data) {
 	Logf("m3datas: %v", m3datas)
 	Logf("looking for name: %s", name)
 	for _, m3data := range m3datas {
@@ -605,7 +620,7 @@ func FilterMetal3DatasByName(m3datas []infrav1.Metal3Data, name string) (result 
 }
 
 // FilterMetal3MachinesByName returns a filtered list of m3machine objects with specific name.
-func FilterMetal3MachinesByName(m3ms []infrav1.Metal3Machine, name string) (result []infrav1.Metal3Machine) {
+func FilterMetal3MachinesByName(m3ms []infrav1beta1.Metal3Machine, name string) (result []infrav1beta1.Metal3Machine) {
 	for _, m3m := range m3ms {
 		if m3m.ObjectMeta.Name == name {
 			result = append(result, m3m)
@@ -616,7 +631,7 @@ func FilterMetal3MachinesByName(m3ms []infrav1.Metal3Machine, name string) (resu
 
 // Metal3MachineToMachineName finds the relevant owner reference in Metal3Machine
 // and returns the name of corresponding Machine.
-func Metal3MachineToMachineName(m3machine infrav1.Metal3Machine) (string, error) {
+func Metal3MachineToMachineName(m3machine infrav1beta1.Metal3Machine) (string, error) {
 	ownerReferences := m3machine.GetOwnerReferences()
 	for _, reference := range ownerReferences {
 		if reference.Kind == "Machine" {
@@ -626,7 +641,7 @@ func Metal3MachineToMachineName(m3machine infrav1.Metal3Machine) (string, error)
 	return "", errors.New("metal3machine missing a \"Machine\" kind owner reference")
 }
 
-func Metal3MachineToBmhName(m3machine infrav1.Metal3Machine) string {
+func Metal3MachineToBmhName(m3machine infrav1beta1.Metal3Machine) string {
 	return strings.Replace(m3machine.GetAnnotations()["metal3.io/BareMetalHost"], "metal3/", "", 1)
 }
 
@@ -640,7 +655,7 @@ func BmhNameToVMName(hostname string) string {
 }
 
 func MachineToVMName(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
-	allMetal3Machines := &infrav1.Metal3MachineList{}
+	allMetal3Machines := &infrav1beta1.Metal3MachineList{}
 	Expect(cli.List(ctx, allMetal3Machines, client.InNamespace(m.Namespace))).To(Succeed())
 	for _, machine := range allMetal3Machines.Items {
 		name, err := Metal3MachineToMachineName(machine)
@@ -653,19 +668,83 @@ func MachineToVMName(ctx context.Context, cli client.Client, m *clusterv1.Machin
 	return "", errors.New("no matching Metal3Machine found for current Machine")
 }
 
-// MachineTiIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
+func MachineToVMNamev1beta1(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
+	allMetal3Machines := &infrav1beta1.Metal3MachineList{}
+	Expect(cli.List(ctx, allMetal3Machines, client.InNamespace(m.Namespace))).To(Succeed())
+	for _, machine := range allMetal3Machines.Items {
+		name, err := Metal3MachineToMachineName(machine)
+		if err != nil {
+			Logf("error getting Machine name from Metal3machine: %w", err)
+		} else if name == m.Name {
+			return BmhNameToVMName(Metal3MachineToBmhName(machine)), nil
+		}
+	}
+	return "", errors.New("no matching Metal3Machine found for current Machine")
+}
+
+// MachineToIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
 func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Machine, ippool ipamv1.IPPool) (string, error) {
-	m3Machine := &infrav1.Metal3Machine{}
+	m3Machine := &infrav1beta1.Metal3Machine{}
+	namespace := m.GetObjectMeta().GetNamespace()
 	err := cli.Get(ctx, types.NamespacedName{
-		Namespace: m.Spec.InfrastructureRef.Namespace,
+		Namespace: namespace,
 		Name:      m.Spec.InfrastructureRef.Name},
 		m3Machine)
 
 	if err != nil {
-		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", m.Spec.InfrastructureRef.Namespace, m.Spec.InfrastructureRef.Name, err)
+		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", namespace, m.Spec.InfrastructureRef.Name, err)
 	}
-	m3DataList := &infrav1.Metal3DataList{}
-	m3Data := &infrav1.Metal3Data{}
+	m3DataList := &infrav1beta1.Metal3DataList{}
+	m3Data := &infrav1beta1.Metal3Data{}
+	err = cli.List(ctx, m3DataList)
+	if err != nil {
+		return "", fmt.Errorf("coudln't list Metal3Data objects: %w", err)
+	}
+	for i, m3d := range m3DataList.Items {
+		for _, owner := range m3d.OwnerReferences {
+			if owner.Name == m3Machine.Name {
+				m3Data = &m3DataList.Items[i]
+			}
+		}
+	}
+	if m3Data.Name == "" {
+		return "", errors.New("couldn't find a matching Metal3Data object")
+	}
+
+	IPAddresses := &ipamv1.IPAddressList{}
+	IPAddress := &ipamv1.IPAddress{}
+	err = cli.List(ctx, IPAddresses)
+	if err != nil {
+		return "", fmt.Errorf("couldn't list IPAddress objects: %w", err)
+	}
+	for i, ip := range IPAddresses.Items {
+		for _, owner := range ip.OwnerReferences {
+			if owner.Name == m3Data.Name && ip.Spec.Pool.Name == ippool.Name {
+				IPAddress = &IPAddresses.Items[i]
+			}
+		}
+	}
+	if IPAddress.Name == "" {
+		return "", errors.New("couldn't find a matching IPAddress object")
+	}
+
+	return string(IPAddress.Spec.Address), nil
+}
+
+// MachineTiIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
+// This is a duplicate of MachineToIPAddress, but for v1beta1 API. Remove this function when we switch to CAPI v1beta2 API only.
+func MachineToIPAddress1beta1(ctx context.Context, cli client.Client, m *clusterv1.Machine, ippool ipamv1.IPPool) (string, error) {
+	m3Machine := &infrav1beta1.Metal3Machine{}
+	err := cli.Get(ctx, types.NamespacedName{
+		Namespace: m.Namespace,
+		Name:      m.Spec.InfrastructureRef.Name},
+		m3Machine)
+
+	if err != nil {
+		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", m.Namespace, m.Spec.InfrastructureRef.Name, err)
+	}
+	m3DataList := &infrav1beta1.Metal3DataList{}
+	m3Data := &infrav1beta1.Metal3Data{}
 	err = cli.List(ctx, m3DataList)
 	if err != nil {
 		return "", fmt.Errorf("coudln't list Metal3Data objects: %w", err)
@@ -762,9 +841,7 @@ func LabelCRD(ctx context.Context, c client.Client, crdName string, labels map[s
 	if crd.Labels == nil {
 		crd.Labels = make(map[string]string)
 	}
-	for key, value := range labels {
-		crd.Labels[key] = value
-	}
+	maps.Copy(crd.Labels, labels)
 	// Update the CRD
 	err = c.Update(ctx, crd)
 	if err != nil {
@@ -787,7 +864,7 @@ func GetLatestPatchRelease(goProxyPath string, minorReleaseVersion string) (stri
 	}
 	semVersion, err := semver.Parse(minorReleaseVersion)
 	if err != nil {
-		return "", errors.Wrapf(err, "parsing semver for %s", minorReleaseVersion)
+		return "", fmt.Errorf("parsing semver for %s: %w", minorReleaseVersion, err)
 	}
 	parsedTags, err := getVersions(goProxyPath)
 	if err != nil {
@@ -801,7 +878,7 @@ func GetLatestPatchRelease(goProxyPath string, minorReleaseVersion string) (stri
 		}
 	}
 	if picked.Major == 0 && picked.Minor == 0 && picked.Patch == 0 {
-		return "", errors.Errorf("no suitable release available for path %s and version %s", goProxyPath, minorReleaseVersion)
+		return "", fmt.Errorf("no suitable release available for path %s and version %s", goProxyPath, minorReleaseVersion)
 	}
 	return picked.String(), nil
 }
@@ -815,17 +892,17 @@ func getVersions(gomodulePath string) (semver.Versions, error) {
 		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("failed to get versions from url %s got %d %s", gomodulePath, resp.StatusCode, http.StatusText(resp.StatusCode))
+		return nil, fmt.Errorf("failed to get versions from url %s got %d %s", gomodulePath, resp.StatusCode, http.StatusText(resp.StatusCode))
 	}
 	defer resp.Body.Close()
 
 	rawResponse, err := io.ReadAll(resp.Body)
 	if err != nil {
-		retryError := errors.Wrap(err, "failed to get versions: error reading goproxy response body")
+		retryError := fmt.Errorf("failed to get versions: error reading goproxy response body: %w", err)
 		return nil, retryError
 	}
 	parsedVersions := semver.Versions{}
-	for _, s := range strings.Split(string(rawResponse), "\n") {
+	for s := range strings.SplitSeq(string(rawResponse), "\n") {
 		if s == "" {
 			continue
 		}
@@ -870,7 +947,7 @@ type BuildAndApplyKustomizationInput struct {
 	LogPath string
 
 	// Intervals to use in checking and waiting for the deployment
-	WaitIntervals []interface{}
+	WaitIntervals []any
 }
 
 func (input *BuildAndApplyKustomizationInput) validate() error {
@@ -879,13 +956,13 @@ func (input *BuildAndApplyKustomizationInput) validate() error {
 		return nil
 	}
 	if input.WaitForDeployment && input.WaitIntervals == nil {
-		return errors.Errorf("WaitIntervals is expected if WaitForDeployment is set to true")
+		return errors.New("waitIntervals is expected if WaitForDeployment is set to true")
 	}
 	if input.WatchDeploymentLogs && input.LogPath == "" {
-		return errors.Errorf("LogPath is expected if WatchDeploymentLogs is set to true")
+		return errors.New("logPath is expected if WatchDeploymentLogs is set to true")
 	}
 	if input.DeploymentName == "" || input.DeploymentNamespace == "" {
-		return errors.Errorf("DeploymentName and DeploymentNamespace are expected if WaitForDeployment or WatchDeploymentLogs is true")
+		return errors.New("deploymentName and DeploymentNamespace are expected if WaitForDeployment or WatchDeploymentLogs is true")
 	}
 	return nil
 }
@@ -911,7 +988,7 @@ func BuildAndApplyKustomization(ctx context.Context, input *BuildAndApplyKustomi
 		return nil
 	}
 
-	deployment := &v1.Deployment{
+	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      input.DeploymentName,
 			Namespace: input.DeploymentNamespace,
@@ -997,7 +1074,7 @@ func CreateOrUpdateWithNamespace(ctx context.Context, p framework.ClusterProxy, 
 		if err := p.GetClient().Get(ctx, objectKey, existingObject); err != nil {
 			// Expected error -- if the object does not exist, create it
 			if apierrors.IsNotFound(err) {
-				if err := p.GetClient().Create(ctx, &o); err != nil {
+				if err = p.GetClient().Create(ctx, &o); err != nil {
 					retErrs = append(retErrs, err)
 				}
 			} else {
@@ -1081,4 +1158,547 @@ func ApplyBmh(ctx context.Context, e2eConfig *clusterctl.E2EConfig, clusterProxy
 		Intervals: e2eConfig.GetIntervals(specName, "wait-bmh-available"),
 	})
 	ListBareMetalHosts(ctx, clusterClient, client.InNamespace(clusterNamespace))
+}
+
+// WaitForResourceVersionsToStabilize waits for the resource versions of the specified GVKs in the given namespace to stabilize.
+func WaitForResourceVersionsToStabilize(ctx context.Context, clusterProxy framework.ClusterProxy, namespace string, gvkList []schema.GroupVersionKind, intervals []any) {
+	for _, gvk := range gvkList {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(gvk)
+		Expect(clusterProxy.GetClient().List(ctx, list, client.InNamespace(namespace))).To(Succeed())
+		Logf("Found %d resources of kind %s \n", len(list.Items), gvk.Kind)
+
+		for _, obj := range list.Items {
+			Logf("Found res %s  of kind %s \n", obj.GetName(), obj.GetKind())
+			if obj.GetDeletionTimestamp() != nil {
+				Logf("Res %s  of kind %s has deletionTimeStamp \n", obj.GetName(), obj.GetKind())
+				key := client.ObjectKey{Namespace: namespace, Name: obj.GetName()}
+				Eventually(func() error {
+					err := clusterProxy.GetClient().Get(ctx, key, &obj)
+					if apierrors.IsNotFound(err) {
+						Logf("Res %s  of kind %s has deleted \n", obj.GetName(), obj.GetKind())
+						return nil // Deleted
+					}
+					Logf("Res %s  of kind %s still exists \n", obj.GetName(), obj.GetKind())
+					return err // Still exists
+				}, intervals...).Should(Succeed(), "Resource %s/%s of kind %s not deleted", namespace, obj.GetName(), gvk.Kind)
+			}
+		}
+	}
+
+	// Check if the number of Metal3Data and Machine resources are equal
+	Logf("Checking if the number of Metal3Data and Machine resources are equal in namespace %s", namespace)
+	Eventually(func() bool {
+		return IsMetal3DataCountEqualToMachineCount(ctx, clusterProxy.GetClient(), namespace)
+	}, intervals...).Should(BeTrue(), "Metal3Data and Machine counts are not equal")
+
+	// Check resource versions of the specified GVKs in the given namespace are stabilized
+	var prevResourceVersions map[string]string
+	Eventually(func(g Gomega) {
+		currResourceVersions := getResourceVersions(ctx, clusterProxy.GetClient(), namespace, gvkList)
+		if prevResourceVersions != nil {
+			g.Expect(currResourceVersions).To(BeComparableTo(prevResourceVersions))
+		}
+		prevResourceVersions = currResourceVersions
+	}, intervals...).Should(Succeed(), "resourceVersions never became stable")
+}
+
+func getResourceVersions(ctx context.Context, c client.Client, namespace string, gvkList []schema.GroupVersionKind) map[string]string {
+	resourceVersions := make(map[string]string)
+	for _, gvk := range gvkList {
+		list := &unstructured.UnstructuredList{}
+		list.SetGroupVersionKind(gvk)
+		err := c.List(ctx, list, client.InNamespace(namespace))
+		Expect(err).To(Succeed(), "Failed to list resources for kind %s", gvk.Kind)
+		Logf("Found %d resources of kind %s checking resourceVersions stability \n", len(list.Items), gvk.Kind)
+		for _, obj := range list.Items {
+			key := fmt.Sprintf("%s/%s/%s", obj.GetKind(), obj.GetNamespace(), obj.GetName())
+			resourceVersions[key] = obj.GetResourceVersion()
+		}
+	}
+	return resourceVersions
+}
+
+func IsMetal3DataCountEqualToMachineCount(ctx context.Context, c client.Client, namespace string) bool {
+	m3DataList := &infrav1beta1.Metal3DataList{}
+	machineList := &clusterv1.MachineList{}
+
+	err1 := c.List(ctx, m3DataList, client.InNamespace(namespace))
+	err2 := c.List(ctx, machineList, client.InNamespace(namespace))
+
+	if err1 != nil || err2 != nil {
+		Logf("Error listing Metal3Data or Machine resources: %v %v", err1, err2)
+		return false
+	}
+
+	return len(m3DataList.Items) == len(machineList.Items)
+}
+
+// getControlplaneNodes returns a list of control plane nodes in the cluster.
+func getControlplaneNodes(ctx context.Context, clientSet *kubernetes.Clientset) *corev1.NodeList {
+	controlplaneNodesRequirement, err := labels.NewRequirement("node-role.kubernetes.io/control-plane", selection.Exists, []string{})
+	Expect(err).ToNot(HaveOccurred(), "Failed to set up worker Node requirements")
+	controlplaneNodesSelector := labels.NewSelector().Add(*controlplaneNodesRequirement)
+	controlplaneListOptions := metav1.ListOptions{LabelSelector: controlplaneNodesSelector.String()}
+	controlplaneNodes, err := clientSet.CoreV1().Nodes().List(ctx, controlplaneListOptions)
+	Expect(err).ToNot(HaveOccurred(), "Failed to get controlplane nodes")
+	Logf("controlplaneNodes found %v", len(controlplaneNodes.Items))
+	return controlplaneNodes
+}
+
+// untaintNodes removes the specified taints from the given nodes.
+// Returns the count of nodes that were successfully untainted.
+func untaintNodes(ctx context.Context, targetClusterClient client.Client, nodes *corev1.NodeList, taints []corev1.Taint) (count int) {
+	count = 0
+	for i := range nodes.Items {
+		Logf("Untainting node %v ...", nodes.Items[i].Name)
+		newNode, changed := removeTaint(&nodes.Items[i], taints)
+		if changed {
+			patchHelper, err := patch.NewHelper(&nodes.Items[i], targetClusterClient)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(patchHelper.Patch(ctx, newNode)).To(Succeed(), "Failed to patch node")
+			count++
+		}
+	}
+	return
+}
+
+// removeTaint removes the specified taints from a node and returns the modified node.
+// Returns true if any taint was removed.
+func removeTaint(node *corev1.Node, taints []corev1.Taint) (*corev1.Node, bool) {
+	newNode := node.DeepCopy()
+	nodeTaints := newNode.Spec.Taints
+	if len(nodeTaints) == 0 {
+		return newNode, false
+	}
+
+	if !taintExists(nodeTaints, taints) {
+		return newNode, false
+	}
+
+	newTaints, _ := deleteTaint(nodeTaints, taints)
+	newNode.Spec.Taints = newTaints
+	return newNode, true
+}
+
+// taintExists checks if any of the specified taints exist in the node's taints.
+func taintExists(taints []corev1.Taint, taintsToFind []corev1.Taint) bool {
+	for _, taint := range taints {
+		for i := range taintsToFind {
+			if taint.MatchTaint(&taintsToFind[i]) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// deleteTaint removes the specified taints from the node's taints and returns the result.
+// Returns true if any taint was deleted.
+func deleteTaint(taints []corev1.Taint, taintsToDelete []corev1.Taint) ([]corev1.Taint, bool) {
+	newTaints := []corev1.Taint{}
+	deleted := false
+	for i := range taints {
+		currentTaintDeleted := false
+		for _, taintToDelete := range taintsToDelete {
+			if taintToDelete.MatchTaint(&taints[i]) {
+				deleted = true
+				currentTaintDeleted = true
+			}
+		}
+		if !currentTaintDeleted {
+			newTaints = append(newTaints, taints[i])
+		}
+	}
+	return newTaints, deleted
+}
+
+type UpgradeControlPlaneInput struct {
+	E2EConfig             *clusterctl.E2EConfig
+	BootstrapClusterProxy framework.ClusterProxy
+	TargetCluster         framework.ClusterProxy
+	SpecName              string
+	ClusterName           string
+	Namespace             string
+	K8sToVersion          string
+	K8sFromVersion        string
+}
+
+func UpgradeControlPlane(ctx context.Context, inputGetter func() UpgradeControlPlaneInput) {
+	input := inputGetter()
+	e2eConfig := input.E2EConfig
+	clusterClient := input.BootstrapClusterProxy.GetClient()
+	targetClusterClient := input.TargetCluster.GetClient()
+	clientSet := input.TargetCluster.GetClientSet()
+	k8sToVersion := input.K8sToVersion
+	k8sFromVersion := input.K8sFromVersion
+	specName := input.SpecName
+	namespace := input.Namespace
+	clusterName := input.ClusterName
+	numberOfControlplane := int(*e2eConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
+	var (
+		controlplaneTaints = []corev1.Taint{{Key: "node-role.kubernetes.io/control-plane", Effect: corev1.TaintEffectNoSchedule},
+			{Key: "node-role.kubernetes.io/master", Effect: corev1.TaintEffectNoSchedule}}
+	)
+	// Upgrade process starts here
+	// Download node image
+	By("Download image")
+	imageURL, imageChecksum := EnsureImage(k8sToVersion)
+
+	By("Create new KCP Metal3MachineTemplate with upgraded image to boot")
+	m3MachineTemplateName := clusterName + "-controlplane"
+	newM3MachineTemplateName := clusterName + k8sToVersion + "-new-controlplane"
+	CreateNewM3MachineTemplate(ctx, namespace, newM3MachineTemplateName, m3MachineTemplateName, clusterClient, imageURL, imageChecksum)
+
+	Byf("Update KCP to upgrade k8s version and binaries from %s to %s", k8sFromVersion, k8sToVersion)
+	kcpObj := framework.GetKubeadmControlPlaneByCluster(ctx, framework.GetKubeadmControlPlaneByClusterInput{
+		Lister:      clusterClient,
+		ClusterName: clusterName,
+		Namespace:   namespace,
+	})
+	helper, err := patch.NewHelper(kcpObj, clusterClient)
+	Expect(err).NotTo(HaveOccurred())
+	kcpObj.Spec.MachineTemplate.Spec.InfrastructureRef.Name = newM3MachineTemplateName
+	kcpObj.Spec.Version = k8sToVersion
+	kcpObj.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntVal = 0
+	Expect(helper.Patch(ctx, kcpObj)).To(Succeed())
+
+	Byf("Wait until %d BMH(s) are in deprovisioning state", 1)
+	WaitForNumBmhInState(ctx, bmov1alpha1.StateDeprovisioning, WaitForNumInput{
+		Client:    clusterClient,
+		Options:   []client.ListOption{client.InNamespace(namespace)},
+		Replicas:  1,
+		Intervals: e2eConfig.GetIntervals(specName, "wait-bmh-deprovisioning"),
+	})
+
+	Byf("Wait until %d Control Plane machine(s) become running and updated with the new %s k8s version", numberOfControlplane, k8sToVersion)
+	runningAndUpgradedKCPMachines := func(machine clusterv1.Machine) bool {
+		running := machine.Status.GetTypedPhase() == clusterv1.MachinePhaseRunning
+		upgraded := machine.Spec.Version == k8sToVersion
+		_, isControlPlane := machine.GetLabels()[clusterv1.MachineControlPlaneLabel]
+		return running && upgraded && isControlPlane
+	}
+	WaitForNumMachines(ctx, runningAndUpgradedKCPMachines, WaitForNumInput{
+		Client:    clusterClient,
+		Options:   []client.ListOption{client.InNamespace(namespace)},
+		Replicas:  numberOfControlplane,
+		Intervals: e2eConfig.GetIntervals(specName, "wait-machine-running"),
+	})
+
+	By("Untaint Control Plane nodes")
+	controlplaneNodes := getControlplaneNodes(ctx, clientSet)
+	untaintNodes(ctx, targetClusterClient, controlplaneNodes, controlplaneTaints)
+
+	By("Update maxSurge field in KubeadmControlPlane back to default value(1)")
+	kcpObj = framework.GetKubeadmControlPlaneByCluster(ctx, framework.GetKubeadmControlPlaneByClusterInput{
+		Lister:      clusterClient,
+		ClusterName: clusterName,
+		Namespace:   namespace,
+	})
+	helper, err = patch.NewHelper(kcpObj, clusterClient)
+	Expect(err).NotTo(HaveOccurred())
+	kcpObj.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntVal = 1
+	for range 3 {
+		err = helper.Patch(ctx, kcpObj)
+		if err == nil {
+			break
+		}
+		Logf("Failed to patch KCP maxSurge, retrying: %v", err)
+		time.Sleep(30 * time.Second)
+	}
+
+	// Verify that all control plane nodes are using the k8s version
+	Byf("Verify all %d control plane machines become running and updated with new %s k8s version", numberOfControlplane, k8sToVersion)
+	WaitForNumMachines(ctx, runningAndUpgradedKCPMachines, WaitForNumInput{
+		Client:    clusterClient,
+		Options:   []client.ListOption{client.InNamespace(namespace)},
+		Replicas:  numberOfControlplane,
+		Intervals: e2eConfig.GetIntervals(specName, "wait-machine-running"),
+	})
+}
+
+type InstallIRSOInput struct {
+	E2EConfig             *clusterctl.E2EConfig
+	ClusterProxy          framework.ClusterProxy
+	IronicNamespace       string
+	ClusterName           string
+	IrsoOperatorKustomize string
+	IronicKustomize       string
+	LogPath               string
+}
+
+func InstallIRSO(ctx context.Context, input InstallIRSOInput) error {
+	By("Create Ironic namespace")
+	clusterClientSet := input.ClusterProxy.GetClientSet()
+	ironicNamespaceObj := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: input.IronicNamespace,
+		},
+	}
+	_, err := clusterClientSet.CoreV1().Namespaces().Create(ctx, ironicNamespaceObj, metav1.CreateOptions{})
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			Logf("Ironic namespace %q already exists, continuing", input.IronicNamespace)
+		} else {
+			Expect(err).ToNot(HaveOccurred(), "Unable to create the Ironic namespace")
+		}
+	}
+
+	By(fmt.Sprintf("Installing IRSO from kustomization %s on the target cluster", input.IrsoOperatorKustomize))
+	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
+		Kustomization:       input.IrsoOperatorKustomize,
+		ClusterProxy:        input.ClusterProxy,
+		WaitForDeployment:   true,
+		WatchDeploymentLogs: true,
+		LogPath:             input.LogPath,
+		DeploymentName:      IRSOControllerManagerName,
+		DeploymentNamespace: IRSOControllerNameSpace,
+		WaitIntervals:       input.E2EConfig.GetIntervals("default", "wait-deployment"),
+	})
+	Expect(err).NotTo(HaveOccurred())
+
+	By("Waiting for Ironic CRD to be available")
+	Eventually(func(g Gomega) {
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		err = input.ClusterProxy.GetClient().Get(ctx, client.ObjectKey{
+			Name: "ironics.ironic.metal3.io",
+		}, crd)
+		g.Expect(err).ToNot(HaveOccurred(), "Ironic CRD not found")
+		// Check if CRD is established
+		established := false
+		for _, cond := range crd.Status.Conditions {
+			if cond.Type == apiextensionsv1.Established && cond.Status == apiextensionsv1.ConditionTrue {
+				established = true
+				break
+			}
+		}
+		g.Expect(established).To(BeTrue(), "Ironic CRD is not established yet")
+	}, input.E2EConfig.GetIntervals("default", "wait-deployment")...).Should(Succeed())
+	Logf("Ironic CRD is available and established")
+
+	// Retry applying Ironic CR until it's successfully created
+	Eventually(func(g Gomega) {
+		err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
+			Kustomization:       input.IronicKustomize,
+			ClusterProxy:        input.ClusterProxy,
+			WaitForDeployment:   false,
+			WatchDeploymentLogs: false,
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to apply Ironic CR")
+		// Verify Ironic CR was actually created
+		ironic := &irsov1alpha1.Ironic{}
+		err = input.ClusterProxy.GetClient().Get(ctx, client.ObjectKey{
+			Name:      "ironic",
+			Namespace: input.IronicNamespace,
+		}, ironic)
+		g.Expect(err).NotTo(HaveOccurred(), "Ironic CR was not created")
+		Logf("Ironic CR successfully created")
+	}, input.E2EConfig.GetIntervals("default", "wait-deployment")...).Should(Succeed())
+
+	return nil
+}
+
+// WaitForIronicReady waits until the given Ironic resource has Ready condition = True.
+func WaitForIronicReady(ctx context.Context, input WaitForIronicInput) {
+	Logf("Waiting for Ironic %q to be Ready", input.Name)
+
+	Eventually(func(g Gomega) {
+		ironic := &irsov1alpha1.Ironic{}
+		err := input.Client.Get(ctx, client.ObjectKey{
+			Namespace: input.Namespace,
+			Name:      input.Name,
+		}, ironic)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		ready := false
+		for _, cond := range ironic.Status.Conditions {
+			if cond.Type == string(irsov1alpha1.IronicStatusReady) && cond.Status == metav1.ConditionTrue && ironic.Status.InstalledVersion != "" {
+				ready = true
+				break
+			}
+		}
+		g.Expect(ready).To(BeTrue(), "Ironic %q is not Ready yet", input.Name)
+	}, input.Intervals...).Should(Succeed())
+
+	Logf("Ironic %q is Ready", input.Name)
+}
+
+// WaitForIronicInput bundles the parameters for WaitForIronicReady.
+type WaitForIronicInput struct {
+	Client    client.Client
+	Name      string
+	Namespace string
+	Intervals []interface{} // e.g. []interface{}{time.Minute * 15, time.Second * 5}
+}
+
+// InstallBMOInput bundles parameters for InstallBMO.
+type InstallBMOInput struct {
+	E2EConfig        *clusterctl.E2EConfig
+	ClusterProxy     framework.ClusterProxy
+	Namespace        string // Namespace where BMO will run (shared with Ironic)
+	BmoKustomization string // Kustomization path or URL for BMO manifests
+	LogFolder        string // Optional explicit log folder; if empty a default is derived
+	WaitIntervals    []any  // Optional override; if nil uses default e2e config intervals
+	WatchLogs        bool   // Whether to watch deployment logs
+}
+
+// InstallBMO installs the Baremetal Operator (BMO) in the target cluster similar to InstallIRSO.
+func InstallBMO(ctx context.Context, input InstallBMOInput) error {
+	By("Ensure BMO namespace exists")
+	clientset := input.ClusterProxy.GetClientSet()
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: input.Namespace}}
+	_, err := clientset.CoreV1().Namespaces().Create(ctx, ns, metav1.CreateOptions{})
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			Logf("Namespace %q already exists, continuing", input.Namespace)
+		} else {
+			return fmt.Errorf("failed creating namespace %q: %w", input.Namespace, err)
+		}
+	}
+
+	// Determine log folder
+	logFolder := input.LogFolder
+	if logFolder == "" {
+		logFolder = filepath.Join(os.TempDir(), "target_cluster_logs", "bmo-deploy-logs", input.ClusterProxy.GetName())
+	}
+	intervals := input.WaitIntervals
+	if intervals == nil {
+		intervals = input.E2EConfig.GetIntervals("default", "wait-deployment")
+	}
+
+	By(fmt.Sprintf("Installing BMO from kustomization %s on the target cluster", input.BmoKustomization))
+	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
+		Kustomization:       input.BmoKustomization,
+		ClusterProxy:        input.ClusterProxy,
+		WaitForDeployment:   true,
+		WatchDeploymentLogs: input.WatchLogs,
+		LogPath:             logFolder,
+		DeploymentName:      "baremetal-operator-controller-manager",
+		DeploymentNamespace: input.Namespace,
+		WaitIntervals:       intervals,
+	})
+	if err != nil {
+		return fmt.Errorf("failed installing BMO: %w", err)
+	}
+
+	By("BMO deployment applied and available")
+	return nil
+}
+
+type UninstallIRSOAndIronicResourcesInput struct {
+	E2EConfig             *clusterctl.E2EConfig
+	ClusterProxy          framework.ClusterProxy
+	IronicNamespace       string
+	IrsoOperatorKustomize string
+	IronicKustomization   string
+	IsDevEnvUninstall     bool
+}
+
+// UninstallIRSOAndIronicResources removes the IRSO deployment, Ironic CR, IronicDatabase CR (if present), and related secrets.
+func UninstallIRSOAndIronicResources(ctx context.Context, input UninstallIRSOAndIronicResourcesInput) error {
+	if input.IsDevEnvUninstall {
+		ironicObj := &irsov1alpha1.Ironic{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "ironic",
+				Namespace: input.IronicNamespace,
+			},
+		}
+		err := input.ClusterProxy.GetClient().Delete(ctx, ironicObj)
+		Expect(err).ToNot(HaveOccurred(), "Failed to delete Ironic")
+	} else {
+		By("Remove Ironic CR in the cluster " + input.ClusterProxy.GetName())
+		err := BuildAndRemoveKustomization(ctx, input.IronicKustomization, input.ClusterProxy)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	By("Remove Ironic Service Deployment in the cluster " + input.ClusterProxy.GetName())
+	RemoveDeployment(ctx, func() RemoveDeploymentInput {
+		return RemoveDeploymentInput{
+			ClusterProxy: input.ClusterProxy,
+			Namespace:    input.IronicNamespace,
+			Name:         "ironic-service",
+		}
+	})
+
+	if input.IsDevEnvUninstall {
+		By("Remove Ironic Standalone Operator Deployment in the cluster " + input.ClusterProxy.GetName())
+		RemoveDeployment(ctx, func() RemoveDeploymentInput {
+			return RemoveDeploymentInput{
+				ClusterProxy: input.ClusterProxy,
+				Namespace:    IRSOControllerNameSpace,
+				Name:         IRSOControllerManagerName,
+			}
+		})
+	} else {
+		By("Uninstalling IRSO operator via kustomize")
+		err := BuildAndRemoveKustomization(ctx, input.IrsoOperatorKustomize, input.ClusterProxy)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	clusterClient := input.ClusterProxy.GetClient()
+
+	// Delete secrets
+	secretNames := []string{"ironic-auth", "ironic-cert", "ironic-cacert"}
+	for _, s := range secretNames {
+		Byf("Deleting secret %s", s)
+		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: s, Namespace: input.IronicNamespace}}
+		err := clusterClient.Delete(ctx, secret)
+		if err != nil {
+			Logf("Failed to delete secret %s: %v", s, err)
+		}
+	}
+
+	// Wait for secrets to be deleted
+	By("Waiting for Ironic secrets to be deleted")
+	Eventually(func() bool {
+		for _, s := range secretNames {
+			errS := clusterClient.Get(ctx, client.ObjectKey{Name: s, Namespace: input.IronicNamespace}, &corev1.Secret{})
+			if errS == nil || !apierrors.IsNotFound(errS) {
+				return false
+			}
+		}
+		return true
+	}, input.E2EConfig.GetIntervals("default", "wait-delete-ironic")...).Should(BeTrue(), "IRSO/Ironic resources not fully deleted")
+
+	By("IRSO and Ironic resources uninstalled")
+	return nil
+}
+
+// GetDeploymentTLSSecretVersion returns the tls-secret-version from the Deployment's pod template annotations
+// or, if not present there, from the Deployment's own annotations.
+func GetDeploymentTLSSecretVersion(ctx context.Context, deployKey *appsv1.Deployment, clusterProxy framework.ClusterProxy) (string, error) {
+	deployment := &appsv1.Deployment{}
+	key := client.ObjectKeyFromObject(deployKey)
+	Eventually(func() error {
+		return clusterProxy.GetClient().Get(ctx, key, deployment)
+	}, retryableOperationTimeout, retryableOperationInterval).Should(Succeed(), "Failed to get deployment %s", klog.KObj(deployKey))
+
+	if deployment.Spec.Template.Annotations != nil {
+		if v, ok := deployment.Spec.Template.Annotations["ironic.metal3.io/tls-secret-version"]; ok {
+			return v, nil
+		}
+	}
+
+	return "", nil
+}
+
+// GetDeploymentRevision returns the highest ReplicaSet revision for a Deployment.
+// This reflects rollout progression (deployment.kubernetes.io/revision).
+func GetDeploymentRevision(ctx context.Context, deployKey *appsv1.Deployment, clusterProxy framework.ClusterProxy) (int, error) {
+	deployment := &appsv1.Deployment{}
+	key := client.ObjectKeyFromObject(deployKey)
+	Eventually(func() error {
+		return clusterProxy.GetClient().Get(ctx, key, deployment)
+	}, retryableOperationTimeout, retryableOperationInterval).Should(Succeed(), "Failed to get deployment %s", klog.KObj(deployKey))
+
+	if deployment.Annotations != nil {
+		if v, ok := deployment.Annotations["deployment.kubernetes.io/revision"]; ok {
+			n, err := strconv.Atoi(v)
+			if err != nil {
+				return 0, fmt.Errorf("invalid deployment.kubernetes.io/revision value %q: %w", v, err)
+			}
+			return n, nil
+		}
+	}
+	return 0, fmt.Errorf("deployment.kubernetes.io/revision annotation not found on deployment %s/%s", deployment.Namespace, deployment.Name)
 }

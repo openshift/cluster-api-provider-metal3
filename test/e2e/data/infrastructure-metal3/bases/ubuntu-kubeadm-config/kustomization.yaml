@@ -1,5 +1,0 @@
-
-resources:
-- ../cluster
-patches:
-- path: ubuntu-kubeadm-config.yaml

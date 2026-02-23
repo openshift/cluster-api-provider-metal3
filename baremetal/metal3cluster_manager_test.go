@@ -20,13 +20,13 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	_ "k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -147,10 +147,12 @@ var _ = Describe("Metal3Cluster manager", func() {
 			clusterMgr := newBMClusterSetup(tc)
 			clusterMgr.setError("abc", capierrors.InvalidConfigurationClusterError)
 
-			Expect(*tc.BMCluster.Status.FailureReason).To(Equal(
+			Expect(tc.BMCluster.Status.Deprecated).ToNot(BeNil())
+			Expect(tc.BMCluster.Status.Deprecated.V1Beta1).ToNot(BeNil())
+			Expect(*tc.BMCluster.Status.Deprecated.V1Beta1.FailureReason).To(Equal(
 				capierrors.InvalidConfigurationClusterError,
 			))
-			Expect(*tc.BMCluster.Status.FailureMessage).To(Equal("abc"))
+			Expect(*tc.BMCluster.Status.Deprecated.V1Beta1.FailureMessage).To(Equal("abc"))
 		},
 		Entry("No pre-existing errors", testCaseBMClusterManager{
 			Cluster: newCluster(clusterName),
@@ -162,7 +164,11 @@ var _ = Describe("Metal3Cluster manager", func() {
 			Cluster: newCluster(clusterName),
 			BMCluster: newMetal3Cluster(metal3ClusterName,
 				bmcOwnerRef, nil, &infrav1.Metal3ClusterStatus{
-					FailureMessage: ptr.To("cba"),
+					Deprecated: &infrav1.Metal3ClusterDeprecatedStatus{
+						V1Beta1: &infrav1.Metal3ClusterV1Beta1DeprecatedStatus{
+							FailureMessage: ptr.To("cba"),
+						},
+					},
 				},
 			),
 		}),
@@ -389,10 +395,8 @@ func descendantsSetup(tc descendantsTestCase) *ClusterManager {
 	bmCluster := newMetal3Cluster(metal3ClusterName, tc.OwnerRef,
 		nil, nil,
 	)
-	objects := []client.Object{
-		cluster,
-		bmCluster,
-	}
+	objects := make([]client.Object, 0, 2+len(tc.Machines))
+	objects = append(objects, cluster, bmCluster)
 	for _, machine := range tc.Machines {
 		objects = append(objects, machine)
 	}

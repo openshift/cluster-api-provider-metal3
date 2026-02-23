@@ -5,14 +5,14 @@ import (
 	"time"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"golang.org/x/mod/semver"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,7 +20,7 @@ import (
 
 const minK8sVersionOutOfServiceTaint = "1.28"
 
-type NodeRemediation struct {
+type NodeRemediationInput struct {
 	E2EConfig             *clusterctl.E2EConfig
 	BootstrapClusterProxy framework.ClusterProxy
 	TargetCluster         framework.ClusterProxy
@@ -63,7 +63,7 @@ type NodeRemediation struct {
  * resiliency of the cluster by allowing workloads to be seamlessly migrated from unhealthy nodes to healthy node
  */
 
-func nodeRemediation(ctx context.Context, inputGetter func() NodeRemediation) {
+func NodeRemediation(ctx context.Context, inputGetter func() NodeRemediationInput) {
 	Logf("Starting node remediation tests")
 	input := inputGetter()
 	bootstrapClient := input.BootstrapClusterProxy.GetClient()
@@ -72,7 +72,7 @@ func nodeRemediation(ctx context.Context, inputGetter func() NodeRemediation) {
 	_, workerM3Machines := GetMetal3Machines(ctx, bootstrapClient, input.ClusterName, input.Namespace)
 	Expect(workerM3Machines).ToNot(BeEmpty())
 
-	getBmhFromM3Machine := func(m3Machine infrav1.Metal3Machine) (result bmov1alpha1.BareMetalHost) {
+	getBmhFromM3Machine := func(m3Machine infrav1beta1.Metal3Machine) (result bmov1alpha1.BareMetalHost) {
 		Expect(bootstrapClient.Get(ctx, client.ObjectKey{Namespace: input.Namespace, Name: Metal3MachineToBmhName(m3Machine)}, &result)).To(Succeed())
 		return result
 	}
@@ -88,7 +88,7 @@ func nodeRemediation(ctx context.Context, inputGetter func() NodeRemediation) {
 
 	By("Creating a Metal3Remediation resource")
 	timeout := metav1.Duration{Duration: 30 * time.Minute}
-	m3Remediation := &infrav1.Metal3Remediation{
+	m3Remediation := &infrav1beta1.Metal3Remediation{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      workerNodeName,
 			Namespace: input.Namespace,
@@ -103,14 +103,14 @@ func nodeRemediation(ctx context.Context, inputGetter func() NodeRemediation) {
 				},
 			},
 		},
-		Spec: infrav1.Metal3RemediationSpec{
-			Strategy: &infrav1.RemediationStrategy{
+		Spec: infrav1beta1.Metal3RemediationSpec{
+			Strategy: &infrav1beta1.RemediationStrategy{
 				Type:       "Reboot",
 				RetryLimit: 1,
 				Timeout:    &timeout,
 			},
 		},
-		Status: infrav1.Metal3RemediationStatus{},
+		Status: infrav1beta1.Metal3RemediationStatus{},
 	}
 	Expect(bootstrapClient.Create(ctx, m3Remediation)).To(Succeed(), "should create Metal3Remediation CR")
 
@@ -148,7 +148,7 @@ func nodeRemediation(ctx context.Context, inputGetter func() NodeRemediation) {
 	By("NODE REMEDIATION TESTS PASSED!")
 }
 
-func waitForNodeDeletion(ctx context.Context, cl client.Client, name string, intervals ...interface{}) {
+func waitForNodeDeletion(ctx context.Context, cl client.Client, name string, intervals ...any) {
 	Byf("Waiting for Node '%s' to be removed", name)
 	Eventually(
 		func() bool {
@@ -158,7 +158,7 @@ func waitForNodeDeletion(ctx context.Context, cl client.Client, name string, int
 		}, intervals...).Should(BeTrue())
 }
 
-func waitForOutOfServiceTaint(ctx context.Context, cl client.Client, name, action string, intervals ...interface{}) {
+func waitForOutOfServiceTaint(ctx context.Context, cl client.Client, name, action string, intervals ...any) {
 	Byf("Waiting for Out of service taint to Node '%s' to be %s", name, action)
 	var oostExpectedToExist bool
 	if action == oostAdded {

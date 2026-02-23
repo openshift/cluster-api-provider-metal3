@@ -16,13 +16,13 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	capi_e2e "sigs.k8s.io/cluster-api/test/e2e"
 	framework "sigs.k8s.io/cluster-api/test/framework"
-	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
 	workDir                  = "/opt/metal3-dev-env/"
-	contract                 = "v1beta1"
+	capiContract             = "v1beta2"
+	capm3Contract            = "v1beta1"
 	releaseMarkerPrefixCAPM3 = "go://github.com/metal3-io/cluster-api-provider-metal3@v%s"
 	releaseMarkerPrefixIPAM  = "go://github.com/metal3-io/ip-address-manager@v%s"
 )
@@ -35,12 +35,14 @@ var (
 	ironicGoproxy         = "https://proxy.golang.org/github.com/metal3-io/ironic-image/@v/list"
 	bmoGoproxy            = "https://proxy.golang.org/github.com/metal3-io/baremetal-operator/@v/list"
 
-	k8sVersion string
+	k8sVersion                 string
+	managementClusterNamespace string
 )
 
-var _ = Describe("When testing cluster upgrade from releases (v1.10=>current) [clusterctl-upgrade]", func() {
+// Ironic 33.0 -> latest image tag.
+var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", Label("clusterctl-upgrade"), func() {
 	BeforeEach(func() {
-		k8sVersion = "v1.33.0"
+		k8sVersion = "v1.35.0"
 		validateGlobals(specName)
 		imageURL, imageChecksum := EnsureImage(k8sVersion)
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
@@ -48,11 +50,11 @@ var _ = Describe("When testing cluster upgrade from releases (v1.10=>current) [c
 		clusterctlLogFolder = filepath.Join(artifactFolder, bootstrapClusterProxy.GetName())
 	})
 
-	minorVersion := "1.10"
-	bmoFromRelease := "0.10"
-	ironicFromRelease := "29.0"
-	bmoToRelease := "latest"
-	ironicToRelease := "latest"
+	minorVersion := "1.12"
+	bmoFromRelease := "0.12"
+	ironicFromRelease := "33.0"
+	bmoToRelease := "main"
+	ironicToRelease := "main"
 	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
 	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
 	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
@@ -78,8 +80,8 @@ var _ = Describe("When testing cluster upgrade from releases (v1.10=>current) [c
 			PreInit: func(clusterProxy framework.ClusterProxy) {
 				preInitFunc(clusterProxy, bmoFromRelease, ironicFromRelease)
 				// Override capi/capm3 versions exported in preInit
-				os.Setenv("CAPI_VERSION", contract)
-				os.Setenv("CAPM3_VERSION", contract)
+				os.Setenv("CAPI_VERSION", capiContract)
+				os.Setenv("CAPM3_VERSION", capm3Contract)
 				os.Setenv("KUBECONFIG_BOOTSTRAP", bootstrapClusterProxy.GetKubeconfigPath())
 			},
 			PostNamespaceCreated: postClusterctlUpgradeNamespaceCreated,
@@ -95,9 +97,10 @@ var _ = Describe("When testing cluster upgrade from releases (v1.10=>current) [c
 	})
 })
 
-var _ = Describe("When testing cluster upgrade from releases (v1.9=>current) [clusterctl-upgrade]", func() {
+// Ironic 32.0 -> latest image tag.
+var _ = Describe("When testing cluster upgrade from releases (v1.11=>current)", Label("clusterctl-upgrade"), func() {
 	BeforeEach(func() {
-		k8sVersion = "v1.33.0"
+		k8sVersion = "v1.34.1"
 		validateGlobals(specName)
 		imageURL, imageChecksum := EnsureImage(k8sVersion)
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
@@ -105,15 +108,17 @@ var _ = Describe("When testing cluster upgrade from releases (v1.9=>current) [cl
 		clusterctlLogFolder = filepath.Join(artifactFolder, bootstrapClusterProxy.GetName())
 	})
 
-	minorVersion := "1.9"
-	bmoFromRelease := "0.9"
-	ironicFromRelease := "27.0"
-	bmoToRelease := "latest"
-	ironicToRelease := "latest"
+	minorVersion := "1.11"
+	bmoFromRelease := "0.11"
+	ironicFromRelease := "32.0"
+	bmoToRelease := "main"
+	ironicToRelease := "main"
 	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
 	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
 	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
 	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPM3 minor release : %s", minorVersion)
+	ipamStableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixIPAM, minorVersion)
+	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for IPAM minor release : %s", minorVersion)
 
 	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
 		return capi_e2e.ClusterctlUpgradeSpecInput{
@@ -126,23 +131,20 @@ var _ = Describe("When testing cluster upgrade from releases (v1.9=>current) [cl
 			InitWithBootstrapProviders:      []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithControlPlaneProviders:   []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3StableRelease)},
-			InitWithIPAMProviders:           []string{""}, // Explicitly set to empty since we use the IPAM bundled with CAPM3.
+			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamStableRelease)},
 			InitWithKubernetesVersion:       k8sVersion,
 			WorkloadKubernetesVersion:       k8sVersion,
 			InitWithBinary:                  fmt.Sprintf(clusterctlDownloadURL, capiStableRelease),
 			PreInit: func(clusterProxy framework.ClusterProxy) {
 				preInitFunc(clusterProxy, bmoFromRelease, ironicFromRelease)
 				// Override capi/capm3 versions exported in preInit
-				os.Setenv("CAPI_VERSION", contract)
-				os.Setenv("CAPM3_VERSION", contract)
+				os.Setenv("CAPI_VERSION", capiContract)
+				os.Setenv("CAPM3_VERSION", capm3Contract)
 				os.Setenv("KUBECONFIG_BOOTSTRAP", bootstrapClusterProxy.GetKubeconfigPath())
 			},
 			PostNamespaceCreated: postClusterctlUpgradeNamespaceCreated,
 			PreUpgrade: func(clusterProxy framework.ClusterProxy) {
 				preUpgrade(clusterProxy, bmoToRelease, ironicToRelease)
-			},
-			PostUpgrade: func(clusterProxy framework.ClusterProxy, _ string, _ string) {
-				postUpgrade(ctx, clusterProxy)
 			},
 			PreCleanupManagementCluster: func(clusterProxy framework.ClusterProxy) {
 				preCleanupManagementCluster(clusterProxy, ironicToRelease)
@@ -160,6 +162,7 @@ func postClusterctlUpgradeNamespaceCreated(clusterProxy framework.ClusterProxy, 
 	// if isBootstrapProxy==true then this call when creating the management else we are creating the workload.
 	isBootstrapProxy := !strings.HasPrefix(clusterProxy.GetName(), "clusterctl-upgrade")
 	if isBootstrapProxy {
+		managementClusterNamespace = clusterNamespace
 		// Apply secrets and bmhs for [node_0 and node_1] in the management cluster to host the target management cluster
 		for i := range 2 {
 			resource, err := os.ReadFile(filepath.Join(workDir, fmt.Sprintf("bmhs/node_%d.yaml", i)))
@@ -207,7 +210,7 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 		Expect(clusterProxy.CreateOrUpdate(ctx, certManagerYaml)).To(Succeed())
 
 		By("Wait for cert-manager pods to be available")
-		deploymentNameList := []string{}
+		deploymentNameList := make([]string, 0, 3)
 		deploymentNameList = append(deploymentNameList, "cert-manager", "cert-manager-cainjector", "cert-manager-webhook")
 		clientSet := clusterProxy.GetClientSet()
 		for _, name := range deploymentNameList {
@@ -268,7 +271,7 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 	}
 
 	By("Fetch manifest for bootstrap cluster")
-	err := FetchManifests(clusterProxy, "/tmp/manifests/")
+	err := FetchManifests(clusterProxy, filepath.Join(artifactFolder, clusterProxy.GetName(), "preInit-manifest"))
 	if err != nil {
 		Logf("Error fetching manifests for bootstrap cluster: %v", err)
 	}
@@ -278,68 +281,62 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 	os.Setenv("KUBECONFIG_WORKLOAD", kconfigPathWorkload)
 	Logf("Save kubeconfig in temp folder for project-infra target log collection")
 	kubeconfigPathTemp := "/tmp/kubeconfig-test1.yaml"
-	cmd := exec.Command("cp", kconfigPathWorkload, kubeconfigPathTemp) // #nosec G204:gosec
+	cmd := exec.CommandContext(context.Background(), "cp", kconfigPathWorkload, kubeconfigPathTemp) // #nosec G204:gosec
 	stdoutStderr, er := cmd.CombinedOutput()
 	Expect(er).ToNot(HaveOccurred(), "Cannot fetch target cluster kubeconfig: %s", stdoutStderr)
 	// install certmanager
 	installCertManager(clusterProxy)
 	// Remove ironic
-	By("Remove Ironic containers from the source cluster")
-	ephemeralCluster := os.Getenv("EPHEMERAL_CLUSTER")
-	ironicDeploymentType := IronicDeploymentTypeBMO
-	if ephemeralCluster == Kind {
+	Byf("Remove Ironic from cluster : %s", bootstrapClusterProxy.GetName())
+	bootstrapCluster := os.Getenv("BOOTSTRAP_CLUSTER")
+	ironicDeploymentType := IronicDeploymentTypeIrSO
+	if bootstrapCluster == Kind {
 		ironicDeploymentType = IronicDeploymentTypeLocal
-	} else if GetBoolVariable(e2eConfig, "USE_IRSO") {
-		ironicDeploymentType = IronicDeploymentTypeIrSO
 	}
 	removeIronic(ctx, func() RemoveIronicInput {
 		return RemoveIronicInput{
-			ManagementCluster: bootstrapClusterProxy,
+			ClusterProxy:      bootstrapClusterProxy,
 			DeploymentType:    ironicDeploymentType,
 			Namespace:         e2eConfig.MustGetVariable(ironicNamespace),
-			NamePrefix:        e2eConfig.MustGetVariable(NamePrefix),
+			E2EConfig:         e2eConfig,
+			IsDevEnvUninstall: true,
 		}
 	})
-	bmoIronicNamespace := e2eConfig.MustGetVariable(ironicNamespace)
 	// install ironic
-	By("Install Ironic in the target cluster")
-	ironicDeployLogFolder := filepath.Join(clusterLogCollectionBasePath, clusterProxy.GetName(), "ironic-deploy-logs")
-	ironicKustomizePath := "IRONIC_RELEASE_" + ironicRelease
-	initIronicKustomization := e2eConfig.MustGetVariable(ironicKustomizePath)
-	By(fmt.Sprintf("Installing Ironic from kustomization %s on the upgrade cluster", initIronicKustomization))
-	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
-		Kustomization:       initIronicKustomization,
-		ClusterProxy:        clusterProxy,
-		WaitForDeployment:   true,
-		WatchDeploymentLogs: true,
-		LogPath:             ironicDeployLogFolder,
-		DeploymentName:      "baremetal-operator-ironic",
-		DeploymentNamespace: bmoIronicNamespace,
-		WaitIntervals:       e2eConfig.GetIntervals("default", "wait-deployment"),
+	Byf("Install IRSO with ironic version %s in the target management cluster: %s", ironicRelease, clusterProxy.GetName())
+	ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicRelease)
+	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+	irsoDeployLogFolder := filepath.Join(artifactFolder, clusterProxy.GetName(), "ironic-deploy-logs-preinit")
+	err = InstallIRSO(ctx, InstallIRSOInput{
+		E2EConfig:             e2eConfig,
+		ClusterProxy:          clusterProxy,
+		IronicNamespace:       e2eConfig.MustGetVariable(ironicNamespace),
+		ClusterName:           clusterProxy.GetName(),
+		IrsoOperatorKustomize: irsoKustomizePath,
+		IronicKustomize:       ironicKustomization,
+		LogPath:               irsoDeployLogFolder,
 	})
-	Expect(err).NotTo(HaveOccurred(), "Failed to install Ironic on target cluster %v", err)
+	Expect(err).NotTo(HaveOccurred())
 
 	// install bmo
-	By("Install BMO in the target cluster")
+	Byf("Install BMO version %s in the target management cluster: %s", bmoRelease, clusterProxy.GetName())
 	bmoDeployLogFolder := filepath.Join(clusterLogCollectionBasePath, clusterProxy.GetName(), "bmo-deploy-logs")
 	bmoKustomizePath := "BMO_RELEASE_" + bmoRelease
 	initBMOKustomization := e2eConfig.MustGetVariable(bmoKustomizePath)
 	By(fmt.Sprintf("Installing BMO from kustomization %s on the upgrade cluster", initBMOKustomization))
-	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
-		Kustomization:       initBMOKustomization,
-		ClusterProxy:        clusterProxy,
-		WaitForDeployment:   true,
-		WatchDeploymentLogs: true,
-		LogPath:             bmoDeployLogFolder,
-		DeploymentName:      "baremetal-operator-controller-manager",
-		DeploymentNamespace: bmoIronicNamespace,
-		WaitIntervals:       e2eConfig.GetIntervals("default", "wait-deployment"),
+	err = InstallBMO(ctx, InstallBMOInput{
+		E2EConfig:        e2eConfig,
+		ClusterProxy:     clusterProxy,
+		Namespace:        e2eConfig.MustGetVariable(ironicNamespace),
+		BmoKustomization: initBMOKustomization,
+		LogFolder:        bmoDeployLogFolder,
+		WatchLogs:        true,
 	})
-	Expect(err).NotTo(HaveOccurred(), "Failed to install BMO on target cluster %v", err)
+	Expect(err).NotTo(HaveOccurred())
 
 	// Export capi/capm3 versions
-	os.Setenv("CAPI_VERSION", contract)
-	os.Setenv("CAPM3_VERSION", contract)
+	os.Setenv("CAPI_VERSION", capiContract)
+	os.Setenv("CAPM3_VERSION", capm3Contract)
 
 	// These exports bellow we need them after applying the management cluster template and before
 	// applying the workload. if exported before it will break creating the management because it uses v1beta1 templates and default IPs.
@@ -356,6 +353,11 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 // preUpgrade hook should be called from ClusterctlUpgradeSpec before upgrading the management cluster
 // it upgrades Ironic and BMO before upgrading the providers.
 func preUpgrade(clusterProxy framework.ClusterProxy, bmoUpgradeToRelease string, ironicUpgradeToRelease string) {
+	err := FetchManifests(clusterProxy, filepath.Join(artifactFolder, clusterProxy.GetName(), "preUpgrade-manifest"))
+	if err != nil {
+		Logf("Error fetching manifests for bootstrap cluster: %v", err)
+	}
+
 	ironicTag, err := GetLatestPatchRelease(ironicGoproxy, ironicUpgradeToRelease)
 	Expect(err).ToNot(HaveOccurred(), "Failed to fetch ironic version for release %s", ironicUpgradeToRelease)
 	Logf("Ironic Tag %s\n", ironicTag)
@@ -364,57 +366,36 @@ func preUpgrade(clusterProxy framework.ClusterProxy, bmoUpgradeToRelease string,
 	Expect(err).ToNot(HaveOccurred(), "Failed to fetch bmo version for release %s", bmoUpgradeToRelease)
 	Logf("Bmo Tag %s\n", bmoTag)
 
-	bmoIronicNamespace := e2eConfig.MustGetVariable(ironicNamespace)
-	By("Upgrade Ironic in the target cluster")
-	ironicDeployLogFolder := filepath.Join(clusterLogCollectionBasePath, clusterProxy.GetName(), "ironic-deploy-logs")
-	ironicKustomizePath := "IRONIC_RELEASE_" + ironicTag
-	initIronicKustomization := e2eConfig.MustGetVariable(ironicKustomizePath)
-	By(fmt.Sprintf("Upgrading Ironic from kustomization %s on the upgrade cluster", initIronicKustomization))
-	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
-		Kustomization:       initIronicKustomization,
-		ClusterProxy:        clusterProxy,
-		WaitForDeployment:   true,
-		WatchDeploymentLogs: true,
-		LogPath:             ironicDeployLogFolder,
-		DeploymentName:      "baremetal-operator-ironic",
-		DeploymentNamespace: bmoIronicNamespace,
-		WaitIntervals:       e2eConfig.GetIntervals("default", "wait-deployment"),
+	Byf("Upgrade IRSO with ironic version %s in the target management cluster: %s", ironicTag, clusterProxy.GetName())
+	ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicTag)
+	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+	irsoDeployLogFolder := filepath.Join(artifactFolder, clusterProxy.GetName(), "ironic-deploy-logs-preupgrade")
+	err = InstallIRSO(ctx, InstallIRSOInput{
+		E2EConfig:             e2eConfig,
+		ClusterProxy:          clusterProxy,
+		IronicNamespace:       e2eConfig.MustGetVariable(ironicNamespace),
+		ClusterName:           clusterProxy.GetName(),
+		IrsoOperatorKustomize: irsoKustomizePath,
+		IronicKustomize:       ironicKustomization,
+		LogPath:               irsoDeployLogFolder,
 	})
 	Expect(err).NotTo(HaveOccurred())
 
 	// install bmo
-	By("Upgrade BMO in the target cluster")
+	Byf("Upgrade BMO with version %s in the target management cluster: %s", bmoTag, clusterProxy.GetName())
 	bmoDeployLogFolder := filepath.Join(clusterLogCollectionBasePath, clusterProxy.GetName(), "bmo-deploy-logs")
 	bmoKustomizePath := "BMO_RELEASE_" + bmoTag
 	initBMOKustomization := e2eConfig.MustGetVariable(bmoKustomizePath)
 	By(fmt.Sprintf("Upgrading BMO from kustomization %s on the upgrade cluster", initBMOKustomization))
-	err = BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
-		Kustomization:       initBMOKustomization,
-		ClusterProxy:        clusterProxy,
-		WaitForDeployment:   true,
-		WatchDeploymentLogs: true,
-		LogPath:             bmoDeployLogFolder,
-		DeploymentName:      "baremetal-operator-controller-manager",
-		DeploymentNamespace: bmoIronicNamespace,
-		WaitIntervals:       e2eConfig.GetIntervals("default", "wait-deployment"),
+	err = InstallBMO(ctx, InstallBMOInput{
+		E2EConfig:        e2eConfig,
+		ClusterProxy:     clusterProxy,
+		Namespace:        e2eConfig.MustGetVariable(ironicNamespace),
+		BmoKustomization: initBMOKustomization,
+		LogFolder:        bmoDeployLogFolder,
+		WatchLogs:        true,
 	})
 	Expect(err).NotTo(HaveOccurred())
-}
-
-// postUpgrade hook is for installing the new Metal3 IPAM provider
-// when upgrading from CAPM3 bundled IPAM.
-func postUpgrade(ctx context.Context, clusterProxy framework.ClusterProxy) {
-	By("Installing Metal3 IPAM provider")
-	ipamDeployLogFolder := filepath.Join(clusterLogCollectionBasePath, clusterProxy.GetName(), "ipam-deploy-logs")
-	ipamVersions := e2eConfig.GetProviderLatestVersionsByContract(contract, e2eConfig.IPAMProviders()...)
-	Expect(ipamVersions).To(HaveLen(1), "Failed to get the latest version for the IPAM provider")
-	input := clusterctl.InitInput{
-		ClusterctlConfigPath: clusterctlConfigPath,
-		KubeconfigPath:       clusterProxy.GetKubeconfigPath(),
-		LogFolder:            ipamDeployLogFolder,
-		IPAMProviders:        []string{ipamVersions[0]},
-	}
-	clusterctl.Init(ctx, input)
 }
 
 // preCleanupManagementCluster hook should be called from ClusterctlUpgradeSpec before cleaning the target management cluster
@@ -425,51 +406,52 @@ func preCleanupManagementCluster(clusterProxy framework.ClusterProxy, ironicRele
 	if err != nil {
 		Logf("Error: %v", err)
 	}
+
+	err = FetchManifests(clusterProxy, filepath.Join(artifactFolder, clusterProxy.GetName(), "preCleanup-manifest"))
+	if err != nil {
+		Logf("Error fetching manifests for bootstrap cluster: %v", err)
+	}
 	os.Unsetenv("KUBECONFIG_WORKLOAD")
 	os.Unsetenv("KUBECONFIG_BOOTSTRAP")
 	bmoIronicNamespace := e2eConfig.MustGetVariable(ironicNamespace)
 	// Reinstall ironic
 	reInstallIronic := func() {
 		By("Reinstate Ironic containers and BMH")
-		ephemeralCluster := os.Getenv("EPHEMERAL_CLUSTER")
-		if ephemeralCluster == Kind {
+		bootstrapCluster := os.Getenv("BOOTSTRAP_CLUSTER")
+		if bootstrapCluster == Kind {
 			By("Install Ironic in the source cluster as containers")
 			bmoPath := e2eConfig.MustGetVariable("BMOPATH")
 			ironicCommand := bmoPath + "/tools/run_local_ironic.sh"
 			//#nosec G204 -- We take the BMOPATH from a variable.
-			cmd := exec.Command("sh", "-c", "export CONTAINER_RUNTIME=docker; "+ironicCommand)
+			cmd := exec.CommandContext(context.Background(), "sh", "-c", "export CONTAINER_RUNTIME=docker; "+ironicCommand)
 			stdoutStderr, err := cmd.CombinedOutput()
 			Logf("Output: %s", stdoutStderr)
 			Expect(err).ToNot(HaveOccurred(), "Cannot run local ironic")
 		} else {
-			By("Install Ironic in the source cluster as deployments")
-			ironicDeployLogFolder := filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "ironic-deploy-logs")
-			ironicKustomizePath := "IRONIC_RELEASE_" + ironicRelease
-			initIronicKustomization := e2eConfig.MustGetVariable(ironicKustomizePath)
-			namePrefix := e2eConfig.MustGetVariable("NAMEPREFIX")
-			ironicDeployName := namePrefix + ironicSuffix
-			By(fmt.Sprintf("Installing Ironic from kustomization %s on the upgrade cluster", initIronicKustomization))
-			err := BuildAndApplyKustomization(ctx, &BuildAndApplyKustomizationInput{
-				Kustomization:       initIronicKustomization,
-				ClusterProxy:        bootstrapClusterProxy,
-				WaitForDeployment:   true,
-				WatchDeploymentLogs: true,
-				LogPath:             ironicDeployLogFolder,
-				DeploymentName:      ironicDeployName,
-				DeploymentNamespace: bmoIronicNamespace,
-				WaitIntervals:       e2eConfig.GetIntervals("default", "wait-deployment"),
+			By("Install IRSO in the bootstrap cluster")
+			ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicRelease)
+			irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+			irsoDeployLogFolder := filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "ironic-deploy-logs-reinstall")
+			err := InstallIRSO(ctx, InstallIRSOInput{
+				E2EConfig:             e2eConfig,
+				ClusterProxy:          bootstrapClusterProxy,
+				IronicNamespace:       bmoIronicNamespace,
+				ClusterName:           bootstrapClusterProxy.GetName(),
+				IrsoOperatorKustomize: irsoKustomizePath,
+				IronicKustomize:       ironicKustomization,
+				LogPath:               irsoDeployLogFolder,
 			})
 			Expect(err).NotTo(HaveOccurred())
 		}
 	}
-	ironicDeploymentType := IronicDeploymentTypeBMO
+	ironicDeploymentType := IronicDeploymentTypeIrSO
 	// TODO(dtantsur): support USE_IRSO in the target cluster
 	removeIronic(ctx, func() RemoveIronicInput {
 		return RemoveIronicInput{
-			ManagementCluster: clusterProxy,
-			DeploymentType:    ironicDeploymentType,
-			Namespace:         e2eConfig.MustGetVariable(ironicNamespace),
-			NamePrefix:        e2eConfig.MustGetVariable(NamePrefix),
+			ClusterProxy:   clusterProxy,
+			DeploymentType: ironicDeploymentType,
+			Namespace:      e2eConfig.MustGetVariable(ironicNamespace),
+			E2EConfig:      e2eConfig,
 		}
 	})
 	reInstallIronic()

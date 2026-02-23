@@ -18,7 +18,7 @@ import (
 // - The provisioning of a workload cluster proceeds smoothly, and that BMHs are created, inspected and provisioned as expected.
 // - The pivoting functionality enables the seamless moving of resources and control components from the bootstrap cluster to the target cluster and vice versa.
 // - Deprovisioning the cluster and BMHs happens smoothly.
-var _ = Describe("When testing integration [integration]", Label("integration"), func() {
+var _ = Describe("When testing integration", Label("integration"), func() {
 
 	It("CI Test Provision", func() {
 		numberOfWorkers = int(*e2eConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
@@ -44,7 +44,7 @@ var _ = Describe("When testing integration [integration]", Label("integration"),
 			}
 		})
 		By("Pivot objects to target cluster")
-		pivoting(ctx, func() PivotingInput {
+		Pivoting(ctx, func() PivotingInput {
 			return PivotingInput{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
@@ -66,7 +66,7 @@ var _ = Describe("When testing integration [integration]", Label("integration"),
 			ClusterctlConfigPath: clusterctlConfigPath,
 		})
 		By("Repivot objects to the source cluster")
-		rePivoting(ctx, func() RePivotingInput {
+		RePivoting(ctx, func() RePivotingInput {
 			return RePivotingInput{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
