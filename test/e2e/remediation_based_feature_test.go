@@ -1,7 +1,6 @@
 package e2e
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,18 +50,10 @@ import (
  * - Unhealthy Annotation: Mark a BMH as unhealthy and ensure it is not picked up for provisioning.
  * - Metal3 Data Template: Create a new Metal3DataTemplate (M3DT), create a new Metal3MachineTemplate (M3MT), and update the MachineDeployment (MD) to point to the new M3MT. Wait for the old worker to deprovision.
  */
-var _ = Describe("Testing nodes remediation [remediation] [features]", Label("remediation", "features"), func() {
-
-	var (
-		ctx                 = context.TODO()
-		specName            = "metal3"
-		namespace           = "metal3"
-		clusterName         = "test1"
-		clusterctlLogFolder string
-	)
+var _ = Describe("Testing nodes remediation", Label("remediation", "features"), func() {
 
 	BeforeEach(func() {
-		osType := strings.ToLower(os.Getenv("OS"))
+		osType = strings.ToLower(os.Getenv("OS"))
 		Expect(osType).ToNot(Equal(""))
 		validateGlobals(specName)
 
@@ -91,8 +82,8 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", Label("re
 		})
 		// Run Metal3Remediation test first, doesn't work after remediation...
 		By("Running node remediation tests")
-		nodeRemediation(ctx, func() NodeRemediation {
-			return NodeRemediation{
+		NodeRemediation(ctx, func() NodeRemediationInput {
+			return NodeRemediationInput{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
 				TargetCluster:         targetCluster,
@@ -103,7 +94,7 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", Label("re
 		})
 
 		By("Running healthcheck tests")
-		healthcheck(ctx, func() HealthCheckInput {
+		HealthCheck(ctx, func() HealthCheckInput {
 			return HealthCheckInput{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,
@@ -114,7 +105,7 @@ var _ = Describe("Testing nodes remediation [remediation] [features]", Label("re
 		})
 
 		By("Running annotated powercycle remediation tests")
-		remediation(ctx, func() RemediationInput {
+		Remediation(ctx, func() RemediationInput {
 			return RemediationInput{
 				E2EConfig:             e2eConfig,
 				BootstrapClusterProxy: bootstrapClusterProxy,

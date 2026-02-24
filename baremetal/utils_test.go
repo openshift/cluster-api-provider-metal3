@@ -20,14 +20,14 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -237,7 +237,7 @@ var _ = Describe("Metal3 manager utils", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(savedObject.Spec).To(Equal(tc.TestObject.Spec))
 				Expect(savedObject.ResourceVersion).NotTo(Equal(tc.TestObject.ResourceVersion))
-				err := updateObject(context.TODO(), k8sClient, obj)
+				err = updateObject(context.TODO(), k8sClient, obj)
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(BeAssignableToTypeOf(ReconcileError{}))
 			}
@@ -341,7 +341,7 @@ var _ = Describe("Metal3 manager utils", func() {
 						OwnerReferences: []metav1.OwnerReference{
 							{
 								Name:       "ghij",
-								Kind:       "Metal3Machine",
+								Kind:       metal3MachineKind,
 								APIVersion: infrav1.GroupVersion.String(),
 								UID:        "7df7fe8e-9cdb-4c57-8144-0a30bf6b9496",
 							},
@@ -356,7 +356,7 @@ var _ = Describe("Metal3 manager utils", func() {
 			}
 			ownerRef := []metav1.OwnerReference{{
 				Name:       "abcd",
-				Kind:       "Metal3Machine",
+				Kind:       metal3MachineKind,
 				APIVersion: infrav1.GroupVersion.String(),
 				UID:        "7df7fe8e-9cdb-4c57-8144-0a30bf6b9496",
 			}}

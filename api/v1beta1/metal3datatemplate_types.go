@@ -141,6 +141,17 @@ type FromPool struct {
 	Kind string `json:"kind"`
 }
 
+// FromPoolAnnotation contains the information to fetch pool reference details from an annotation.
+type FromPoolAnnotation struct {
+	// +kubebuilder:validation:Enum=machine;metal3machine;baremetalhost
+	// Object is the type of the object from which we retrieve the annotation
+	Object string `json:"object"`
+
+	// Annotation is the key of the annotation that contains the pool name.
+	// The annotation value should be a string containing the pool name.
+	Annotation string `json:"annotation"`
+}
+
 // MetaData represents a keyand value of the metadata.
 type MetaData struct {
 	// Strings is the list of metadata items to be rendered from strings
@@ -229,6 +240,14 @@ type NetworkDataLinkEthernet struct {
 	// Id is the ID of the interface (used for naming)
 	Id string `json:"id"` //nolint:stylecheck,revive
 
+	// Name is the interface name to be used by cloud-init. When combined with
+	// MACAddress, cloud-init will rename the interface matching the MAC to this name.
+	// When MACAddress is omitted, cloud-init will use this name directly.
+	// +kubebuilder:validation:MaxLength=15
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9._-]*$`
+	// +optional
+	Name string `json:"name,omitempty"`
+
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
 	// MTU is the MTU of the interface
@@ -254,6 +273,14 @@ type NetworkDataLinkBond struct {
 
 	// Id is the ID of the interface (used for naming)
 	Id string `json:"id"` //nolint:stylecheck,revive
+
+	// Name is the interface name to be used by cloud-init. When combined with
+	// MACAddress, cloud-init will rename the interface matching the MAC to this name.
+	// When MACAddress is omitted, cloud-init will use this name directly.
+	// +kubebuilder:validation:MaxLength=15
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9._-]*$`
+	// +optional
+	Name string `json:"name,omitempty"`
 
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
@@ -284,6 +311,14 @@ type NetworkDataLinkVlan struct {
 
 	// Id is the ID of the interface (used for naming)
 	Id string `json:"id"` //nolint:stylecheck,revive
+
+	// Name is the interface name to be used by cloud-init. When combined with
+	// MACAddress, cloud-init will rename the interface matching the MAC to this name.
+	// When MACAddress is omitted, cloud-init will use this name directly.
+	// +kubebuilder:validation:MaxLength=15
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9._-]*$`
+	// +optional
+	Name string `json:"name,omitempty"`
 
 	// +kubebuilder:default=1500
 	// +kubebuilder:validation:Maximum=9000
@@ -360,6 +395,15 @@ type NetworkGatewayv4 struct {
 	// FromIPPool is the name of the IPPool to fetch the gateway from
 	// +optional
 	FromIPPool *string `json:"fromIPPool,omitempty"`
+
+	// FromPoolRef is a reference to a IP pool to fetch the gateway from
+	FromPoolRef *corev1.TypedLocalObjectReference `json:"fromPoolRef,omitempty"`
+
+	// FromPoolAnnotation allows specifying the pool name via an annotation on
+	// a Machine, Metal3Machine, or BareMetalHost object.
+	// When set, FromIPPool and FromPoolRef are ignored.
+	// +optional
+	FromPoolAnnotation *FromPoolAnnotation `json:"fromPoolAnnotation,omitempty"`
 }
 
 // NetworkGatewayv6 represents a gateway, given as a string or as a reference to
@@ -373,6 +417,15 @@ type NetworkGatewayv6 struct {
 	// FromIPPool is the name of the IPPool to fetch the gateway from
 	// +optional
 	FromIPPool *string `json:"fromIPPool,omitempty"`
+
+	// FromPoolRef is a reference to a IP pool to fetch the gateway from
+	FromPoolRef *corev1.TypedLocalObjectReference `json:"fromPoolRef,omitempty"`
+
+	// FromPoolAnnotation allows specifying the pool name via an annotation on
+	// a Machine, Metal3Machine, or BareMetalHost object.
+	// When set, FromIPPool and FromPoolRef are ignored.
+	// +optional
+	FromPoolAnnotation *FromPoolAnnotation `json:"fromPoolAnnotation,omitempty"`
 }
 
 // NetworkDataRoutev4 represents an ipv4 route object.
@@ -426,6 +479,12 @@ type NetworkDataIPv4 struct {
 	// FromPoolRef is a reference to a IP pool to allocate an address from.
 	FromPoolRef *corev1.TypedLocalObjectReference `json:"fromPoolRef,omitempty"`
 
+	// FromPoolAnnotation allows specifying the pool reference via an annotation on
+	// a Machine, Metal3Machine, or BareMetalHost object.
+	// When set, IPAddressFromIPPool and FromPoolRef are ignored.
+	// +optional
+	FromPoolAnnotation *FromPoolAnnotation `json:"fromPoolAnnotation,omitempty"`
+
 	// Routes contains a list of IPv4 routes
 	// +optional
 	Routes []NetworkDataRoutev4 `json:"routes,omitempty"`
@@ -445,6 +504,12 @@ type NetworkDataIPv6 struct {
 
 	// FromPoolRef is a reference to a IP pool to allocate an address from.
 	FromPoolRef *corev1.TypedLocalObjectReference `json:"fromPoolRef,omitempty"`
+
+	// FromPoolAnnotation allows specifying the pool reference via an annotation on
+	// a Machine, Metal3Machine, or BareMetalHost object.
+	// When set, IPAddressFromIPPool and FromPoolRef are ignored.
+	// +optional
+	FromPoolAnnotation *FromPoolAnnotation `json:"fromPoolAnnotation,omitempty"`
 
 	// Routes contains a list of IPv6 routes
 	// +optional
@@ -556,7 +621,7 @@ type Metal3DataTemplateStatus struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 // +kubebuilder:resource:path=metal3datatemplates,scope=Namespaced,categories=cluster-api,shortName=m3dt;m3datatemplate;m3datatemplates;metal3dt;metal3datatemplate
-// +kubebuilder:storageversion
+// +kubebuilder:deprecatedversion
 // +kubebuilder:subresource:status
 // +kubebuilder:object:root=true
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this template belongs"

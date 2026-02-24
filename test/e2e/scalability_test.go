@@ -15,7 +15,7 @@ import (
 	"strings"
 
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,9 +48,9 @@ var (
 	scaleSpecConcurrency int64
 )
 
-var _ = Describe("When testing scalability with fakeIPA and FKAS [scalability]", Label("scalability"), func() {
+var _ = Describe("When testing scalability with fakeIPA and FKAS", Label("scalability"), func() {
 	BeforeEach(func() {
-		osType := strings.ToLower(os.Getenv("OS"))
+		osType = strings.ToLower(os.Getenv("OS"))
 		Expect(osType).ToNot(Equal(""))
 		validateGlobals(specName)
 		specName = "scale"
@@ -62,7 +62,7 @@ var _ = Describe("When testing scalability with fakeIPA and FKAS [scalability]",
 		// We need to override clusterctl apply log folder to avoid getting our credentials exposed.
 		clusterctlLogFolder = filepath.Join(os.TempDir(), "clusters", bootstrapClusterProxy.GetName())
 		createFKASResources()
-		imageURL, imageChecksum := EnsureImage("v1.30.0")
+		imageURL, imageChecksum := EnsureImage("v1.34.1")
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
 		os.Setenv("IMAGE_RAW_URL", imageURL)
 	})
@@ -214,10 +214,10 @@ func postScaleClusterNamespaceCreated(clusterProxy framework.ClusterProxy, clust
 	clusterTemplateYAML = bytes.ReplaceAll(clusterTemplateYAML, []byte("CLUSTER_APIENDPOINT_PORT_HOLDER"), []byte(strconv.Itoa(newClusterEndpoint.Port)))
 
 	clusterClassYAML, clusterTemplateYAML := extractDataTemplateIppool(baseClusterClassYAML, clusterTemplateYAML)
-	Logf("save " + clusterName + " cluster in a file")
-	LogToFile("/tmp/"+clusterName+"-cluster.log", clusterTemplateYAML)
-	Logf("save " + clusterName + " clusterclass in a file")
-	LogToFile("/tmp/"+clusterName+"-clusterclass.log", clusterClassYAML)
+	clusterTemplateYAML, err := RemoveEmptyWorkers(clusterTemplateYAML)
+	Expect(err).ShouldNot(HaveOccurred())
+	LogToFile(artifactFolder+"/"+clusterName+"-cluster.log", clusterTemplateYAML)
+	LogToFile(artifactFolder+"/"+clusterName+"-clusterclass.log", clusterClassYAML)
 	return clusterClassYAML, clusterTemplateYAML
 }
 
@@ -228,7 +228,7 @@ func extractDataTemplateIppool(baseClusterClassYAML []byte, baseClusterTemplateY
 	clusterObjs, err := yaml.ToUnstructured(baseClusterTemplateYAML)
 	Expect(err).ToNot(HaveOccurred())
 	for _, obj := range clusterClassObjs {
-		if obj.GroupVersionKind().GroupKind() == ipamv1.GroupVersion.WithKind("IPPool").GroupKind() || obj.GroupVersionKind().GroupKind() == infrav1.GroupVersion.WithKind("Metal3DataTemplate").GroupKind() {
+		if obj.GroupVersionKind().GroupKind() == ipamv1.GroupVersion.WithKind("IPPool").GroupKind() || obj.GroupVersionKind().GroupKind() == infrav1beta1.GroupVersion.WithKind("Metal3DataTemplate").GroupKind() {
 			Logf("move %v cluster", obj.GroupVersionKind().GroupKind())
 			clusterObjs = append(clusterObjs, obj)
 		} else {
@@ -252,4 +252,21 @@ func FilterAvialableBmhsName(bmhs []bmov1alpha1.BareMetalHost, bmhsNameList []st
 		}
 	}
 	return
+}
+
+// RemoveEmptyWorkers removes the "workers" section from the input YAML if it is empty.
+func RemoveEmptyWorkers(input []byte) ([]byte, error) {
+	var ret []byte
+	objs, err := yaml.ToUnstructured(input)
+	if err == nil {
+		// Iterate through the objects and remove empty "workers" sections
+		for _, obj := range objs {
+			if obj.GetKind() == "Cluster" {
+				unstructured.RemoveNestedField(obj.Object, "spec", "topology", "workers")
+			}
+		}
+		ret, err = yaml.FromUnstructured(objs)
+		return ret, err
+	}
+	return nil, err
 }

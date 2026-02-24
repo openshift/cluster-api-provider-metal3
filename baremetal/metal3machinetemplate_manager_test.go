@@ -20,7 +20,7 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -44,7 +44,7 @@ var _ = Describe("Metal3MachineTemplate manager", func() {
 				tc.M3MachineTemplate,
 				tc.M3MachineList,
 			}
-			fakeClient := fakeclient.NewClientBuilder().WithScheme(setupSchemeMm()).WithRuntimeObjects(objects...).Build()
+			fakeClient := fakeclient.NewClientBuilder().WithScheme(setupScheme()).WithRuntimeObjects(objects...).Build()
 			templateMgr, err := NewMachineTemplateManager(fakeClient, tc.M3MachineTemplate,
 				tc.M3MachineList, logr.Discard(),
 			)

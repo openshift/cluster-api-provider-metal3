@@ -11,25 +11,22 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/test/framework"
 	"sigs.k8s.io/cluster-api/test/framework/clusterctl"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-var _ = Describe("Kubernetes version upgrade in target nodes [k8s-upgrade]", Label("k8s-upgrade"), func() {
+var _ = Describe("Kubernetes version upgrade in target nodes", Label("k8s-upgrade"), func() {
 
 	var (
 		ctx                 = context.TODO()
-		specName            = "metal3"
-		namespace           = "metal3"
-		clusterName         = "test1"
 		clusterctlLogFolder string
 	)
 
 	BeforeEach(func() {
-		osType := strings.ToLower(os.Getenv("OS"))
+		osType = strings.ToLower(os.Getenv("OS"))
 		Expect(osType).ToNot(Equal(""))
 		validateGlobals(specName)
 
@@ -133,9 +130,9 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	})
 	helper, err := patch.NewHelper(kcpObj, clusterClient)
 	Expect(err).NotTo(HaveOccurred())
-	kcpObj.Spec.MachineTemplate.InfrastructureRef.Name = newM3MachineTemplateName
+	kcpObj.Spec.MachineTemplate.Spec.InfrastructureRef.Name = newM3MachineTemplateName
 	kcpObj.Spec.Version = upgradedK8sVersion
-	kcpObj.Spec.RolloutStrategy.RollingUpdate.MaxSurge.IntVal = 0
+	kcpObj.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntVal = 0
 	Expect(helper.Patch(ctx, kcpObj)).To(Succeed())
 
 	Byf("Wait until %d BMH(s) in deprovisioning state", 1)
@@ -147,12 +144,13 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	})
 
 	Byf("Wait until three Control Plane machines become running and updated with the new %s k8s version", upgradedK8sVersion)
-	runningAndUpgraded := func(machine clusterv1.Machine) bool {
+	runningAndUpgradedKCPMachines := func(machine clusterv1.Machine) bool {
 		running := machine.Status.GetTypedPhase() == clusterv1.MachinePhaseRunning
-		upgraded := *machine.Spec.Version == upgradedK8sVersion
-		return (running && upgraded)
+		upgraded := machine.Spec.Version == upgradedK8sVersion
+		_, isControlPlane := machine.GetLabels()[clusterv1.MachineControlPlaneLabel]
+		return running && upgraded && isControlPlane
 	}
-	WaitForNumMachines(ctx, runningAndUpgraded, WaitForNumInput{
+	WaitForNumMachines(ctx, runningAndUpgradedKCPMachines, WaitForNumInput{
 		Client:    clusterClient,
 		Options:   []client.ListOption{client.InNamespace(namespace)},
 		Replicas:  numberOfControlplane,
@@ -171,7 +169,7 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	})
 	helper, err = patch.NewHelper(kcpObj, clusterClient)
 	Expect(err).NotTo(HaveOccurred())
-	kcpObj.Spec.RolloutStrategy.RollingUpdate.MaxSurge.IntVal = 1
+	kcpObj.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntVal = 1
 	for range 3 {
 		err = helper.Patch(ctx, kcpObj)
 		if err == nil {
@@ -197,10 +195,10 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	Byf("Update MD to upgrade k8s version and binaries from %s to %s", kubernetesVersion, upgradedK8sVersion)
 	helper, err = patch.NewHelper(machineDeploy, clusterClient)
 	Expect(err).NotTo(HaveOccurred())
-	machineDeploy.Spec.Strategy.RollingUpdate.MaxSurge.IntVal = 0
-	machineDeploy.Spec.Strategy.RollingUpdate.MaxUnavailable.IntVal = 1
+	machineDeploy.Spec.Rollout.Strategy.RollingUpdate.MaxSurge.IntVal = 0
+	machineDeploy.Spec.Rollout.Strategy.RollingUpdate.MaxUnavailable.IntVal = 1
 	machineDeploy.Spec.Template.Spec.InfrastructureRef.Name = newM3MachineTemplateName
-	machineDeploy.Spec.Template.Spec.Version = &upgradedK8sVersion
+	machineDeploy.Spec.Template.Spec.Version = upgradedK8sVersion
 	Expect(helper.Patch(ctx, machineDeploy)).To(Succeed())
 
 	Byf("Wait until %d BMH(s) in deprovisioning state", 1)
@@ -227,16 +225,27 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 		Intervals: e2eConfig.GetIntervals(specName, "wait-bmh-provisioned"),
 	})
 
-	Byf("Wait until the worker machine becomes running")
-	WaitForNumMachinesInState(ctx, clusterv1.MachinePhaseRunning, WaitForNumInput{
+	Byf("Wait until worker machine becomes running and updated with new %s k8s version", upgradedK8sVersion)
+	runningAndUpgradedWorkerMachines := func(machine clusterv1.Machine) bool {
+		running := machine.Status.GetTypedPhase() == clusterv1.MachinePhaseRunning
+		upgraded := machine.Spec.Version == upgradedK8sVersion
+		_, isControlPlane := machine.GetLabels()[clusterv1.MachineControlPlaneLabel]
+		return running && upgraded && !isControlPlane
+	}
+	WaitForNumMachines(ctx, runningAndUpgradedWorkerMachines, WaitForNumInput{
 		Client:    clusterClient,
 		Options:   []client.ListOption{client.InNamespace(namespace)},
-		Replicas:  numberOfAllBmh,
+		Replicas:  numberOfWorkers,
 		Intervals: e2eConfig.GetIntervals(specName, "wait-machine-running"),
 	})
 
 	// Verify that all nodes is using the k8s version
 	Byf("Verify all machines become running and updated with new %s k8s version", upgradedK8sVersion)
+	runningAndUpgraded := func(machine clusterv1.Machine) bool {
+		running := machine.Status.GetTypedPhase() == clusterv1.MachinePhaseRunning
+		upgraded := machine.Spec.Version == upgradedK8sVersion
+		return running && upgraded
+	}
 	WaitForNumMachines(ctx, runningAndUpgraded, WaitForNumInput{
 		Client:    clusterClient,
 		Options:   []client.ListOption{client.InNamespace(namespace)},

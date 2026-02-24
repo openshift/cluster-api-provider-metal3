@@ -19,15 +19,13 @@ import (
 	"reflect"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -44,7 +42,7 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 		RequeueExpected     bool
 		ErrorReasonExpected bool
 		ErrorReason         capierrors.ClusterStatusError
-		ConditionsExpected  clusterv1.Conditions
+		ConditionsExpected  []metav1.Condition
 	}
 
 	DescribeTable("Reconcile tests metal3Cluster",
@@ -72,7 +70,7 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 			if tc.ErrorExpected {
 				Expect(err).To(HaveOccurred())
 				if tc.ErrorType != nil {
-					Expect(reflect.TypeOf(tc.ErrorType)).To(Equal(reflect.TypeOf(errors.Cause(err))))
+					Expect(reflect.TypeOf(tc.ErrorType)).To(Equal(reflect.TypeOf(baremetal.RootCause(err))))
 				}
 
 			} else {
@@ -85,8 +83,10 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 				Expect(res.Requeue).To(BeFalse())
 			}
 			if tc.ErrorReasonExpected {
-				Expect(testclstr.Status.FailureReason).NotTo(BeNil())
-				Expect(tc.ErrorReason).To(Equal(*testclstr.Status.FailureReason))
+				Expect(testclstr.Status.Deprecated).NotTo(BeNil())
+				Expect(testclstr.Status.Deprecated.V1Beta1).NotTo(BeNil())
+				Expect(testclstr.Status.Deprecated.V1Beta1.FailureReason).NotTo(BeNil())
+				Expect(tc.ErrorReason).To(Equal(*testclstr.Status.Deprecated.V1Beta1.FailureReason))
 			}
 			for _, condExp := range tc.ConditionsExpected {
 				condGot := conditions.Get(testclstr, condExp.Type)
@@ -134,7 +134,7 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 		Entry("Should return an error if APIEndpoint is not set",
 			TestCaseReconcileBMC{
 				Objects: []client.Object{
-					newMetal3Cluster(metal3ClusterName, bmcOwnerRef(), nil, nil, nil, false),
+					newMetal3Cluster(metal3ClusterName, bmcOwnerRef(), nil, Metal3ClusterStatusWithPausedConditionFalse(), nil, false),
 					newCluster(clusterName, nil, nil),
 				},
 				ErrorExpected:       true,
@@ -148,19 +148,19 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 		Entry("Should not return an error when mandatory fields are provided",
 			TestCaseReconcileBMC{
 				Objects: []client.Object{
-					newMetal3Cluster(metal3ClusterName, bmcOwnerRef(), bmcSpec(), nil, nil, false),
+					newMetal3Cluster(metal3ClusterName, bmcOwnerRef(), bmcSpec(), Metal3ClusterStatusWithPausedConditionFalse(), nil, false),
 					newCluster(clusterName, nil, nil),
 				},
 				ErrorExpected:   false,
 				RequeueExpected: false,
-				ConditionsExpected: clusterv1.Conditions{
-					clusterv1.Condition{
-						Type:   infrav1.BaremetalInfrastructureReadyCondition,
-						Status: corev1.ConditionTrue,
+				ConditionsExpected: []metav1.Condition{
+					{
+						Type:   infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+						Status: metav1.ConditionTrue,
 					},
-					clusterv1.Condition{
+					{
 						Type:   clusterv1.ReadyCondition,
-						Status: corev1.ConditionTrue,
+						Status: metav1.ConditionTrue,
 					},
 				},
 			},
@@ -208,7 +208,8 @@ var _ = Describe("Reconcile metal3Cluster", func() {
 							Finalizers:        []string{"foo"},
 							OwnerReferences:   []metav1.OwnerReference{*bmcOwnerRef()},
 						},
-						Spec: *bmcSpec(),
+						Spec:   *bmcSpec(),
+						Status: *Metal3ClusterStatusWithPausedConditionFalse(),
 					},
 					newCluster(clusterName, nil, nil),
 				},

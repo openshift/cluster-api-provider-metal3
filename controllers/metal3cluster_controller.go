@@ -18,22 +18,27 @@ package controllers
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
-	"github.com/pkg/errors"
+	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
+	deprecatedv1beta1conditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/cluster-api/util/paused"
 	"sigs.k8s.io/cluster-api/util/predicates"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
@@ -62,58 +67,99 @@ type Metal3ClusterReconciler struct {
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=metal3clusters,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=metal3clusters/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=metal3clustertemplates,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters;clusters/status,verbs=get;list;watch
 
 // Reconcile reads that state of the cluster for a Metal3Cluster object and makes changes based on the state read
 // and what is in the Metal3Cluster.Spec.
 func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, rerr error) {
-	clusterLog := log.Log.WithName(clusterControllerName).WithValues("metal3-cluster", req.NamespacedName)
+	clusterLog := log.Log.WithName(clusterControllerName).WithValues(
+		baremetal.LogFieldMetal3Cluster, req.NamespacedName,
+	)
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Reconcile: starting Metal3Cluster reconciliation")
 
 	// Fetch the Metal3Cluster instance
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Fetching Metal3Cluster")
 	metal3Cluster := &infrav1.Metal3Cluster{}
 
 	if err := r.Client.Get(ctx, req.NamespacedName, metal3Cluster); err != nil {
 		if apierrors.IsNotFound(err) {
+			clusterLog.V(baremetal.VerbosityLevelDebug).Info("Metal3Cluster not found, may have been deleted")
 			return ctrl.Result{}, nil
 		}
-
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("Failed to fetch Metal3Cluster",
+			baremetal.LogFieldError, err.Error())
 		return ctrl.Result{}, err
 	}
+	clusterLog.V(baremetal.VerbosityLevelDebug).Info("Metal3Cluster fetched successfully",
+		"generation", metal3Cluster.Generation,
+		"resourceVersion", metal3Cluster.ResourceVersion)
 
 	// This is checking if default values are changed or not if the default
 	// value of CloudProviderEnabled or NoCloudProvider is changed then update
 	// the other value too to avoid conflicts.
 	// TODO: Remove this code after v1.10 when NoCloudProvider is completely
 	// removed. Ref: https://github.com/metal3-io/cluster-api-provider-metal3/issues/2255
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Checking CloudProviderEnabled/NoCloudProvider deprecation handling")
 	if metal3Cluster.Spec.CloudProviderEnabled != nil {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("CloudProviderEnabled is set",
+			"cloudProviderEnabled", *metal3Cluster.Spec.CloudProviderEnabled)
 		if !*metal3Cluster.Spec.CloudProviderEnabled {
 			metal3Cluster.Spec.NoCloudProvider = ptr.To(true)
+			clusterLog.V(baremetal.VerbosityLevelDebug).Info("Setting NoCloudProvider=true for compatibility")
 		}
 	} else if metal3Cluster.Spec.NoCloudProvider != nil {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("NoCloudProvider is set (deprecated)",
+			"noCloudProvider", *metal3Cluster.Spec.NoCloudProvider)
 		if *metal3Cluster.Spec.NoCloudProvider {
 			metal3Cluster.Spec.CloudProviderEnabled = ptr.To(false)
+			clusterLog.V(baremetal.VerbosityLevelDebug).Info("Setting CloudProviderEnabled=false for compatibility")
 		}
 	}
 
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Creating patch helper")
 	patchHelper, err := patch.NewHelper(metal3Cluster, r.Client)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "failed to init patch helper")
+		return ctrl.Result{}, fmt.Errorf("failed to init patch helper: %w", err)
 	}
 	// Always patch metal3Cluster when exiting this function so we can persist any metal3Cluster changes.
 	defer func() {
-		if err := patchMetal3Cluster(ctx, patchHelper, metal3Cluster); err != nil {
+		clusterLog.V(baremetal.VerbosityLevelTrace).Info("Patching Metal3Cluster on exit")
+		if err = patchMetal3Cluster(ctx, patchHelper, metal3Cluster); err != nil {
 			clusterLog.Error(err, "failed to Patch metal3Cluster")
 			rerr = err
 		}
 	}()
 
+	// Set FailureDomains to status if it is not already set
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Checking FailureDomains synchronization")
+	if !equality.Semantic.DeepEqual(metal3Cluster.Spec.FailureDomains, metal3Cluster.Status.FailureDomains) {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("Synchronizing FailureDomains from spec to status",
+			baremetal.LogFieldFailureDomain, metal3Cluster.Spec.FailureDomains)
+		metal3Cluster.Status.FailureDomains = metal3Cluster.Spec.FailureDomains
+	}
+
 	// Fetch the Cluster.
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Fetching owner Cluster")
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, metal3Cluster.ObjectMeta)
 	if err != nil {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("Failed to get owner Cluster",
+			baremetal.LogFieldError, err.Error())
 		invalidConfigError := capierrors.InvalidConfigurationClusterError
-		metal3Cluster.Status.FailureReason = &invalidConfigError
-		metal3Cluster.Status.FailureMessage = ptr.To("Unable to get owner cluster")
-		conditions.MarkFalse(metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.InternalFailureReason, clusterv1.ConditionSeverityError, "%s", err.Error())
+		if metal3Cluster.Status.Deprecated == nil {
+			metal3Cluster.Status.Deprecated = &infrav1.Metal3ClusterDeprecatedStatus{}
+		}
+		if metal3Cluster.Status.Deprecated.V1Beta1 == nil {
+			metal3Cluster.Status.Deprecated.V1Beta1 = &infrav1.Metal3ClusterV1Beta1DeprecatedStatus{}
+		}
+		metal3Cluster.Status.Deprecated.V1Beta1.FailureReason = &invalidConfigError
+		metal3Cluster.Status.Deprecated.V1Beta1.FailureMessage = ptr.To("Unable to get owner cluster")
+		deprecatedv1beta1conditions.MarkFalse(metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.InternalFailureReason, clusterv1.ConditionSeverityError, "%s", err.Error())
+		conditions.Set(metal3Cluster, metav1.Condition{
+			Type:   infrav1.Metal3ClusterReadyV1Beta2Condition,
+			Status: metav1.ConditionFalse,
+			Reason: infrav1.FailedToGetOwnerClusterReasonV1Beta2Reason,
+		})
 		return ctrl.Result{}, err
 	}
 	if cluster == nil {
@@ -121,31 +167,49 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	clusterLog = clusterLog.WithValues("cluster", cluster.Name)
+	clusterLog = clusterLog.WithValues(baremetal.LogFieldCluster, cluster.Name)
+	clusterLog.V(baremetal.VerbosityLevelDebug).Info("Owner Cluster found",
+		"clusterPhase", cluster.Status.Phase)
 
-	// Return early if BMCluster or Cluster is paused.
-	if annotations.IsPaused(cluster, metal3Cluster) {
-		clusterLog.Info("reconciliation is paused for this object")
-		return ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}, nil
+	// Return early if Metal3Cluster or Cluster is paused.
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Checking pause condition")
+	var isPaused, requeue bool
+	if isPaused, requeue, err = paused.EnsurePausedCondition(ctx, r.Client, cluster, metal3Cluster); err != nil || isPaused || requeue {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("Pause check result",
+			"isPaused", isPaused, "requeue", requeue)
+		return ctrl.Result{Requeue: requeue, RequeueAfter: requeueAfter}, nil
 	}
 
 	clusterLog.Info("Reconciling metal3Cluster")
 
 	// Create a helper for managing a Metal3 cluster.
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Creating ClusterManager")
 	clusterMgr, err := r.ManagerFactory.NewClusterManager(cluster, metal3Cluster, clusterLog)
 	if err != nil {
-		return ctrl.Result{}, errors.Wrapf(err, "failed to create helper for managing the clusterMgr")
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("Failed to create ClusterManager",
+			baremetal.LogFieldError, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to create helper for managing the clusterMgr: %w", err)
 	}
 	if clusterMgr == nil {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("ClusterManager returned nil")
 		return ctrl.Result{}, nil
 	}
+	clusterLog.V(baremetal.VerbosityLevelDebug).Info("ClusterManager created successfully")
 
 	// Handle deleted clusters
 	if !metal3Cluster.DeletionTimestamp.IsZero() {
-		res, err := reconcileDelete(ctx, clusterMgr)
+		clusterLog.V(baremetal.VerbosityLevelTrace).Info("Metal3Cluster has deletion timestamp, proceeding with deletion")
+		conditions.Set(metal3Cluster, metav1.Condition{
+			Type:   infrav1.Metal3ClusterReadyV1Beta2Condition,
+			Status: metav1.ConditionFalse,
+			Reason: infrav1.Metal3ClusterDeletingV1Beta2Reason,
+		})
+		var res ctrl.Result
+		res, err = reconcileClusterDelete(ctx, clusterMgr, clusterLog)
 		// Requeue if the reconcile failed because the ClusterCache was locked for
 		// the current cluster because of concurrent access.
 		if errors.Is(err, clustercache.ErrClusterNotConnected) {
+			clusterLog.V(baremetal.VerbosityLevelDebug).Info("ClusterCache locked, requeuing")
 			clusterLog.Info("Requeuing because another worker has the lock on the ClusterCache")
 			return ctrl.Result{Requeue: true}, nil
 		}
@@ -153,10 +217,12 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Handle non-deleted clusters
-	res, err := reconcileNormal(ctx, clusterMgr)
+	clusterLog.V(baremetal.VerbosityLevelTrace).Info("Proceeding with normal reconciliation")
+	res, err := reconcileClusterNormal(ctx, clusterMgr, clusterLog)
 	// Requeue if the reconcile failed because the ClusterCache was locked for
 	// the current cluster because of concurrent access.
 	if errors.Is(err, clustercache.ErrClusterNotConnected) {
+		clusterLog.V(baremetal.VerbosityLevelDebug).Info("ClusterCache locked, requeuing")
 		clusterLog.Info("Requeuing because another worker has the lock on the ClusterCache")
 		return ctrl.Result{Requeue: true}, nil
 	}
@@ -165,15 +231,39 @@ func (r *Metal3ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 func patchMetal3Cluster(ctx context.Context, patchHelper *patch.Helper, metal3Cluster *infrav1.Metal3Cluster, options ...patch.Option) error {
 	// Always update the readyCondition by summarizing the state of other conditions.
-	conditions.SetSummary(metal3Cluster,
-		conditions.WithConditions(
+	deprecatedv1beta1conditions.SetSummary(metal3Cluster,
+		deprecatedv1beta1conditions.WithConditions(
 			infrav1.BaremetalInfrastructureReadyCondition,
 		),
 	)
 
+	if err := conditions.SetSummaryCondition(metal3Cluster, metal3Cluster, infrav1.Metal3ClusterReadyV1Beta2Condition,
+		conditions.ForConditionTypes{
+			infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+		},
+		// Using a custom merge strategy to override reasons applied during merge.
+		conditions.CustomMergeStrategy{
+			MergeStrategy: conditions.DefaultMergeStrategy(
+				// Use custom reasons.
+				conditions.ComputeReasonFunc(conditions.GetDefaultComputeMergeReasonFunc(
+					infrav1.Metal3ClusterNotReadyV1Beta2Reason,
+					infrav1.Metal3ClusterReadyUnknownV1Beta2Reason,
+					infrav1.Metal3ClusterReadyV1Beta2Reason,
+				)),
+			),
+		},
+	); err != nil {
+		return err
+	}
+
 	// Patch the object, ignoring conflicts on the conditions owned by this controller.
 	options = append(options,
-		patch.WithOwnedConditions{Conditions: []clusterv1.ConditionType{
+		patch.WithOwnedConditions{Conditions: []string{
+			clusterv1.PausedCondition,
+			infrav1.Metal3ClusterReadyV1Beta2Condition,
+			infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+		}},
+		patch.WithOwnedV1Beta1Conditions{Conditions: []clusterv1.ConditionType{
 			clusterv1.ReadyCondition,
 			infrav1.BaremetalInfrastructureReadyCondition,
 		}},
@@ -182,43 +272,73 @@ func patchMetal3Cluster(ctx context.Context, patchHelper *patch.Helper, metal3Cl
 	return patchHelper.Patch(ctx, metal3Cluster, options...)
 }
 
-func reconcileNormal(ctx context.Context, clusterMgr baremetal.ClusterManagerInterface) (ctrl.Result, error) { //nolint:unparam
+func reconcileClusterNormal(ctx context.Context, clusterMgr baremetal.ClusterManagerInterface, log logr.Logger) (ctrl.Result, error) { //nolint:unparam
+	log.V(baremetal.VerbosityLevelTrace).Info("reconcileClusterNormal: starting")
+
 	// If the Metal3Cluster doesn't have finalizer, add it.
+	log.V(baremetal.VerbosityLevelTrace).Info("Setting finalizer on Metal3Cluster")
 	clusterMgr.SetFinalizer()
+	log.V(baremetal.VerbosityLevelDebug).Info("Finalizer set")
 
 	// Create the Metal3 cluster (no-op)
+	log.V(baremetal.VerbosityLevelTrace).Info("Creating Metal3 cluster resources")
 	if err := clusterMgr.Create(ctx); err != nil {
+		log.V(baremetal.VerbosityLevelDebug).Info("Failed to create Metal3 cluster",
+			baremetal.LogFieldError, err.Error())
 		return ctrl.Result{}, err
 	}
+	log.V(baremetal.VerbosityLevelDebug).Info("Metal3 cluster resources created/verified")
 
 	// Set APIEndpoints so the Cluster API Cluster Controller can pull it
+	log.V(baremetal.VerbosityLevelTrace).Info("Updating cluster status with API endpoints")
 	if err := clusterMgr.UpdateClusterStatus(); err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "failed to get ip for the API endpoint")
+		log.V(baremetal.VerbosityLevelDebug).Info("Failed to update cluster status",
+			baremetal.LogFieldError, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to get ip for the API endpoint: %w", err)
 	}
+	log.V(baremetal.VerbosityLevelDebug).Info("Cluster status updated with API endpoints")
 
+	log.V(baremetal.VerbosityLevelTrace).Info("reconcileClusterNormal: completed successfully")
 	return ctrl.Result{}, nil
 }
 
-func reconcileDelete(ctx context.Context,
-	clusterMgr baremetal.ClusterManagerInterface) (ctrl.Result, error) {
+func reconcileClusterDelete(ctx context.Context,
+	clusterMgr baremetal.ClusterManagerInterface, log logr.Logger) (ctrl.Result, error) {
+	log.V(baremetal.VerbosityLevelTrace).Info("reconcileClusterDelete: starting")
+
 	// Verify that no metal3machine depend on the metal3cluster
+	log.V(baremetal.VerbosityLevelTrace).Info("Counting Metal3Machine descendants")
 	descendants, err := clusterMgr.CountDescendants(ctx)
 	if err != nil {
+		log.V(baremetal.VerbosityLevelDebug).Info("Failed to count descendants",
+			baremetal.LogFieldError, err.Error())
 		return ctrl.Result{}, err
 	}
+	log.V(baremetal.VerbosityLevelDebug).Info("Descendant count retrieved",
+		baremetal.LogFieldCount, descendants)
+
 	if descendants > 0 {
+		log.V(baremetal.VerbosityLevelDebug).Info("Metal3Cluster still has descendants, requeuing",
+			baremetal.LogFieldCount, descendants)
 		// Requeue so we can check the next time to see if there are still any
 		// descendants left.
 		return ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}, nil
 	}
 
+	log.V(baremetal.VerbosityLevelTrace).Info("No descendants, proceeding with deletion")
 	if err := clusterMgr.Delete(); err != nil {
-		return ctrl.Result{}, errors.Wrap(err, "failed to delete Metal3Cluster")
+		log.V(baremetal.VerbosityLevelDebug).Info("Failed to delete Metal3Cluster",
+			baremetal.LogFieldError, err.Error())
+		return ctrl.Result{}, fmt.Errorf("failed to delete Metal3Cluster: %w", err)
 	}
+	log.V(baremetal.VerbosityLevelDebug).Info("Metal3Cluster deleted successfully")
 
 	// Cluster is deleted so remove the finalizer.
+	log.V(baremetal.VerbosityLevelTrace).Info("Removing finalizer from Metal3Cluster")
 	clusterMgr.UnsetFinalizer()
+	log.V(baremetal.VerbosityLevelDebug).Info("Finalizer removed")
 
+	log.V(baremetal.VerbosityLevelTrace).Info("reconcileClusterDelete: completed successfully")
 	return ctrl.Result{}, nil
 }
 

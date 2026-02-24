@@ -24,10 +24,10 @@ function os_check() {
   export DISTRO="${ID}${VERSION_ID%.*}"
   export OS="${ID}"
   export OS_VERSION_ID=$VERSION_ID
-  export SUPPORTED_DISTROS=(centos8 centos9 rhel8 ubuntu20 ubuntu22)
+  export SUPPORTED_DISTROS=(centos9 rhel9 centos10 rhel10 ubuntu20 ubuntu22 ubuntu24 opensuse-leap15)
 
   if [[ ! "${SUPPORTED_DISTROS[*]}" =~ $DISTRO ]]; then
-    echo "Supported OS distros for the host are: CentOS Stream 8/9 or RHEL8/9 or Ubuntu20.04 or Ubuntu22.04"
+    echo "Supported OS distros for the host are: CentOS Stream 9/10, or RHEL9/10, or Ubuntu20.04/22.04/24.04, or Opensuse Leap 15"
     exit 1
   fi
 }
@@ -37,22 +37,25 @@ os_check
 if [[ "${OS}" == ubuntu ]]; then
   export IMAGE_OS="ubuntu"
   export CONTAINER_RUNTIME="docker"
-else
+elif [[ "${OS}" == centos ]]; then
   export IMAGE_OS="centos"
+  export CONTAINER_RUNTIME="podman"
+elif [[ "${OS}" == "opensuse-leap" ]]; then
+  export IMAGE_OS="leap"
   export CONTAINER_RUNTIME="podman"
 fi
 
 if [ "${CONTAINER_RUNTIME}" == "docker" ]; then
-  export EPHEMERAL_CLUSTER="kind"
+  export BOOTSTRAP_CLUSTER="kind"
 else
-  export EPHEMERAL_CLUSTER="minikube"
+  export BOOTSTRAP_CLUSTER="minikube"
 fi
 
-export FROM_K8S_VERSION=${FROM_K8S_VERSION:-"v1.32.1"}
-export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.33.0"}
+export FROM_K8S_VERSION=${FROM_K8S_VERSION:-"v1.34.1"}
+export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.35.0"}
 
 # Can be overriden from jjbs
-export CAPI_VERSION=${CAPI_VERSION:-"v1beta1"}
+export CAPI_VERSION=${CAPI_VERSION:-"v1beta2"}
 export CAPM3_VERSION=${CAPM3_VERSION:-"v1beta1"}
 export M3PATH=${M3PATH:-"${HOME}/go/src/github.com/metal3-io"}
 export CAPM3_LOCAL_IMAGE="${CAPM3PATH}"
@@ -78,9 +81,20 @@ case "${GINKGO_FOCUS:-}" in
     export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"1"}
   ;;
 
+  # k8s N+3 upgrade vars and config
+  k8s-upgrade-n3)
+    export NUM_NODES="4"
+    export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"3"}
+    export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"1"}
+    export KUBERNETES_N0_VERSION=${KUBERNETES_N0_VERSION:-"v1.32.9"}
+    export KUBERNETES_N1_VERSION=${KUBERNETES_N1_VERSION:-"v1.33.5"}
+    export KUBERNETES_N2_VERSION=${KUBERNETES_N2_VERSION:-"v1.34.1"}
+    export KUBERNETES_N3_VERSION=${KUBERNETES_N3_VERSION:-"v1.35.0"}
+  ;;
+
   # Scalability test environment vars and config
   scalability)
-    export NUM_NODES=${NUM_NODES:-"10"}
+    export NUM_NODES="30"
     export BMH_BATCH_SIZE=${BMH_BATCH_SIZE:-"2"}
     export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"1"}
     export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"0"}
@@ -155,3 +169,7 @@ export PROVIDER_ID_FORMAT="metal3://{{ ds.meta_data.providerid }}"
 
 # Enable the ClusterResourceSet feature flag
 export EXP_CLUSTER_RESOURCE_SET="true"
+
+# IRSO version
+export IRSOBRANCH="release-0.7"
+export IRSOCOMMIT="v0.7.0"

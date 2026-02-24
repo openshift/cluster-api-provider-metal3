@@ -18,16 +18,17 @@ package baremetal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
-	"github.com/pkg/errors"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capierrors "sigs.k8s.io/cluster-api/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
+	deprecatedv1beta1conditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
@@ -57,10 +58,10 @@ func NewClusterManager(client client.Client, cluster *clusterv1.Cluster,
 	metal3Cluster *infrav1.Metal3Cluster,
 	clusterLog logr.Logger) (ClusterManagerInterface, error) {
 	if metal3Cluster == nil {
-		return nil, errors.New("Metal3Cluster is required when creating a ClusterManager")
+		return nil, errors.New("metal3Cluster is required when creating a ClusterManager")
 	}
 	if cluster == nil {
-		return nil, errors.New("Cluster is required when creating a ClusterManager")
+		return nil, errors.New("cluster is required when creating a ClusterManager")
 	}
 
 	return &ClusterManager{
@@ -75,6 +76,7 @@ func NewClusterManager(client client.Client, cluster *clusterv1.Cluster,
 func (s *ClusterManager) SetFinalizer() {
 	// If the Metal3Cluster doesn't have finalizer, add it.
 	if !controllerutil.ContainsFinalizer(s.Metal3Cluster, infrav1.ClusterFinalizer) {
+		s.Log.V(VerbosityLevelTrace).Info("Adding finalizer to Metal3Cluster")
 		controllerutil.AddFinalizer(s.Metal3Cluster, infrav1.ClusterFinalizer)
 	}
 }
@@ -82,33 +84,44 @@ func (s *ClusterManager) SetFinalizer() {
 // UnsetFinalizer unsets finalizer.
 func (s *ClusterManager) UnsetFinalizer() {
 	// Cluster is deleted so remove the finalizer.
+	s.Log.V(VerbosityLevelTrace).Info("Removing finalizer from Metal3Cluster")
 	controllerutil.RemoveFinalizer(s.Metal3Cluster, infrav1.ClusterFinalizer)
 }
 
 // Create creates a cluster manager for the cluster.
 func (s *ClusterManager) Create(_ context.Context) error {
+	s.Log.V(VerbosityLevelTrace).Info("Validating Metal3Cluster configuration")
 	config := s.Metal3Cluster.Spec
 	err := config.IsValid()
 	if err != nil {
 		// Should have been picked earlier. Do not requeue.
+		s.Log.V(VerbosityLevelDebug).Info("Invalid Metal3Cluster configuration",
+			LogFieldError, err.Error())
 		s.setError("Invalid Metal3Cluster provided", capierrors.InvalidConfigurationClusterError)
 		return err
 	}
+	s.Log.V(VerbosityLevelDebug).Info("Metal3Cluster configuration is valid")
 	return nil
 }
 
 // ControlPlaneEndpoint returns cluster controlplane endpoint.
 func (s *ClusterManager) ControlPlaneEndpoint() ([]infrav1.APIEndpoint, error) {
+	s.Log.V(VerbosityLevelTrace).Info("Getting ControlPlaneEndpoint")
 	// Get IP address from spec, which gets it from posted cr yaml.
 	endPoint := s.Metal3Cluster.Spec.ControlPlaneEndpoint
 	var err error
 
 	if endPoint.Host == "" || endPoint.Port == 0 {
-		err = errors.New("Invalid field ControlPlaneEndpoint")
-		s.Log.Error(err, "Host IP or PORT not set")
+		err = errors.New("invalid field ControlPlaneEndpoint")
+		s.Log.V(VerbosityLevelDebug).Info("ControlPlaneEndpoint validation failed",
+			"host", endPoint.Host,
+			"port", endPoint.Port)
 		return nil, err
 	}
 
+	s.Log.V(VerbosityLevelDebug).Info("ControlPlaneEndpoint is valid",
+		"host", endPoint.Host,
+		"port", endPoint.Port)
 	return []infrav1.APIEndpoint{
 		{
 			Host: endPoint.Host,
@@ -119,24 +132,39 @@ func (s *ClusterManager) ControlPlaneEndpoint() ([]infrav1.APIEndpoint, error) {
 
 // Delete function, no-op for now.
 func (s *ClusterManager) Delete() error {
+	s.Log.V(VerbosityLevelTrace).Info("Delete called on Metal3Cluster (no-op)")
 	return nil
 }
 
 // UpdateClusterStatus updates a metal3Cluster object's status.
 func (s *ClusterManager) UpdateClusterStatus() error {
+	s.Log.V(VerbosityLevelTrace).Info("Updating Metal3Cluster status")
 	// Get APIEndpoints from  metal3Cluster Spec
 	_, err := s.ControlPlaneEndpoint()
 
 	if err != nil {
+		s.Log.V(VerbosityLevelDebug).Info("ControlPlaneEndpoint validation failed",
+			LogFieldError, err.Error())
 		s.Metal3Cluster.Status.Ready = false
 		s.setError("Invalid ControlPlaneEndpoint values", capierrors.InvalidConfigurationClusterError)
-		conditions.MarkFalse(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.ControlPlaneEndpointFailedReason, clusterv1.ConditionSeverityError, "%s", err.Error())
+		deprecatedv1beta1conditions.MarkFalse(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.ControlPlaneEndpointFailedReason, clusterv1.ConditionSeverityError, "%s", err.Error())
+		conditions.Set(s.Metal3Cluster, metav1.Condition{
+			Type:   infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+			Status: metav1.ConditionFalse,
+			Reason: infrav1.ControlPlaneEndpointFailedReason,
+		})
 		return err
 	}
 
 	// Mark the metal3Cluster ready.
+	s.Log.V(VerbosityLevelDebug).Info("Metal3Cluster is ready")
 	s.Metal3Cluster.Status.Ready = true
-	conditions.MarkTrue(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition)
+	deprecatedv1beta1conditions.MarkTrue(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition)
+	conditions.Set(s.Metal3Cluster, metav1.Condition{
+		Type:   infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+		Status: metav1.ConditionTrue,
+		Reason: infrav1.BaremetalInfrastructureReadyV1Beta2Reason,
+	})
 	now := metav1.Now()
 	s.Metal3Cluster.Status.LastUpdated = &now
 	return nil
@@ -146,13 +174,23 @@ func (s *ClusterManager) UpdateClusterStatus() error {
 // the message. It assumes the reason is invalid configuration, since that is
 // currently the only relevant Metal3ClusterStatusError choice.
 func (s *ClusterManager) setError(message string, reason capierrors.ClusterStatusError) {
-	s.Metal3Cluster.Status.FailureMessage = &message
-	s.Metal3Cluster.Status.FailureReason = &reason
+	s.Log.V(VerbosityLevelDebug).Info("Setting error on Metal3Cluster status",
+		LogFieldError, message,
+		"reason", reason)
+	if s.Metal3Cluster.Status.Deprecated == nil {
+		s.Metal3Cluster.Status.Deprecated = &infrav1.Metal3ClusterDeprecatedStatus{}
+	}
+	if s.Metal3Cluster.Status.Deprecated.V1Beta1 == nil {
+		s.Metal3Cluster.Status.Deprecated.V1Beta1 = &infrav1.Metal3ClusterV1Beta1DeprecatedStatus{}
+	}
+	s.Metal3Cluster.Status.Deprecated.V1Beta1.FailureMessage = &message
+	s.Metal3Cluster.Status.Deprecated.V1Beta1.FailureReason = &reason
 }
 
 // CountDescendants will return the number of descendants objects of the
 // metal3Cluster.
 func (s *ClusterManager) CountDescendants(ctx context.Context) (int, error) {
+	s.Log.V(VerbosityLevelTrace).Info("Counting Metal3Cluster descendants")
 	// Verify that no metal3machine depend on the metal3cluster
 	descendants, err := s.listDescendants(ctx)
 	if err != nil {
@@ -162,6 +200,8 @@ func (s *ClusterManager) CountDescendants(ctx context.Context) (int, error) {
 	}
 
 	nbDescendants := len(descendants.Items)
+	s.Log.V(VerbosityLevelDebug).Info("Found descendants",
+		LogFieldCount, nbDescendants)
 
 	if nbDescendants > 0 {
 		s.Log.Info(
@@ -175,6 +215,7 @@ func (s *ClusterManager) CountDescendants(ctx context.Context) (int, error) {
 // listDescendants returns a list of all Machines, for the cluster owning the
 // metal3Cluster.
 func (s *ClusterManager) listDescendants(ctx context.Context) (clusterv1.MachineList, error) {
+	s.Log.V(VerbosityLevelTrace).Info("Listing cluster descendants")
 	machines := clusterv1.MachineList{}
 	cluster, err := util.GetOwnerCluster(ctx, s.client,
 		s.Metal3Cluster.ObjectMeta,
@@ -182,6 +223,9 @@ func (s *ClusterManager) listDescendants(ctx context.Context) (clusterv1.Machine
 	if err != nil {
 		return machines, err
 	}
+	s.Log.V(VerbosityLevelDebug).Info("Found owner cluster",
+		LogFieldCluster, cluster.Name,
+		LogFieldNamespace, cluster.Namespace)
 
 	listOptions := []client.ListOption{
 		client.InNamespace(cluster.Namespace),
@@ -190,10 +234,13 @@ func (s *ClusterManager) listDescendants(ctx context.Context) (clusterv1.Machine
 		}),
 	}
 
-	if s.client.List(ctx, &machines, listOptions...) != nil {
+	if err := s.client.List(ctx, &machines, listOptions...); err != nil {
 		errMsg := fmt.Sprintf("failed to list metal3machines for cluster %s/%s", cluster.Namespace, cluster.Name)
-		return machines, errors.Wrapf(err, "%s", errMsg)
+		return machines, fmt.Errorf("%s: %w", errMsg, err)
 	}
 
+	s.Log.V(VerbosityLevelDebug).Info("Listed machines for cluster",
+		LogFieldCluster, cluster.Name,
+		LogFieldCount, len(machines.Items))
 	return machines, nil
 }

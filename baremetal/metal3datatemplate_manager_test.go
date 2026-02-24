@@ -20,12 +20,12 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -138,11 +138,11 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 
 	DescribeTable("Test getIndexes",
 		func(tc testGetIndexes) {
-			objects := []client.Object{}
+			objects := make([]client.Object, 0, len(tc.indexes))
 			for _, address := range tc.indexes {
 				objects = append(objects, address)
 			}
-			fakeClient := fake.NewClientBuilder().WithScheme(setupSchemeMm()).WithObjects(objects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
 			templateMgr, err := NewDataTemplateManager(fakeClient, tc.template,
 				logr.Discard(),
 			)
@@ -242,17 +242,15 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 
 	DescribeTable("Test UpdateDatas",
 		func(tc testCaseUpdateDatas) {
-			objects := []client.Object{}
+			objects := make([]client.Object, 0, len(tc.datas)+len(tc.dataClaims))
 			for _, address := range tc.datas {
 				objects = append(objects, address)
 			}
 			for _, claim := range tc.dataClaims {
 				objects = append(objects, claim)
 			}
-			fakeClient := fake.NewClientBuilder().WithScheme(setupSchemeMm()).WithObjects(objects...).WithStatusSubresource(objects...).Build()
-			templateMgr, err := NewDataTemplateManager(fakeClient, tc.template,
-				logr.Discard(),
-			)
+			fakeClient := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).WithStatusSubresource(objects...).Build()
+			templateMgr, err := NewDataTemplateManager(fakeClient, tc.template, logr.Discard())
 			Expect(err).NotTo(HaveOccurred())
 
 			hasData, _, err := templateMgr.UpdateDatas(context.TODO())
@@ -270,19 +268,42 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			Expect(tc.template.Status.LastUpdated.IsZero()).To(BeFalse())
 			Expect(tc.template.Status.Indexes).To(Equal(tc.expectedIndexes))
 
-			// get list of Metal3Data objects
-			dataObjects := infrav1.Metal3DataClaimList{}
+			// get list of Metal3DataClaim objects
+			dataClaimObjects := infrav1.Metal3DataClaimList{}
 			opts := &client.ListOptions{}
-			err = fakeClient.List(context.TODO(), &dataObjects, opts)
+			err = fakeClient.List(context.TODO(), &dataClaimObjects, opts)
 			Expect(err).NotTo(HaveOccurred())
 
-			// Iterate over the Metal3Data objects to find all indexes and objects
-			for _, claim := range dataObjects.Items {
-				if claim.DeletionTimestamp.IsZero() {
+			// Iterate over the Metal3DataClaim objects to check
+			// if the render data points to somewhere on claims that are not
+			// being deleted
+			for _, claim := range dataClaimObjects.Items {
+				if claim.DeletionTimestamp == nil || claim.DeletionTimestamp.IsZero() {
 					Expect(claim.Status.RenderedData).NotTo(BeNil())
 				}
 			}
 
+			// get list of Metal3DataClaim objects
+			dataObjects := infrav1.Metal3DataList{}
+			opts = &client.ListOptions{}
+			err = fakeClient.List(context.TODO(), &dataObjects, opts)
+			Expect(err).NotTo(HaveOccurred())
+
+			for _, data := range dataObjects.Items {
+				if data.DeletionTimestamp == nil || data.DeletionTimestamp.IsZero() {
+					correctDeletion := false
+					parentClaim := data.Spec.Claim.Name
+					Expect(parentClaim).NotTo(BeEmpty())
+					for _, claim := range dataClaimObjects.Items {
+						if parentClaim == claim.ObjectMeta.Name {
+							Expect(claim.DeletionTimestamp.IsZero()).To(BeTrue())
+							Expect(claim.Status.RenderedData).NotTo(BeNil())
+							correctDeletion = true
+						}
+					}
+					Expect(correctDeletion).To(BeTrue())
+				}
+			}
 		},
 		Entry("No Claims", testCaseUpdateDatas{
 			template: &infrav1.Metal3DataTemplate{
@@ -321,7 +342,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 					},
 					Status: infrav1.Metal3DataClaimStatus{
 						RenderedData: &corev1.ObjectReference{
-							Name:      "abc-2",
+							Name:      "abc-2", // Doesn't matter because we are not reconciling the "other template"
 							Namespace: namespaceName,
 						},
 					},
@@ -339,7 +360,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 					},
 					Status: infrav1.Metal3DataClaimStatus{
 						RenderedData: &corev1.ObjectReference{
-							Name:      "abc-2",
+							Name:      "abc-1",
 							Namespace: namespaceName,
 						},
 					},
@@ -360,6 +381,26 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 					Status: infrav1.Metal3DataClaimStatus{
 						RenderedData: &corev1.ObjectReference{
 							Name:      "abc-3",
+							Namespace: namespaceName,
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:              "deleting-claim-missmatch-name",
+						Namespace:         namespaceName,
+						DeletionTimestamp: &timeNow,
+						Finalizers:        []string{"ipclaim.ipam.metal3.io"},
+					},
+					Spec: infrav1.Metal3DataClaimSpec{
+						Template: corev1.ObjectReference{
+							Name:      templateMeta.Name,
+							Namespace: namespaceName,
+						},
+					},
+					Status: infrav1.Metal3DataClaimStatus{
+						RenderedData: &corev1.ObjectReference{
+							Name:      "cdc-3",
 							Namespace: namespaceName,
 						},
 					},
@@ -402,7 +443,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				},
 				{
 					ObjectMeta: metav1.ObjectMeta{
-						Name:      "data-to-delete",
+						Name:      "abc-3",
 						Namespace: namespaceName,
 					},
 					Spec: infrav1.Metal3DataSpec{
@@ -415,6 +456,23 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 							Namespace: namespaceName,
 						},
 						Index: 3,
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "cdc-3",
+						Namespace: namespaceName,
+					},
+					Spec: infrav1.Metal3DataSpec{
+						Template: corev1.ObjectReference{
+							Name:      templateMeta.Name,
+							Namespace: namespaceName,
+						},
+						Claim: corev1.ObjectReference{
+							Name:      "deleting-claim-missmatch-name",
+							Namespace: namespaceName,
+						},
+						Index: 40,
 					},
 				},
 			},
@@ -440,11 +498,11 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 
 	DescribeTable("Test CreateAddresses",
 		func(tc testCaseCreateAddresses) {
-			objects := []client.Object{}
+			objects := make([]client.Object, 0, len(tc.datas))
 			for _, address := range tc.datas {
 				objects = append(objects, address)
 			}
-			fakeClient := fake.NewClientBuilder().WithScheme(setupSchemeMm()).WithObjects(objects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
 			templateMgr, err := NewDataTemplateManager(fakeClient, tc.template,
 				logr.Discard(),
 			)
@@ -588,17 +646,17 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 
 	DescribeTable("Test DeleteAddresses",
 		func(tc testCaseDeleteDatas) {
-			objects := []client.Object{}
+			objects := make([]client.Object, 0, len(tc.datas))
 			for _, address := range tc.datas {
 				objects = append(objects, address)
 			}
-			fakeClient := fake.NewClientBuilder().WithScheme(setupSchemeMm()).WithObjects(objects...).Build()
+			fakeClient := fake.NewClientBuilder().WithScheme(setupScheme()).WithObjects(objects...).Build()
 			templateMgr, err := NewDataTemplateManager(fakeClient, tc.template,
 				logr.Discard(),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			allocatedMap, err := templateMgr.deleteData(context.TODO(), tc.dataClaim, tc.indexes)
+			allocatedMap, err := templateMgr.deleteMetal3DataAndClaim(context.TODO(), tc.dataClaim, tc.indexes)
 			if tc.expectError {
 				Expect(err).To(HaveOccurred())
 			} else {
@@ -677,6 +735,42 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name: "abc-0",
+					},
+				},
+			},
+		}),
+		Entry("Deletion needed but data name doesn't match template", testCaseDeleteDatas{
+			template: &infrav1.Metal3DataTemplate{
+				ObjectMeta: testObjectMeta("abc", "", ""),
+				Spec:       infrav1.Metal3DataTemplateSpec{},
+				Status: infrav1.Metal3DataTemplateStatus{
+					Indexes: map[string]int{
+						"TestRef": 0,
+					},
+				},
+			},
+			dataClaim: &infrav1.Metal3DataClaim{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "TestRef",
+					Finalizers: []string{
+						infrav1.DataClaimFinalizer,
+					},
+				},
+				Status: infrav1.Metal3DataClaimStatus{
+					RenderedData: &corev1.ObjectReference{
+						Name: "error-42",
+					},
+				},
+			},
+			indexes: map[int]string{
+				0: "TestRef",
+			},
+			expectedMap:     map[int]string{},
+			expectedIndexes: map[string]int{},
+			datas: []*infrav1.Metal3Data{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: "error-42",
 					},
 				},
 			},

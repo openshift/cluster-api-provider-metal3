@@ -1,0 +1,144 @@
+TL;DR:  We need to review all downstream changes to CAPBM
+
+The metal3 community started the Cluster API provider project several years ago.  This project was introduced as a downstream openshift project shortly after.  It was called cluster-api-provider-baremetal.
+
+The upstream and downstream projects continued to diverge until the upstream
+project got rewritten using the new Cluster API.  It was then renamed to
+cluster-api-provider-metal3.  The downstream project was never updated to this
+new version and we continued to apply emergency patches to the old version.
+
+Currently, openshift is interested in having a provider that can do CAPI.  We
+created a new downstream project based on the upstream
+cluster-api-provider-metal3.  In the future, we will want to deprecate
+cluster-api-provider-baremetal.  But this project has accrued a lot of valuable
+downstream-only fixes that we may wish to contribute upstream.
+
+What are those fixes?
+
+Let's do some git magic!
+
+With our git remotes as:
+
+{code:none}
+capmb https://github.com/openshift/cluster-api-provider-baremetal
+capm3 https://github.com/metal3-io/cluster-api-provider-metal3
+{code}
+
+We can ask for the closes common ancestor:
+
+{code:none}
+$ git merge-base upstream/main capbm/master
+5676be29989f8b5f15130102442185f50028acf7
+{code}
+
+And then list all the merges (pull requests):
+
+{code:none}
+$ git log --oneline --merges --no-decorate 5676be29989f8b5f15130102442185f50028acf7..capbm/master | wc -l
+143
+{code}
+
+We can ignore some early hacks and focus on features and bugs:
+
+{code:none}
+$ git log --oneline --merges --no-decorate 5676be29989f8b5f15130102442185f50028acf7..capbm/master | grep "Merge pull request" | wc -l
+129
+{code}
+
+And maybe filter out robot PRs:
+
+{code:none}
+$ git log --oneline --merges --no-decorate 5676be29989f8b5f15130102442185f50028acf7..capbm/master | grep "Merge pull request" | grep -v "art-consistency" | wc -l
+113
+{code}
+
+Then we can manually remove things like OWNERS file updates and we will be left with a list like:
+
+* [PR #213|https://github.com/openshift/cluster-api-provider-baremetal/pull/213]
+* [PR #209|https://github.com/openshift/cluster-api-provider-baremetal/pull/209]
+* [PR #203|https://github.com/openshift/cluster-api-provider-baremetal/pull/203]
+* [PR #197|https://github.com/openshift/cluster-api-provider-baremetal/pull/197]
+* [PR #195|https://github.com/openshift/cluster-api-provider-baremetal/pull/195]
+* [PR #193|https://github.com/openshift/cluster-api-provider-baremetal/pull/193]
+* [PR #191|https://github.com/openshift/cluster-api-provider-baremetal/pull/191]
+* [PR #184|https://github.com/openshift/cluster-api-provider-baremetal/pull/184]
+* [PR #186|https://github.com/openshift/cluster-api-provider-baremetal/pull/186]
+* [PR #175|https://github.com/openshift/cluster-api-provider-baremetal/pull/175]
+* [PR #172|https://github.com/openshift/cluster-api-provider-baremetal/pull/172]
+* [PR #171|https://github.com/openshift/cluster-api-provider-baremetal/pull/171]
+* [PR #170|https://github.com/openshift/cluster-api-provider-baremetal/pull/170]
+* [PR #167|https://github.com/openshift/cluster-api-provider-baremetal/pull/167]
+* [PR #168|https://github.com/openshift/cluster-api-provider-baremetal/pull/168]
+* [PR #163|https://github.com/openshift/cluster-api-provider-baremetal/pull/163]
+* [PR #164|https://github.com/openshift/cluster-api-provider-baremetal/pull/164]
+* [PR #158|https://github.com/openshift/cluster-api-provider-baremetal/pull/158]
+* [PR #150|https://github.com/openshift/cluster-api-provider-baremetal/pull/150]
+* [PR #156|https://github.com/openshift/cluster-api-provider-baremetal/pull/156]
+* [PR #151|https://github.com/openshift/cluster-api-provider-baremetal/pull/151]
+* [PR #142|https://github.com/openshift/cluster-api-provider-baremetal/pull/142]
+* [PR #138|https://github.com/openshift/cluster-api-provider-baremetal/pull/138]
+* [PR #140|https://github.com/openshift/cluster-api-provider-baremetal/pull/140]
+* [PR #132|https://github.com/openshift/cluster-api-provider-baremetal/pull/132]
+* [PR #130|https://github.com/openshift/cluster-api-provider-baremetal/pull/130]
+* [PR #113|https://github.com/openshift/cluster-api-provider-baremetal/pull/113]
+* [PR #129|https://github.com/openshift/cluster-api-provider-baremetal/pull/129]
+* [PR #119|https://github.com/openshift/cluster-api-provider-baremetal/pull/119]
+* [PR #125|https://github.com/openshift/cluster-api-provider-baremetal/pull/125]
+* [PR #124|https://github.com/openshift/cluster-api-provider-baremetal/pull/124]
+* [PR #122|https://github.com/openshift/cluster-api-provider-baremetal/pull/122]
+* [PR #118|https://github.com/openshift/cluster-api-provider-baremetal/pull/118]
+* [PR #116|https://github.com/openshift/cluster-api-provider-baremetal/pull/116]
+* [PR #114|https://github.com/openshift/cluster-api-provider-baremetal/pull/114]
+* [PR #112|https://github.com/openshift/cluster-api-provider-baremetal/pull/112]
+* [PR #111|https://github.com/openshift/cluster-api-provider-baremetal/pull/111]
+* [PR #108|https://github.com/openshift/cluster-api-provider-baremetal/pull/108]
+* [PR #110|https://github.com/openshift/cluster-api-provider-baremetal/pull/110]
+* [PR #107|https://github.com/openshift/cluster-api-provider-baremetal/pull/107]
+* [PR #100|https://github.com/openshift/cluster-api-provider-baremetal/pull/100]
+* [PR #102|https://github.com/openshift/cluster-api-provider-baremetal/pull/102]
+* [PR #97|https://github.com/openshift/cluster-api-provider-baremetal/pull/97]
+* [PR #96|https://github.com/openshift/cluster-api-provider-baremetal/pull/96]
+* [PR #92|https://github.com/openshift/cluster-api-provider-baremetal/pull/92]
+* [PR #90|https://github.com/openshift/cluster-api-provider-baremetal/pull/90]
+* [PR #87|https://github.com/openshift/cluster-api-provider-baremetal/pull/87]
+* [PR #89|https://github.com/openshift/cluster-api-provider-baremetal/pull/89]
+* [PR #77|https://github.com/openshift/cluster-api-provider-baremetal/pull/77]
+* [PR #88|https://github.com/openshift/cluster-api-provider-baremetal/pull/88]
+* [PR #80|https://github.com/openshift/cluster-api-provider-baremetal/pull/80]
+* [PR #86|https://github.com/openshift/cluster-api-provider-baremetal/pull/86]
+* [PR #85|https://github.com/openshift/cluster-api-provider-baremetal/pull/85]
+* [PR #81|https://github.com/openshift/cluster-api-provider-baremetal/pull/81]
+* [PR #76|https://github.com/openshift/cluster-api-provider-baremetal/pull/76]
+* [PR #83|https://github.com/openshift/cluster-api-provider-baremetal/pull/83]
+* [PR #84|https://github.com/openshift/cluster-api-provider-baremetal/pull/84]
+* [PR #82|https://github.com/openshift/cluster-api-provider-baremetal/pull/82]
+* [PR #79|https://github.com/openshift/cluster-api-provider-baremetal/pull/79]
+* [PR #67|https://github.com/openshift/cluster-api-provider-baremetal/pull/67]
+* [PR #71|https://github.com/openshift/cluster-api-provider-baremetal/pull/71]
+* [PR #74|https://github.com/openshift/cluster-api-provider-baremetal/pull/74]
+* [PR #70|https://github.com/openshift/cluster-api-provider-baremetal/pull/70]
+* [PR #68|https://github.com/openshift/cluster-api-provider-baremetal/pull/68]
+* [PR #65|https://github.com/openshift/cluster-api-provider-baremetal/pull/65]
+* [PR #59|https://github.com/openshift/cluster-api-provider-baremetal/pull/59]
+* [PR #44|https://github.com/openshift/cluster-api-provider-baremetal/pull/44]
+* [PR #63|https://github.com/openshift/cluster-api-provider-baremetal/pull/63]
+* [PR #61|https://github.com/openshift/cluster-api-provider-baremetal/pull/61]
+* [PR #60|https://github.com/openshift/cluster-api-provider-baremetal/pull/60]
+* [PR #58|https://github.com/openshift/cluster-api-provider-baremetal/pull/58]
+* [PR #54|https://github.com/openshift/cluster-api-provider-baremetal/pull/54]
+* [PR #55|https://github.com/openshift/cluster-api-provider-baremetal/pull/55]
+* [PR #52|https://github.com/openshift/cluster-api-provider-baremetal/pull/52]
+* [PR #51|https://github.com/openshift/cluster-api-provider-baremetal/pull/51]
+* [PR #50|https://github.com/openshift/cluster-api-provider-baremetal/pull/50]
+* [PR #43|https://github.com/openshift/cluster-api-provider-baremetal/pull/43]
+* [PR #41|https://github.com/openshift/cluster-api-provider-baremetal/pull/41]
+* [PR #40|https://github.com/openshift/cluster-api-provider-baremetal/pull/40]
+* [PR #38|https://github.com/openshift/cluster-api-provider-baremetal/pull/38]
+* [PR #33|https://github.com/openshift/cluster-api-provider-baremetal/pull/33]
+* [PR #32|https://github.com/openshift/cluster-api-provider-baremetal/pull/32]
+* [PR #30|https://github.com/openshift/cluster-api-provider-baremetal/pull/30]
+* [PR #27|https://github.com/openshift/cluster-api-provider-baremetal/pull/27]
+* [PR #25|https://github.com/openshift/cluster-api-provider-baremetal/pull/25]
+* [PR #23|https://github.com/openshift/cluster-api-provider-baremetal/pull/23]
+* [PR #22|https://github.com/openshift/cluster-api-provider-baremetal/pull/22]
+* [PR #9|https://github.com/openshift/cluster-api-provider-baremetal/pull/9]

@@ -16,12 +16,13 @@ package controllers
 
 import (
 	"context"
+	"errors"
 
-	"github.com/golang/mock/gomock"
+	"github.com/go-logr/logr"
 	baremetal_mocks "github.com/metal3-io/cluster-api-provider-metal3/baremetal/mocks"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
+	"go.uber.org/mock/gomock"
 )
 
 var _ = Describe("Metal3Cluster controller", func() {
@@ -59,11 +60,11 @@ var _ = Describe("Metal3Cluster controller", func() {
 			m.EXPECT().SetFinalizer()
 
 			if tc.CreateError {
-				returnedError = errors.New("Error")
+				returnedError = errors.New("error")
 				m.EXPECT().UpdateClusterStatus().MaxTimes(0)
 			} else {
 				if tc.UpdateError {
-					returnedError = errors.New("Error")
+					returnedError = errors.New("error")
 				} else {
 					returnedError = nil
 				}
@@ -73,7 +74,7 @@ var _ = Describe("Metal3Cluster controller", func() {
 			m.EXPECT().
 				Create(context.TODO()).Return(returnedError)
 
-			res, err := reconcileNormal(context.TODO(), m)
+			res, err := reconcileClusterNormal(context.TODO(), m, logr.Discard())
 
 			if tc.ExpectError {
 				Expect(err).To(HaveOccurred())
@@ -121,7 +122,7 @@ var _ = Describe("Metal3Cluster controller", func() {
 				// we do not remove the finalizers
 				if tc.DeleteError {
 					m.EXPECT().UnsetFinalizer().MaxTimes(0)
-					returnedError = errors.New("Error")
+					returnedError = errors.New("error")
 				} else {
 					m.EXPECT().UnsetFinalizer()
 					returnedError = nil
@@ -130,7 +131,7 @@ var _ = Describe("Metal3Cluster controller", func() {
 			}
 
 			if tc.DescendantsError {
-				returnedError = errors.New("Error")
+				returnedError = errors.New("error")
 			} else {
 				returnedError = nil
 			}
@@ -139,7 +140,7 @@ var _ = Describe("Metal3Cluster controller", func() {
 				returnedError,
 			)
 
-			res, err := reconcileDelete(context.TODO(), m)
+			res, err := reconcileClusterDelete(context.TODO(), m, logr.Discard())
 
 			if tc.ExpectError {
 				Expect(err).To(HaveOccurred())

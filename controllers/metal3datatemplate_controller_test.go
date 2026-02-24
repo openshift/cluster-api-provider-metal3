@@ -18,20 +18,21 @@ package controllers
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/golang/mock/gomock"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	baremetal_mocks "github.com/metal3-io/cluster-api-provider-metal3/baremetal/mocks"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
+	"go.uber.org/mock/gomock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -168,7 +169,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 			cluster: &clusterv1.Cluster{
 				ObjectMeta: testObjectMeta(clusterName, namespaceName, ""),
 				Spec: clusterv1.ClusterSpec{
-					Paused: true,
+					Paused: ptr.To(true),
 				},
 			},
 			expectRequeue: true,
@@ -237,7 +238,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				m.EXPECT().UpdateDatas(context.TODO()).Return(false, false, errors.New(""))
 			}
 
-			res, err := r.reconcileNormal(context.TODO(), m)
+			res, err := r.reconcileNormal(context.TODO(), m, logr.Discard())
 			gomockCtrl.Finish()
 
 			if tc.ExpectError {
@@ -292,7 +293,7 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 				m.EXPECT().UpdateDatas(context.TODO()).Return(false, false, errors.New(""))
 			}
 
-			res, err := r.reconcileDelete(context.TODO(), m)
+			res, err := r.reconcileDelete(context.TODO(), m, logr.Discard())
 			gomockCtrl.Finish()
 
 			if tc.ExpectError {
@@ -408,12 +409,12 @@ var _ = Describe("Metal3DataTemplate manager", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(result).To(Equal(ctrl.Result{}))
 
-		result, err = checkReconcileError(baremetal.WithTransientError(errors.New("Failed"), 0*time.Second), "abc")
+		result, err = checkReconcileError(baremetal.WithTransientError(errors.New("failed"), 0*time.Second), "abc")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(ctrl.Result{Requeue: true}))
 
 		result, err = checkReconcileError(
-			baremetal.WithTransientError(errors.New("Failed"), requeueAfter), "abc",
+			baremetal.WithTransientError(errors.New("failed"), requeueAfter), "abc",
 		)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(Equal(ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}))

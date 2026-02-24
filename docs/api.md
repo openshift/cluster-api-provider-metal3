@@ -48,7 +48,7 @@ A Cluster is a Cluster API core object representing a Kubernetes cluster.
 Example cluster:
 
 ```yaml
-apiVersion: cluster.x-k8s.io/v1beta1
+apiVersion: cluster.x-k8s.io/v1beta2
 kind: Cluster
 metadata:
   name: cluster
@@ -62,15 +62,13 @@ spec:
       cidrBlocks:
       - 192.168.0.0/18
   infrastructureRef:
-    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    apiGroup: infrastructure.cluster.x-k8s.io
     kind: Metal3Cluster
     name: m3cluster
-    namespace: metal3
   controlPlaneRef:
     kind: KubeadmControlPlane
-    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    apiGroup: controlplane.cluster.x-k8s.io
     name: m3cluster-controlplane
-    namespace: metal3
 ```
 
 ## Metal3Cluster
@@ -115,36 +113,40 @@ For example:
 
 ```yaml
 kind: KubeadmControlPlane
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 metadata:
   name: m3cluster-controlplane
   namespace: metal3
 spec:
   machineTemplate:
-    infrastructureRef:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
-      kind: Metal3MachineTemplate
-      name: m3cluster-controlplane
-      namespace: metal3
-    nodeDrainTimeout: 0s
+    spec:
+      infrastructureRef:
+        apiGroup: infrastructure.cluster.x-k8s.io
+        kind: Metal3MachineTemplate
+        name: m3cluster-controlplane
+      deletion:
+        nodeDrainTimeoutSeconds: 0
   replicas: 3
-  rolloutStrategy:
-    rollingUpdate:
-      maxSurge: 1
-    type: RollingUpdate
-  version: v1.33.0
+  rollout:
+    strategy:
+      rollingUpdate:
+        maxSurge: 1
+      type: RollingUpdate
+  version: v1.35.0
   kubeadmConfigSpec:
     joinConfiguration:
       controlPlane: {}
       nodeRegistration:
         name: "{{ ds.meta_data.name }}"
         kubeletExtraArgs:
-          node-labels: "metal3.io/uuid={{ ds.meta_data.uuid }}"
+        - name: node-labels
+          value: 'metal3.io/uuid={{ ds.meta_data.uuid }}'
     initConfiguration:
       nodeRegistration:
         name: "{{ ds.meta_data.name }}"
         kubeletExtraArgs:
-          node-labels: "metal3.io/uuid={{ ds.meta_data.uuid }}"
+        - name: node-labels
+          value: 'metal3.io/uuid={{ ds.meta_data.uuid }}'
 ```
 
 ## KubeadmConfig
@@ -168,7 +170,7 @@ keys and values are passed to cloud-init through a `Metal3DataTemplate` object
 Example KubeadmConfig:
 
 ```yaml
-apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfig
 metadata:
   name: controlplane-0
@@ -178,44 +180,45 @@ spec:
     nodeRegistration:
       name: "{{ ds.meta_data.name }}"
       kubeletExtraArgs:
-        node-labels: "metal3.io/uuid={{ ds.meta_data.uuid }}"
+      - name: node-labels
+        value: 'metal3.io/uuid={{ ds.meta_data.uuid }}'
   preKubeadmCommands:
-    - netplan apply
-    - systemctl enable --now crio kubelet
-    - if (curl -sk --max-time 10 https://192.168.111.249:6443/healthz); then
-      echo "keepalived already running";else systemctl start keepalived; fi
-    - systemctl link /lib/systemd/system/monitor.keepalived.service
-    - systemctl enable monitor.keepalived.service
-    - systemctl start monitor.keepalived.service
+  - netplan apply
+  - systemctl enable --now crio kubelet
+  - if (curl -sk --max-time 10 https://192.168.111.249:6443/healthz); then
+    echo "keepalived already running";else systemctl start keepalived; fi
+  - systemctl link /lib/systemd/system/monitor.keepalived.service
+  - systemctl enable monitor.keepalived.service
+  - systemctl start monitor.keepalived.service
   postKubeadmCommands:
-    - mkdir -p /home/metal3/.kube
-    - chown metal3:metal3 /home/metal3/.kube
-    - cp /etc/kubernetes/admin.conf /home/metal3/.kube/config
-    - systemctl enable --now keepalived
-    - chown metal3:metal3 /home/metal3/.kube/config
+  - mkdir -p /home/metal3/.kube
+  - chown metal3:metal3 /home/metal3/.kube
+  - cp /etc/kubernetes/admin.conf /home/metal3/.kube/config
+  - systemctl enable --now keepalived
+  - chown metal3:metal3 /home/metal3/.kube/config
   files:
-    - path: /etc/keepalived/keepalived.conf
-      content: |
-        ! Configuration File for keepalived
-        global_defs {
-            notification_email {
-            sysadmin@example.com
-            support@example.com
-            }
-            notification_email_from lb@example.com
-            smtp_server localhost
-            smtp_connect_timeout 30
+  - path: /etc/keepalived/keepalived.conf
+    content: |
+      ! Configuration File for keepalived
+      global_defs {
+          notification_email {
+          sysadmin@example.com
+          support@example.com
         }
-        vrrp_instance VI_2 {
-            state MASTER
-            interface enp2s0
-            virtual_router_id 2
-            priority 101
-            advert_int 1
-            virtual_ipaddress {
-                192.168.111.249
-            }
+          notification_email_from lb@example.com
+          smtp_server localhost
+          smtp_connect_timeout 30
         }
+      vrrp_instance VI_2 {
+        state MASTER
+        interface enp2s0
+        virtual_router_id 2
+        priority 101
+        advert_int 1
+        virtual_ipaddress {
+          192.168.111.249
+        }
+      }
 ```
 
 ## Machine
@@ -226,7 +229,7 @@ has a reference to a KubeadmConfig and a reference to a metal3machine.
 Example Machine:
 
 ```yaml
-apiVersion: cluster.x-k8s.io/v1beta1
+apiVersion: cluster.x-k8s.io/v1beta2
 kind: Machine
 metadata:
   name: controlplane-0
@@ -237,18 +240,17 @@ metadata:
 spec:
   bootstrap:
     configRef:
-      apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+      apiGroup: bootstrap.cluster.x-k8s.io
       kind: KubeadmConfig
       name: controlplane-0
-      namespace: metal3
   infrastructureRef:
-    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    apiGroup: infrastructure.cluster.x-k8s.io
     kind: Metal3Machine
     name: controlplane-0
-    namespace: metal3
-  nodeDrainTimeout: 0s
+  deletion:
+    nodeDrainTimeoutSeconds: 0
   providerID: metal3://68be298f-ed11-439e-9d51-6c5260faede6
-  version: v1.33.0
+  version: v1.35.0
 ```
 
 ## Metal3Machine
@@ -387,7 +389,7 @@ spec:
         matchExpressions:
         - key: key3
           operator: in
-          values: [‘a’, ‘b’, ‘c’]
+          values: [ ‘a’, ‘b’, ‘c’ ]
 ```
 
 Example 3: Only consider `BareMetalHost` with `key1` set to `value1` AND `key2`
@@ -404,7 +406,7 @@ spec:
         matchExpressions:
         - key: key3
           operator: in
-          values: [‘a’, ‘b’, ‘c’]
+          values: [ ‘a’, ‘b’, ‘c’ ]
 ```
 
 ### Metal3Machine example
@@ -418,10 +420,10 @@ metadata:
 spec:
   automatedCleaningMode: metadata
   image:
-    checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.33.0-raw.img.sha256sum
+    checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img.sha256sum
     checksumType: sha256
     format: raw
-    url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.33.0-raw.img
+    url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img
   hostSelector:
     matchLabels:
       key1: value1
@@ -430,9 +432,9 @@ spec:
       operator: in
       values: { ‘abc’, ‘123’, ‘value2’ }
   dataTemplate:
-    Name: controlplane-metadata
+    name: controlplane-metadata
   metaData:
-    Name: controlplane-0-metadata-0
+    name: controlplane-0-metadata-0
 ```
 
 ## MachineDeployment
@@ -443,7 +445,7 @@ pods. It refers to a KubeadmConfigTemplate and to a Metal3MachineTemplate.
 Example MachineDeployment:
 
 ```yaml
-apiVersion: cluster.x-k8s.io/v1beta1
+apiVersion: cluster.x-k8s.io/v1beta2
 kind: MachineDeployment
 metadata:
   name: md-0
@@ -458,11 +460,12 @@ spec:
     matchLabels:
       cluster.x-k8s.io/cluster-name: cluster
       nodepool: nodepool-0
-  strategy:
-    rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
-    type: RollingUpdate
+  rollout:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -472,13 +475,13 @@ spec:
       bootstrap:
         configRef:
           name: md-0
-          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          apiGroup: bootstrap.cluster.x-k8s.io
           kind: KubeadmConfigTemplate
       infrastructureRef:
         name: md-0
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        apiGroup: infrastructure.cluster.x-k8s.io
         kind: Metal3MachineTemplate
-      version: v1.33.0
+      version: v1.35.0
 ```
 
 ## KubeadmConfigTemplate
@@ -488,7 +491,7 @@ This contains a template to generate KubeadmConfig.
 Example KubeadmConfigTemplate:
 
 ```yaml
-apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+apiVersion: bootstrap.cluster.x-k8s.io/v1beta2
 kind: KubeadmConfigTemplate
 metadata:
   name: controlplane-0
@@ -500,7 +503,8 @@ spec:
         nodeRegistration:
           name: "{{ ds.meta_data.name }}"
           kubeletExtraArgs:
-            node-labels: "metal3.io/uuid={{ ds.meta_data.uuid }}"
+          - name: node-labels
+            value: 'metal3.io/uuid={{ ds.meta_data.uuid }}'
       preKubeadmCommands:
       - netplan apply
       - systemctl enable --now crio kubelet
@@ -562,10 +566,10 @@ spec:
     spec:
       automatedCleaningMode: metadata
       image:
-        checksum: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.33.0-raw.img.sha256sum
+        checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img.sha256sum
         checksumType: sha256
         format: raw
-        url: http://172.22.0.1/images/UBUNTU_22.04_NODE_IMAGE_K8S_v1.33.0-raw.img
+        url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img
       hostSelector:
         matchLabels:
           key1: value1
@@ -574,7 +578,7 @@ spec:
           operator: in
           values: { ‘abc’, ‘123’, ‘value2’ }
       dataTemplate:
-        Name: m3mt-0-metadata
+        name: m3mt-0-metadata
 ```
 
 ## Metal3DataTemplate
@@ -608,16 +612,24 @@ spec:
       step: 1
     ipAddressesFromIPPool:
     - key: ip
-      Name: pool-1
+      name: pool-1
+      apiGroup: ipam.metal3.io
+      kind: IPPool
     prefixesFromIPPool:
     - key: ip
-      Name: pool-1
+      name: pool-1
+      apiGroup: ipam.metal3.io
+      kind: IPPool
     gatewaysFromIPPool:
     - key: gateway
-      Name: pool-1
+      name: pool-1
+      apiGroup: ipam.metal3.io
+      kind: IPPool
     dnsServersFromIPPool:
     - key: dns
-      Name: pool-1
+      name: pool-1
+      apiGroup: ipam.metal3.io
+      kind: IPPool
     fromHostInterfaces:
     - key: mac
       interface: "eth0"
@@ -651,8 +663,8 @@ spec:
           string: "XX:XX:XX:XX:XX:XX"
         bondMode: "802.3ad"
         bondLinks:
-          - enp1s0
-          - enp2s0
+        - enp1s0
+        - enp2s0
       vlans:
       - id: "vlan1"
         mtu: 1500
@@ -668,12 +680,26 @@ spec:
       ipv4:
       - id: "Baremetal"
         link: "vlan1"
-        IPAddressFromIPPool: pool-1
+        # using an ipam.metal3.io IPPool
+        ipAddressFromIPPool: pool-1
+        # # alternatively using a CAPI IPAM provider:
+        # fromPoolRef:
+        #   name: pool-1
+        #   apiGroup: ipam.cluster.x-k8s.io
+        #   kind: InClusterIPPool
         routes:
         - network: "0.0.0.0"
           netmask: 0
           gateway:
+            # using an ipam.metal3.io IPPool
             fromIPPool: pool-1
+            # # alternatively using a CAPI IPAM provider:
+            # fromPoolRef:
+            #   name: pool-1
+            #   apiGroup: ipam.cluster.x-k8s.io
+            #   kind: InClusterIPPool
+            # # can also be a fixed address with:
+            # sring: 10.20.30.40
           services:
             dns:
             - "8.8.4.4"
@@ -687,11 +713,25 @@ spec:
       ipv6:
       - id: "Baremetal6"
         link: "vlan1"
-        IPAddressFromIPPool: pool6-1
+        # using an ipam.metal3.io IPPool
+        ipAddressFromIPPool: pool6-1
+        # # alternatively using a CAPI IPAM provider:
+        # fromPoolRef:
+        #   name: pool6-1
+        #   apiGroup: ipam.cluster.x-k8s.io
+        #   kind: InClusterIPPool
         routes:
         - network: "0::0"
           netmask: 0
           gateway:
+            # using an ipam.metal3.io IPPool
+            # fromIPPool: pool6-1
+            # # alternatively using a CAPI IPAM provider:
+            # fromPoolRef:
+            #   name: pool6-1
+            #   apiGroup: ipam.cluster.x-k8s.io
+            #   kind: InClusterIPPool
+            # # can also be a fixed address with:
             string: "2001:0db8:85a3::8a2e:0370:1"
           services:
             dns:
@@ -736,17 +776,25 @@ ways. The following types of objects are available and accept lists:
   unspecified (default value being 0), the controller will automatically change
   it for 1. The `prefix` and `suffix` attributes are to provide a prefix and a
   suffix for the rendered index.
-- **ipAddressesFromIPPool**: renders an ip address from an _IPPool_ object. The
-  _IPPool_ objects are defined in the
+- **ipAddressesFromIPPool**: renders an ip address from either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
-- **prefixesFromIPPool**: renders a network prefix from an _IPPool_ object. The
-  _IPPool_ objects are defined in the
+- **prefixesFromIPPool**: renders a network prefix from either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
-- **gatewaysFromIPPool**: renders a network gateway from an _IPPool_ object. The
-  _IPPool_ objects are defined in the
+- **gatewaysFromIPPool**: renders a network gateway from either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
-- **dnsServersFromIPPool**: renders a dns servers list from an _IPPool_ object.
-  The _IPPool_ objects are defined in the
+- **dnsServersFromIPPool**: either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
 - **fromHostInterfaces**: renders the MAC address of the BareMetalHost that
   matches the name given as value.
@@ -848,6 +896,11 @@ The **networks/ipv4** object contains the following:
 - **ipAddressFromIPPool**: renders an ip address from an _IPPool_ object. The
   _IPPool_ objects are defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
+- **fromPoolRef**: renders an ip address from either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
+  [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
 - **routes**: the list of route objects
 
 The **networks/ipv\*/routes** is a route object containing:
@@ -855,7 +908,7 @@ The **networks/ipv\*/routes** is a route object containing:
 - **network**: the subnet to reach
 - **netmask**: the mask of the subnet as integer
 - **gateway**: the gateway to use, it can either be given as a string in
-  _string_ or as an IPPool name in _fromIPPool_
+  _string_, as an IPPool name in _fromIPPool_, or as an IPAM pool reference in _fromPoolRef_
 - **services**: a list of services object as defined later
 
 The **networks/ipv4Dhcp** object contains the following:
@@ -870,6 +923,11 @@ The **networks/ipv6** object contains the following:
 - **link**: The name of the link to configure this network for
 - **ipAddressFromIPPool**: renders an ip address from an _IPPool_ object. The
   _IPPool_ objects are defined in the
+  [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
+- **fromPoolRef**: renders an ip address from either:
+   - a pool implementing the
+     [Cluster-API IPAM provider specification](https://cluster-api.sigs.k8s.io/reference/providers.html#ip-address-management-ipam)
+   - an _IPPool_ object as defined in the
   [IP Address manager repo](https://github.com/metal3-io/ip-address-manager)
 - **routes**: the list of route objects
 

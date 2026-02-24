@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Support FROM override
-ARG BUILD_IMAGE=docker.io/golang:1.24.4@sha256:10c131810f80a4802c49cab0961bbe18a16f4bb2fb99ef16deaa23e4246fc817
+ARG BUILD_IMAGE=docker.io/golang:1.24.13@sha256:c29cdf32d47053ab0d914852d9c2ed2da12b3cf13079aaef1704ef21335e68a3
 ARG BASE_IMAGE=gcr.io/distroless/static:nonroot@sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f
 
 # Build the fkas binary on golang image
@@ -27,12 +27,13 @@ ENV GOPROXY=$goproxy
 # Copy the Go Modules manifests
 COPY go.mod go.sum ./
 
+COPY capm3 ./capm3
 # Cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
 # Build Fkas
-FROM base AS build-fkas
+FROM base AS docker-build-fkas
 
 # Copy the sources
 COPY cmd/metal3-fkas/*.go ./
@@ -44,7 +45,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
     -o fkas .
 
 # Build fkas-reconciler
-FROM base AS build-fkas-reconciler
+FROM base AS docker-build-fkas-reconciler
 
 # Copy the sources
 COPY cmd/metal3-fkas-reconciler/*.go ./
@@ -59,7 +60,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
 FROM $BASE_IMAGE
 WORKDIR /
 # Use uid of nonroot user (65532) because kubernetes expects numeric user when applying pod security policies
-COPY --from=build-fkas /workspace/fkas .
-COPY --from=build-fkas-reconciler /workspace/reconciler .
+COPY --from=docker-build-fkas /workspace/fkas .
+COPY --from=docker-build-fkas-reconciler /workspace/reconciler .
 USER 65532
 ENTRYPOINT ["/fkas"]

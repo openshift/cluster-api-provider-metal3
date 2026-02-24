@@ -18,19 +18,20 @@ package controllers
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-logr/logr"
-	"github.com/golang/mock/gomock"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	baremetal_mocks "github.com/metal3-io/cluster-api-provider-metal3/baremetal/mocks"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/pkg/errors"
+	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"k8s.io/utils/ptr"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -207,7 +208,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Namespace: namespaceName,
 					},
 					Spec: clusterv1.ClusterSpec{
-						Paused: true,
+						Paused: ptr.To(true),
 					},
 				},
 				expectRequeue: true,
@@ -302,7 +303,7 @@ var _ = Describe("Metal3Data manager", func() {
 					m.EXPECT().Reconcile(context.TODO()).Return(nil)
 				}
 
-				res, err := dataReconcile.reconcileNormal(context.TODO(), m)
+				res, err := dataReconcile.reconcileNormal(context.TODO(), m, logr.Discard())
 				gomockCtrl.Finish()
 
 				if tc.ExpectError {
@@ -363,7 +364,7 @@ var _ = Describe("Metal3Data manager", func() {
 				m.EXPECT().UnsetFinalizer()
 			}
 
-			res, err := dataReconcile.reconcileDelete(context.TODO(), m)
+			res, err := dataReconcile.reconcileDelete(context.TODO(), m, logr.Discard())
 			gomockCtrl.Finish()
 
 			if tc.ExpectError {

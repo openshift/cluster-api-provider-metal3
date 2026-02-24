@@ -54,6 +54,7 @@ Below are the tests that you can use with `GINKGO_FOCUS` and `GINKGO_SKIP`
    - remediation
    - pivoting
 - k8s-upgrade
+- k8s-upgrade-n3
 - k8s-conformance
 - clusterctl-upgrade
 - scalability
@@ -70,6 +71,17 @@ export GINKGO_FOCUS=features
 export GINKGO_SKIP=healthcheck remediation
 make test-e2e
 ```
+
+### Testing against CAPI nightly builds
+
+Cluster API publishes nightly versions of the project components’ manifests from
+the main branch. If you want to run tests against the nightly builds you can set:
+
+```sh
+export CAPI_NIGHTLY_BUILD=true
+```
+
+The used build is from the previous day.
 
 ## Cleanup
 
@@ -103,7 +115,7 @@ order:
 - Node reuse
 - Re-pivoting
 
-However, in case we need to run them in the ephemeral cluster pivoting and
+However, in case we need to run them in the bootstrap cluster pivoting and
 re-pivoting should be ignored.
 
 ### Remediation based feature tests
@@ -118,10 +130,10 @@ Independent from the previous tests and can run independently includes:
 [in the middle of the remediation test](https://github.com/metal3-io/cluster-api-provider-metal3/blob/8d08f375de93a793f839b42b5ec40e6bebf98664/test/e2e/remediation_test.go#L108)
 for practical reasons at the moment.
 
-The ephemeral cluster is first launched using
+The bootstrap cluster is first launched using
 [metal3-dev-env](https://github.com/metal3-io/metal3-dev-env). The remediation,
 inspection and Metal3Remediation tests are then run with the controllers still
-in the ephemeral cluster either before pivoting or after re-pivoting.
+in the bootstrap cluster either before pivoting or after re-pivoting.
 
 ### clusterctl upgrade tests
 
@@ -129,15 +141,11 @@ in the ephemeral cluster either before pivoting or after re-pivoting.
 - Upgrade Ironic
 - Upgrade CAPI/CAPM3
 
-<!-- markdownlint-disable MD013 -->
-
 | tests          | CAPM3 from             | CAPM3 to  | CAPI from             | CAPI to         |
 | ---------------| ---------------------- | --------- | --------------------- |---------------- |
+| v1.12=>current | v1.12 latest patch     | main      | v1.12 latest patch    | latest release  |
+| v1.11=>current | v1.11 latest patch     | main      | v1.11 latest patch    | latest release  |
 | v1.10=>current | v1.10 latest patch     | main      | v1.10 latest patch    | latest release  |
-| v1.9=>current  | v1.9 latest patch      | main      | v1.9 latest patch     | latest release  |
-| v1.8=>current  | v1.8 latest patch      | main      | v1.8 latest patch     | latest release  |
-
-<!-- markdownlint-disable MD013 -->
 
 ### K8s upgrade tests
 
@@ -151,22 +159,56 @@ For example:
 
 Main branch k8s-upgrade tests:
 
-- `v1.32` => `v1.33`
+- `v1.34` => `v1.35`
+
+Release 1.12 branch k8s-upgrade test:
+
+- `v1.34` => `v1.35`
+
+Release 1.11 branch k8s-upgrade test:
+
+- `v1.33` => `v1.34`
 
 Release 1.10 branch k8s-upgrade test:
 
 - `v1.32` => `v1.33`
 
-Release 1.9 branch k8s-upgrade test:
+When Kubernetes 1.36 is released, k8s-upgrade `v1.35` => `v1.36` will be
+supported in latest release branch and main branch.
+
+### K8s N+3 upgrade tests
+
+Kubernetes N+3(v1.34) version upgrade in target control plane nodes.
+We start the test with version N(v1.31) and gradually upgrade the
+target cluster control plane one by one for main branch. We are
+excluding the worker node upgrade and keep it to initial N version.
+When a new Kubernetes minor release is available, we will try to support
+it in main branch. This will have a check on weekly basis.
+
+```sh
+export GINKGO_FOCUS=k8s-upgrade-n3
+```
+
+Main branch k8s-upgrade-n3 tests:
 
 - `v1.31` => `v1.32`
 
-Release 1.8 branch k8s-upgrade test:
+- `v1.32` => `v1.33`
 
-- `v1.29` => `v1.30`
+- `v1.33` => `v1.34`
 
-When Kubernetes 1.34 is released, k8s-upgrade `v1.33` => `v1.34` will be
-supported in v1.10.x (but not in v1.9.x)
+When Kubernetes 1.35 is released, k8s-upgrade-n3 test will be updated accordingly.
+
+### Test matrix for n+3 k8s upgrade version
+
+Kubernetes n+3 e2e test uses the following Kubernetes versions for n+3 upgrade control
+planes:
+
+<!-- markdownlint-disable MD013 -->
+| KUBERNETES_N0_VERSION | KUBERNETES_N1_VERSION | KUBERNETES_N2_VERSION | KUBERNETES_N3_VERSION |
+| --------------------- | --------------------- | --------------------- | --------------------- |
+|       v1.32.9         |        v1.33.5        |       v1.34.1         |        v1.35.0        |
+<!-- markdownlint-enable MD013 -->
 
 ### K8s conformance tests
 
@@ -178,9 +220,10 @@ for more information on which tests are required for each Kubernetes release.
 
 ### CAPI MachineDeployment tests
 
-Includes the following MachineDeployment tests adopted from the Cluster API's e2e tests:
+Includes the following MachineDeployment tests adopted from the Cluster API's
+e2e tests:
 
-- [MachineDeployment rolling upgrades](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/md_rollout.go)
+- [MachineDeployment rolling upgrades](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/kcp_md_rollout.go)
 - [MachineDeployment scale](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/md_scale.go)
 
 ## Guidelines to follow when adding new E2E tests
@@ -216,13 +259,9 @@ to the latest.
 Current e2e tests use the following Kubernetes versions for source and target
 clusters:
 
-<!-- markdownlint-disable MD013 -->
-
 | tests               | bootstrap cluster | metal3 cluster init | metal3 cluster final |
-| ------------------- | ----------------- | -------------------- | -------------------- |
-| integration         | v1.33.0           | v1.33.0              | x                    |
-| remediation         | v1.33.0           | v1.33.0              | x                    |
-| pivot based feature | v1.33.0           | v1.33.0              | v1.33.0              |
-| upgrade             | v1.33.0           | v1.33.0              | v1.33.0              |
-
-<!-- markdownlint-enable MD013 -->
+| ------------------- | ----------------- | --------------------| -------------------- |
+| integration         | v1.35.0           | v1.35.0             | x                    |
+| remediation         | v1.35.0           | v1.35.0             | x                    |
+| pivot based feature | v1.35.0           | v1.35.0             | v1.35.0              |
+| upgrade             | v1.35.0           | v1.35.0             | v1.35.0              |

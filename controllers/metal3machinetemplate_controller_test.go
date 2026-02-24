@@ -21,16 +21,16 @@ import (
 	"errors"
 
 	"github.com/go-logr/logr"
-	"github.com/golang/mock/gomock"
-	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
 	baremetal_mocks "github.com/metal3-io/cluster-api-provider-metal3/baremetal/mocks"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"go.uber.org/mock/gomock"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -265,7 +265,7 @@ var _ = Describe("Metal3MachineTemplate controller", func() {
 			m = baremetal_mocks.NewMockTemplateManagerInterface(mockController)
 			mf = baremetal_mocks.NewMockManagerFactoryInterface(mockController)
 			fakeClientBuilder = fake.NewClientBuilder()
-			objects = []client.Object{}
+			objects = make([]client.Object, 0, 1)
 			objects = append(objects, tc.common.m3mTemplate)
 			fakeClient = fakeClientBuilder.WithScheme(setupScheme()).WithObjects(objects...).Build()
 
@@ -284,7 +284,7 @@ var _ = Describe("Metal3MachineTemplate controller", func() {
 				WatchFilterValue: "",
 			}
 
-			result, err := testReconciler.reconcileNormal(context.TODO(), m)
+			result, err := testReconciler.reconcileNormal(context.TODO(), m, logr.Discard())
 			Expect(result).To(Equal(tc.common.expectedResult))
 			evaluateTestError(tc.common.expectedError, err)
 			mockController.Finish()
