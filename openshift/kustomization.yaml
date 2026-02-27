@@ -8,6 +8,15 @@ resources:
 - ../config/default
 - ../config/ipam
 
+patches:
+- patch: |-
+    - op: add
+      path: /spec/conversion
+      value:
+        strategy: None
+  target:
+    kind: CustomResourceDefinition
+
 images:
 - name: quay.io/metal3-io/cluster-api-provider-metal3
   newName: registry.ci.openshift.org/openshift
