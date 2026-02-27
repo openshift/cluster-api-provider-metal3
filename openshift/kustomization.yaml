@@ -6,6 +6,7 @@ components:
 
 resources:
 - ../config/default
+- ../config/ipam
 
 images:
 - name: quay.io/metal3-io/cluster-api-provider-metal3
