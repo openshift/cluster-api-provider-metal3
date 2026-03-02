@@ -1,0 +1,28 @@
+# Transform CAPM3 remediation CRDs for CVO deployment:
+# - Set CVO release annotations (replacing controller-gen annotation)
+# - Remove v1beta2 version (not deployed in production)
+# - Fix v1beta1: set as storage version, remove deprecated marker
+#
+# Base CRD version order: v1beta1 (0), v1beta2 (1)
+
+# Set CVO release annotations
+- op: replace
+  path: /metadata/annotations
+  value:
+    exclude.release.openshift.io/internal-openshift-hosted: "true"
+    include.release.openshift.io/self-managed-high-availability: "true"
+    include.release.openshift.io/single-node-developer: "true"
+    release.openshift.io/feature-gate: -ClusterAPIMachineManagement,-ClusterAPIMachineManagementBaremetal
+
+# Remove v1beta2 version (index 1)
+- op: remove
+  path: /spec/versions/1
+
+# Set v1beta1 as storage version
+- op: replace
+  path: /spec/versions/0/storage
+  value: true
+
+# Remove deprecated marker from v1beta1
+- op: remove
+  path: /spec/versions/0/deprecated
