@@ -1,0 +1,20 @@
+# Pin CAPM3 CRDs to use v1beta1 as the storage version.
+#
+# Upstream CAPM3 set v1beta2 as storage version immediately after it was added,
+# but according to our downstream policy, a new APIVersion cannot be set as storage version
+# in the same release it gets added. As this would hinder the ability to roll it back in case of an issue.
+# As such we need to pin the storage version to v1beta1 for at least the first release we GA cluster-api.
+# After that, we can bump the storage version to v1beta2, and run the storage version migration.
+#
+# For all CAPM3 CRDs, the version order is: v1beta1 (0), v1beta2 (1)
+# so use a replace that targets the version path by position in the CRD spec.
+
+# Set v1beta1 storage=true
+- op: replace
+  path: /spec/versions/0/storage
+  value: true
+
+# Set v1beta2 storage=false
+- op: replace
+  path: /spec/versions/1/storage
+  value: false
