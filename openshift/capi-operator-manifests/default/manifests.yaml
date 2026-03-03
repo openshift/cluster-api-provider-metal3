@@ -10,16 +10,7 @@ metadata:
   name: metal3clusters.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -612,6 +603,8 @@ metadata:
     cluster.x-k8s.io/v1beta1: v1beta1
   name: metal3clustertemplates.infrastructure.cluster.x-k8s.io
 spec:
+  conversion:
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -833,16 +826,7 @@ metadata:
   name: metal3machines.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -1963,16 +1947,7 @@ metadata:
   name: metal3machinetemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -2493,16 +2468,7 @@ metadata:
   name: metal3datatemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -5132,16 +5098,7 @@ metadata:
   name: metal3datas.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -5524,16 +5481,7 @@ metadata:
   name: metal3dataclaims.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -5828,16 +5776,7 @@ metadata:
   name: metal3remediations.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -6035,16 +5974,7 @@ metadata:
   name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: capm3-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: infrastructure.cluster.x-k8s.io
   names:
     categories:
@@ -6925,16 +6855,7 @@ metadata:
   name: ipaddresses.ipam.metal3.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: ipam-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: ipam.metal3.io
   names:
     categories:
@@ -7114,16 +7035,7 @@ metadata:
   name: ipclaims.ipam.metal3.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: ipam-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: ipam.metal3.io
   names:
     categories:
@@ -7291,16 +7203,7 @@ metadata:
   name: ippools.ipam.metal3.io
 spec:
   conversion:
-    strategy: Webhook
-    webhook:
-      clientConfig:
-        service:
-          name: ipam-webhook-service
-          namespace: openshift-cluster-api
-          path: /convert
-      conversionReviewVersions:
-      - v1
-      - v1beta1
+    strategy: None
   group: ipam.metal3.io
   names:
     categories:
