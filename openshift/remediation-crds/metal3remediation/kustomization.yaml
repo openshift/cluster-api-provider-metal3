@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# MAPI baremetal uses the CAPI metal3remediations.infrastructure.cluster.x-k8s.io CRDs.
+# Until CAPM3 reaches GA in OCP, these CRDs must be
+# separately installed in production clusters (via CVO). This workaround can be removed
+# when CAPM3 reaches GA as metal3remediations CRDs will be installed via the CAPI Operator manifests
+# along with all other CAPI CRDs.
+#
+# In 4.22 we bumped CAPM3 to a version which includes v1beta2 by default, and therefore
+# requires a conversion webhook. This would break production metal clusters
+# using metal3remediations, because we are not yet deploying this webhook in production
+# clusters. As MAPI baremetal does not require the v1beta2 metal3remediations CRDs,
+# we pin them to v1beta1 only for now.
+
+resources:
+- ../../../config/crd/bases/infrastructure.cluster.x-k8s.io_metal3remediations.yaml
+
+patches:
+- path: ../patches/cvo-crd-transform.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3remediations.infrastructure.cluster.x-k8s.io

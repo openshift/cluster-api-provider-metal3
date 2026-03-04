@@ -8,6 +8,62 @@ resources:
 - ../config/default
 - ../config/ipam
 
+patches:
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3clusters.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3clustertemplates.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3machines.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3machinetemplates.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3datas.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3dataclaims.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3datatemplates.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3remediations.infrastructure.cluster.x-k8s.io
+- path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
+
 images:
 - name: quay.io/metal3-io/cluster-api-provider-metal3
   newName: registry.ci.openshift.org/openshift
