@@ -6560,6 +6560,7 @@ spec:
         - --diagnostics-address=${CAPM3_DIAGNOSTICS_ADDRESS:=:8443}
         - --insecure-diagnostics=${CAPM3_INSECURE_DIAGNOSTICS:=false}
         - --tls-min-version=${TLS_MIN_VERSION:=VersionTLS13}
+        - --tls-cipher-suites=${TLS_CIPHER_SUITES}
         command:
         - /manager
         envFrom:
