@@ -64,6 +64,16 @@ patches:
     kind: CustomResourceDefinition
     name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
 
+# Add TLS configuration args (substituted by cluster-capi-operator revisiongenerator)
+# NOTE: --tls-min-version is already set in upstream config/manager/manager.yaml
+- target:
+    kind: Deployment
+    name: capm3-controller-manager
+  patch: |-
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--tls-cipher-suites=${TLS_CIPHER_SUITES}"
+
 images:
 - name: quay.io/metal3-io/cluster-api-provider-metal3
   newName: registry.ci.openshift.org/openshift
