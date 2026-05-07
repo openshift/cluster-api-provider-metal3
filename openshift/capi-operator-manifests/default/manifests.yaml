@@ -6654,6 +6654,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.metal3cluster.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6676,6 +6679,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.metal3remediationtemplate.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6708,6 +6714,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3cluster.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6730,6 +6739,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3clustertemplate.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6752,6 +6764,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3data.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6774,6 +6789,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3dataclaim.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6796,6 +6814,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3datatemplate.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6818,6 +6839,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3machine.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6840,6 +6864,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3machinetemplate.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6862,6 +6889,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3remediation.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -6884,6 +6914,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.metal3remediationtemplate.infrastructure.cluster.x-k8s.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
@@ -7625,6 +7658,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.ipaddress.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
@@ -7647,6 +7683,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.ipclaim.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
@@ -7669,6 +7708,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: default.ippool.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
@@ -7701,6 +7743,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.ipaddress.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
@@ -7723,6 +7768,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.ipclaim.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
@@ -7745,6 +7793,9 @@ webhooks:
   failurePolicy: Fail
   matchPolicy: Equivalent
   name: validation.ippool.ipam.metal3.io
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: openshift-cluster-api
   rules:
   - apiGroups:
     - ipam.metal3.io
