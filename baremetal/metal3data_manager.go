@@ -366,7 +366,7 @@ func newAddressFromIPAMv1(ipAddress *ipamv1.IPAddress) (AddressFromPool, error) 
 	if ipAddress.Spec.Prefix < math.MinInt32 || ipAddress.Spec.Prefix > math.MaxInt32 {
 		return AddressFromPool{}, fmt.Errorf("prefix out of range: %d", ipAddress.Spec.Prefix)
 	}
-	prefix := int32(ipAddress.Spec.Prefix)
+	prefix := int32(ipAddress.Spec.Prefix) //nolint:gosec // bounds checked above
 	return AddressFromPool{
 		Address:    ipAddress.Spec.Address,
 		Prefix:     &prefix,
