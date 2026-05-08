@@ -16,22 +16,18 @@ package webhooks
 import (
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"strconv"
 
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func (webhook *Metal3DataTemplate) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&infrav1.Metal3DataTemplate{}).
+	return ctrl.NewWebhookManagedBy(mgr, &infrav1.Metal3DataTemplate{}).
 		WithValidator(webhook).
 		Complete()
 }
@@ -41,29 +37,22 @@ func (webhook *Metal3DataTemplate) SetupWebhookWithManager(mgr ctrl.Manager) err
 // Metal3DataTemplate implements a validation webhook for Metal3DataTemplate.
 type Metal3DataTemplate struct{}
 
-var _ webhook.CustomValidator = &Metal3DataTemplate{}
+var _ admission.Validator[*infrav1.Metal3DataTemplate] = &Metal3DataTemplate{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3DataTemplate) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	c, ok := obj.(*infrav1.Metal3DataTemplate)
-	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a Metal3DataTemplate but got a %T", obj))
-	}
-
-	return nil, webhook.validate(nil, c)
+func (webhook *Metal3DataTemplate) ValidateCreate(_ context.Context, obj *infrav1.Metal3DataTemplate) (admission.Warnings, error) {
+	return nil, webhook.validate(nil, obj)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3DataTemplate) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (webhook *Metal3DataTemplate) ValidateUpdate(_ context.Context, oldM3dt, newM3dt *infrav1.Metal3DataTemplate) (admission.Warnings, error) {
 	allErrs := field.ErrorList{}
 
-	newM3dt, ok := newObj.(*infrav1.Metal3DataTemplate)
-	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a Metal3DataTemplate but got a %T", newObj))
+	if newM3dt == nil {
+		return nil, apierrors.NewBadRequest("expected a Metal3DataTemplate but got nil")
 	}
 
-	oldM3dt, ok := oldObj.(*infrav1.Metal3DataTemplate)
-	if !ok || oldM3dt == nil {
+	if oldM3dt == nil {
 		return nil, apierrors.NewInternalError(errors.New("unable to convert existing object"))
 	}
 
@@ -90,32 +79,54 @@ func (webhook *Metal3DataTemplate) ValidateUpdate(_ context.Context, oldObj, new
 	if len(allErrs) == 0 {
 		return nil, nil
 	}
-	return nil, apierrors.NewInvalid(infrav1.GroupVersion.WithKind("Metal3Data").GroupKind(), newM3dt.Name, allErrs)
+	return nil, apierrors.NewInvalid(infrav1.GroupVersion.WithKind("Metal3DataTemplate").GroupKind(), newM3dt.Name, allErrs)
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3DataTemplate) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+func (webhook *Metal3DataTemplate) ValidateDelete(_ context.Context, _ *infrav1.Metal3DataTemplate) (admission.Warnings, error) {
 	return nil, nil
 }
 
 func (webhook *Metal3DataTemplate) validate(_, newM3dt *infrav1.Metal3DataTemplate) error {
 	var allErrs field.ErrorList
 
-	if newM3dt.Spec.NetworkData != nil {
-		for i, network := range newM3dt.Spec.NetworkData.Networks.IPv4 {
-			if (network.FromPoolRef == nil || network.FromPoolRef.Name == "") && network.IPAddressFromIPPool == "" && network.FromPoolAnnotation == nil {
+	if newM3dt.Spec.MetaData != nil {
+		for i, hostInterface := range newM3dt.Spec.MetaData.FromHostInterfaces {
+			fromBootMAC := hostInterface.FromBootMAC != nil && *hostInterface.FromBootMAC
+			if !fromBootMAC && hostInterface.Interface == "" {
 				allErrs = append(allErrs, field.Required(
-					field.NewPath("spec", "networkData", "networks", "ipv4", strconv.Itoa(i), "fromPoolRef", "name"),
-					"fromPoolRef needs to contain a reference to an IPPool",
+					field.NewPath("spec", "metaData", "fromHostInterfaces", strconv.Itoa(i), "interface"),
+					"interface must be specified when fromBootMAC is false",
+				))
+			}
+			if fromBootMAC && hostInterface.Interface != "" {
+				allErrs = append(allErrs, field.Invalid(
+					field.NewPath("spec", "metaData", "fromHostInterfaces", strconv.Itoa(i), "interface"),
+					hostInterface.Interface,
+					"interface must be empty when fromBootMAC is true",
 				))
 			}
 		}
-		for i, network := range newM3dt.Spec.NetworkData.Networks.IPv6 {
-			if (network.FromPoolRef == nil || network.FromPoolRef.Name == "") && network.IPAddressFromIPPool == "" && network.FromPoolAnnotation == nil {
-				allErrs = append(allErrs, field.Required(
-					field.NewPath("spec", "networkData", "networks", "ipv6", strconv.Itoa(i), "fromPoolRef", "name"),
-					"fromPoolRef needs to contain a reference to an IPPool",
-				))
+	}
+
+	if newM3dt.Spec.NetworkData != nil {
+		// Check if Networks is set before accessing its fields
+		if newM3dt.Spec.NetworkData.Networks != nil {
+			for i, network := range newM3dt.Spec.NetworkData.Networks.IPv4 {
+				if network.FromPoolRef.Name == "" && network.IPAddressFromIPPool == "" && network.FromPoolAnnotation.Object == "" {
+					allErrs = append(allErrs, field.Required(
+						field.NewPath("spec", "networkData", "networks", "ipv4", strconv.Itoa(i), "fromPoolRef", "name"),
+						"fromPoolRef needs to contain a reference to an IPPool",
+					))
+				}
+			}
+			for i, network := range newM3dt.Spec.NetworkData.Networks.IPv6 {
+				if network.FromPoolRef.Name == "" && network.IPAddressFromIPPool == "" && network.FromPoolAnnotation.Object == "" {
+					allErrs = append(allErrs, field.Required(
+						field.NewPath("spec", "networkData", "networks", "ipv6", strconv.Itoa(i), "fromPoolRef", "name"),
+						"fromPoolRef needs to contain a reference to an IPPool",
+					))
+				}
 			}
 		}
 	}

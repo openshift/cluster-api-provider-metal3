@@ -35,185 +35,157 @@ const (
 
 // Metal3Machine's Ready condition and corresponding reasons that will be used in v1Beta2 API version.
 const (
-	// Metal3MachineReadyV1Beta2Condition is true if the Metal3Machine's deletionTimestamp is not set, Metal3Machine's
+	// Metal3MachineReadyCondition is true if the Metal3Machine's deletionTimestamp is not set, Metal3Machine's
 	// BareMetalHostProvisioned is true.
-	Metal3MachineReadyV1Beta2Condition = clusterv1.ReadyCondition
+	Metal3MachineReadyCondition = clusterv1.ReadyCondition
 
-	// Metal3MachineReadyV1Beta2Reason surfaces when the Metal3Machine readiness criteria is met.
-	Metal3MachineReadyV1Beta2Reason = clusterv1.ReadyReason
+	// Metal3MachineReadyReason surfaces when the Metal3Machine readiness criteria is met.
+	Metal3MachineReadyReason = clusterv1.ReadyReason
 
-	// Metal3MachineNotReadyV1Beta2Reason surfaces when the Metal3Machine readiness criteria is not met.
-	Metal3MachineNotReadyV1Beta2Reason = clusterv1.NotReadyReason
+	// Metal3MachineNotReadyReason surfaces when the Metal3Machine readiness criteria is not met.
+	Metal3MachineNotReadyReason = clusterv1.NotReadyReason
 
-	// Metal3MachineReadyUnknownV1Beta2Reason surfaces when at least one Metal3Machine readiness criteria is unknown
+	// Metal3MachineReadyUnknownReason surfaces when at least one Metal3Machine readiness criteria is unknown
 	// and no Metal3Machine readiness criteria is not met.
-	Metal3MachineReadyUnknownV1Beta2Reason = clusterv1.ReadyUnknownReason
+	Metal3MachineReadyUnknownReason = clusterv1.ReadyUnknownReason
 )
 
 // Metal3Machine condition and corresponding reasons that will be used in v1Beta2 API version.
 const (
-	// AssociateBareMetalHostV1Beta2Condition documents the status of the association of Metal3Machine with a BareMetalHost.
-	AssociateBareMetalHostV1Beta2Condition = "AssociateBareMetalHost"
+	// AssociateBareMetalHostCondition documents the status of the association of Metal3Machine with a BareMetalHost.
+	AssociateBareMetalHostCondition = "AssociateBareMetalHost"
 
-	// AssociateBareMetalHostFailedV1Beta2Reason documents any errors while associating Metal3Machine with a BareMetalHost.
-	AssociateBareMetalHostFailedV1Beta2Reason = "AssociateBareMetalHostFailed"
+	// AssociateBareMetalHostFailedReason documents any errors while associating Metal3Machine with a BareMetalHost.
+	AssociateBareMetalHostFailedReason = "AssociateBareMetalHostFailed"
 
-	// AssociateBareMetalHostSuccessV1Beta2Reason surfaces when the Metal3Machine is successfully associated with a BareMetalHost.
-	AssociateBareMetalHostSuccessV1Beta2Reason = "AssociateBareMetalHostSuccess"
+	// AssociateBareMetalHostSuccessReason surfaces when the Metal3Machine is successfully associated with a BareMetalHost.
+	AssociateBareMetalHostSuccessReason = "AssociateBareMetalHostSuccess"
 
-	// WaitingForClusterInfrastructureReadyV1Beta2Reason used when waiting for cluster
+	// AssociateBareMetalHostViaNodeReuseSuccessReason surfaces when the Metal3Machine is successfully associated with a BareMetalHost via node reuse.
+	AssociateBareMetalHostViaNodeReuseSuccessReason = "AssociateBareMetalHostViaNodeReuseSuccess"
+
+	// WaitingForClusterInfrastructureReadyReason used when waiting for cluster
 	// infrastructure to be ready before proceeding.
-	WaitingForClusterInfrastructureReadyV1Beta2Reason = clusterv1.WaitingForClusterInfrastructureReadyReason
+	WaitingForClusterInfrastructureReadyReason = clusterv1.WaitingForClusterInfrastructureReadyReason
 
-	// WaitingForBootstrapDataV1Beta2Reason used when waiting for bootstrap to be ready before proceeding.
-	WaitingForBootstrapDataV1Beta2Reason = clusterv1.WaitingForBootstrapDataReason
+	// WaitingForBootstrapDataReason used when waiting for bootstrap to be ready before proceeding.
+	WaitingForBootstrapDataReason = clusterv1.WaitingForBootstrapDataReason
 
-	// WaitingForMetal3MachineOwnerRefV1Beta2Reason is used when Metal3Machine is waiting for OwnerReference to be
+	// WaitingForMetal3MachineOwnerRefReason is used when Metal3Machine is waiting for OwnerReference to be
 	// set before proceeding.
-	WaitingForMetal3MachineOwnerRefV1Beta2Reason = "WaitingForMetal3MachineOwnerRef"
+	WaitingForMetal3MachineOwnerRefReason = "WaitingForMetal3MachineOwnerRef"
 
 	// WaitingforMetal3ClusterReason is used when Metal3Machine is waiting for Metal3Cluster.
-	WaitingforMetal3ClusterV1Beta2Reason = "WaitingforMetal3Cluster"
+	WaitingforMetal3ClusterReason = "WaitingforMetal3Cluster"
 
-	// BareMetalHostPauseAnnotationRemoveFailedV1Beta2Reason is used when failed to remove/check pause annotation on associated BareMetalHost.
-	BareMetalHostPauseAnnotationRemoveFailedV1Beta2Reason = "BareMetalHostPauseAnnotationRemoveFailed"
+	// BareMetalHostPauseAnnotationRemoveFailedReason is used when failed to remove/check pause annotation on associated BareMetalHost.
+	BareMetalHostPauseAnnotationRemoveFailedReason = "BareMetalHostPauseAnnotationRemoveFailed"
 
-	// BareMetalHostPauseAnnotationSetFailedV1Beta2Reason is used when failed to set pause annotation on associated BareMetalHost.
-	BareMetalHostPauseAnnotationSetFailedV1Beta2Reason = "BareMetalHostPauseAnnotationSetFailed"
+	// BareMetalHostPauseAnnotationSetFailedReason is used when failed to set pause annotation on associated BareMetalHost.
+	BareMetalHostPauseAnnotationSetFailedReason = "BareMetalHostPauseAnnotationSetFailed"
 
-	// AssociateMetal3MachineMetaDataV1Beta2Condition documents the transition of a Metal3Machine into a Kubernetes Node.
-	AssociateMetal3MachineMetaDataV1Beta2Condition = "AssociateMetal3MachineMetaData"
+	// AssociateMetal3MachineMetaDataCondition documents the transition of a Metal3Machine into a Kubernetes Node.
+	AssociateMetal3MachineMetaDataCondition = "AssociateMetal3MachineMetaData"
 
-	// AssociateMetal3MachineMetaDataFailedV1Beta2Reason is used when failed to associate Metadata to Metal3Machine.
-	AssociateMetal3MachineMetaDataFailedV1Beta2Reason = "AssociateMetal3MachineMetaDataFailed"
+	// AssociateMetal3MachineMetaDataFailedReason is used when failed to associate Metadata to Metal3Machine.
+	AssociateMetal3MachineMetaDataFailedReason = "AssociateMetal3MachineMetaDataFailed"
 
-	// AssociateMetal3MachineMetaDataSuccessV1Beta2Reason is used when successfully associated Metadata to Metal3Machine.
-	AssociateMetal3MachineMetaDataSuccessV1Beta2Reason = "AssociateMetal3MachineMetaDataSuccess"
+	// AssociateMetal3MachineMetaDataSuccessReason is used when successfully associated Metadata to Metal3Machine.
+	AssociateMetal3MachineMetaDataSuccessReason = "AssociateMetal3MachineMetaDataSuccess"
 
-	// Metal3DataReadyV1Beta2Condition reports a summary of Metal3Data status.
-	Metal3DataReadyV1Beta2Condition = "Metal3DataReady"
+	// Metal3DataReadyCondition reports a summary of Metal3Data status.
+	Metal3DataReadyCondition = "Metal3DataReady"
 
-	// WaitingForMetal3DataV1Beta2Reason used when waiting for Metal3Data
+	// WaitingForMetal3DataReason used when waiting for Metal3Data
 	// to be ready before proceeding.
-	WaitingForMetal3DataV1Beta2Reason = "WaitingForMetal3Data"
+	WaitingForMetal3DataReason = "WaitingForMetal3Data"
 
-	// Metal3DataSecretsReadyV1Beta2Reason used when metal3data secrets are ready
+	// Metal3DataSecretsReadyReason used when metal3data secrets are ready
 	// to be ready before proceeding.
-	Metal3DataSecretsReadyV1Beta2Reason = "Metal3DataSecretsReady"
+	Metal3DataSecretsReadyReason = "Metal3DataSecretsReady"
 
-	// SecretsSetExternallyV1Beta2Reason used when metal3data secrets are ready
+	// SecretsSetExternallyReason used when metal3data secrets are ready
 	// to be ready before proceeding.
-	SecretsSetExternallyV1Beta2Reason = "SecretsSetExternally"
+	SecretsSetExternallyReason = "SecretsSetExternally"
 
 	// DisassociateM3MetaDataFailedReason is used when failed to remove OwnerReference of Meta3DataTemplate.
-	DisassociateM3MetaDataFailedV1Beta2Reason = "DisassociateM3MetaDataFailed"
+	DisassociateM3MetaDataFailedReason = "DisassociateM3MetaDataFailed"
 
-	// DeletingV1Beta2Reason (Severity=Info) documents a condition not in Status=True because the underlying object it is currently being deleted.
-	Metal3MachineDeletingV1Beta2Reason = clusterv1.DeletingReason
+	// DeletingReason (Severity=Info) documents a condition not in Status=True because the underlying object it is currently being deleted.
+	Metal3MachineDeletingReason = clusterv1.DeletingReason
 
-	// Metal3MachineDeletingFailedV1Beta2Reason (Severity=Warning) documents a condition not in Status=True because the underlying object
+	// Metal3MachineDeletingFailedReason (Severity=Warning) documents a condition not in Status=True because the underlying object
 	// encountered problems during deletion. This is a warning because the reconciler will retry deletion.
-	Metal3MachineDeletingFailedV1Beta2Reason = "DeletionFailed"
+	Metal3MachineDeletingFailedReason = "DeletionFailed"
 )
 
 // Metal3MachineSpec defines the desired state of Metal3Machine.
+// Either image or customDeploy is required, so this object is never empty.
 type Metal3MachineSpec struct {
-	// ProviderID will be the Metal3 machine in ProviderID format
-	// (metal3://<bmh-uuid>)
+	// providerID must match the provider ID as seen on the node object corresponding to this machine.
+	// For Kubernetes Nodes running on the Metal3 provider, this value is set by the corresponding CPI component
+	// and it has the format metal3://<namespace>/<bmh-name>/<m3m-name>.
+	// The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+	// and removed in CAPM3 v1.14.
 	// +optional
-	ProviderID *string `json:"providerID,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	ProviderID string `json:"providerID,omitempty"`
 
-	// Image is the image to be provisioned.
+	// image is the image to be provisioned.
+	// Either image or customDeploy is required.
 	// +optional
-	Image Image `json:"image,omitempty"`
+	Image Image `json:"image,omitempty,omitzero"`
 
-	// A custom deploy procedure.
+	// customDeploy is a custom deploy procedure.
+	// Either image or customDeploy is required.
 	// +optional
-	CustomDeploy *CustomDeploy `json:"customDeploy,omitempty"`
+	CustomDeploy CustomDeploy `json:"customDeploy,omitempty,omitzero"`
 
-	// UserData references the Secret that holds user data needed by the bare metal
+	// userData references the Secret that holds user data needed by the bare metal
 	// operator. The Namespace is optional; it will default to the metal3machine's
 	// namespace if not specified.
 	// +optional
 	UserData *corev1.SecretReference `json:"userData,omitempty"`
 
-	// HostSelector specifies matching criteria for labels on BareMetalHosts.
+	// hostSelector specifies matching criteria for labels on BareMetalHosts.
 	// This is used to limit the set of BareMetalHost objects considered for
 	// claiming for a metal3machine.
 	// +optional
-	HostSelector HostSelector `json:"hostSelector,omitempty"`
+	HostSelector *HostSelector `json:"hostSelector,omitempty"`
 
-	// MetadataTemplate is a reference to a Metal3DataTemplate object containing
+	// dataTemplate is a reference to a Metal3DataTemplate object containing
 	// a template of metadata to be rendered. Metadata keys defined in the
 	// metadataTemplate take precedence over keys defined in metadata field.
 	// +optional
-	DataTemplate *corev1.ObjectReference `json:"dataTemplate,omitempty"`
+	DataTemplate *Metal3ObjectRef `json:"dataTemplate,omitempty"`
 
-	// MetaData is an object storing the reference to the secret containing the
-	// Metadata given by the user.
+	// metaData is an object storing the reference to the secret containing the
+	// metadata given by the user.
 	// +optional
 	MetaData *corev1.SecretReference `json:"metaData,omitempty"`
 
-	// NetworkData is an object storing the reference to the secret containing the
+	// networkData is an object storing the reference to the secret containing the
 	// network data given by the user.
 	// +optional
 	NetworkData *corev1.SecretReference `json:"networkData,omitempty"`
 
+	// automatedCleaningMode determines the mode of automated cleaning.
 	// When set to disabled, automated cleaning of host disks will be skipped
 	// during provisioning and deprovisioning.
 	// +kubebuilder:validation:Enum:=metadata;disabled
 	// +optional
-	AutomatedCleaningMode *string `json:"automatedCleaningMode,omitempty"`
+	AutomatedCleaningMode string `json:"automatedCleaningMode,omitempty,omitzero"`
 
-	// FailureDomain is the failure domain unique identifier this Machine should be attached to, as defined in Cluster API.
+	// failureDomain is the failure domain unique identifier this machine should be attached to, as defined in Cluster API.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=256
 	FailureDomain string `json:"failureDomain,omitempty"`
 }
 
 // Metal3MachineStatus defines the observed state of Metal3Machine.
 type Metal3MachineStatus struct {
-
-	// LastUpdated identifies when this status was last observed.
-	// +optional
-	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
-
-	// Addresses is a list of addresses assigned to the machine.
-	// This field is copied from the infrastructure provider reference.
-	// +optional
-	Addresses clusterv1.MachineAddresses `json:"addresses,omitempty"`
-
-	// Phase represents the current phase of machine actuation.
-	// E.g. Pending, Running, Terminating, Failed etc.
-	// +optional
-	Phase string `json:"phase,omitempty"`
-
-	// Ready is the state of the metal3.
-	// TODO : Document the variable :
-	// mhrivnak: " it would be good to document what this means, how to interpret
-	// it, under what circumstances the value changes, etc."
-	// +optional
-	Ready bool `json:"ready"`
-
-	// UserData references the Secret that holds user data needed by the bare metal
-	// operator. The Namespace is optional; it will default to the metal3machine's
-	// namespace if not specified.
-	// +optional
-	UserData *corev1.SecretReference `json:"userData,omitempty"`
-
-	// RenderedData is a reference to a rendered Metal3Data object containing
-	// the references to metaData and networkData secrets.
-	// +optional
-	RenderedData *corev1.ObjectReference `json:"renderedData,omitempty"`
-
-	// MetaData is an object storing the reference to the secret containing the
-	// Metadata used to deploy the BareMetalHost.
-	// +optional
-	MetaData *corev1.SecretReference `json:"metaData,omitempty"`
-
-	// NetworkData is an object storing the reference to the secret containing the
-	// network data used to deploy the BareMetalHost.
-	// +optional
-	NetworkData *corev1.SecretReference `json:"networkData,omitempty"`
-
 	// conditions represents the observations of a Metal3Machine's current state.
 	// Known condition types are Ready, AssociateBareMetalHost, AssociateMetal3MachineMetaData, Metal3DataReady and Paused.
 	// +optional
@@ -222,9 +194,55 @@ type Metal3MachineStatus struct {
 	// +kubebuilder:validation:MaxItems=32
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// lastUpdated identifies when this status was last observed.
+	// +optional
+	LastUpdated *metav1.Time `json:"lastUpdated,omitempty"`
+
+	// addresses contains the associated addresses for the machine.
+	// +optional
+	// +listType=atomic
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=32
+	Addresses []clusterv1.MachineAddress `json:"addresses,omitempty"`
+
+	// initialization provides observations of the Metal3Machine initialization process.
+	// NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Machine provisioning.
+	// +optional
+	Initialization Metal3MachineInitializationStatus `json:"initialization,omitempty,omitzero"`
+
+	// userData references the Secret that holds user data needed by the bare metal
+	// operator. The Namespace is optional; it will default to the metal3machine's
+	// namespace if not specified.
+	// +optional
+	UserData *corev1.SecretReference `json:"userData,omitempty"`
+
+	// renderedData is a reference to a rendered Metal3Data object containing
+	// the references to metaData and networkData secrets.
+	// +optional
+	RenderedData *Metal3ObjectRef `json:"renderedData,omitempty"`
+
+	// metaData is an object storing the reference to the secret containing the
+	// metadata used to deploy the BareMetalHost.
+	// +optional
+	MetaData *corev1.SecretReference `json:"metaData,omitempty"`
+
+	// networkData is an object storing the reference to the secret containing the
+	// network data used to deploy the BareMetalHost.
+	// +optional
+	NetworkData *corev1.SecretReference `json:"networkData,omitempty"`
+
 	// deprecated groups all the status fields that are deprecated and will be removed when all the nested field are removed.
 	// +optional
 	Deprecated *Metal3MachineDeprecatedStatus `json:"deprecated,omitempty"`
+}
+
+// Metal3MachineInitializationStatus provides observations of the Metal3Machine initialization process.
+// +kubebuilder:validation:MinProperties=1
+type Metal3MachineInitializationStatus struct {
+	// provisioned is true when the infrastructure provider reports that the Machine's infrastructure is fully provisioned.
+	// NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Machine provisioning.
+	// +optional
+	Provisioned *bool `json:"provisioned,omitempty"`
 }
 
 // Metal3MachineDeprecatedStatus groups all the status fields that are deprecated and will be removed in a future version.
@@ -241,14 +259,14 @@ type Metal3MachineDeprecatedStatus struct {
 // Metal3MachineV1Beta1DeprecatedStatus groups all the status fields that are deprecated and will be removed when support for v1beta1 will be dropped.
 // See https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more context.
 type Metal3MachineV1Beta1DeprecatedStatus struct {
-	// Conditions defines current service state of the Metal3Machine.
+	// conditions defines current service state of the Metal3Machine.
 	//
 	// Deprecated: This field is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
 	//
 	// +optional
 	Conditions clusterv1.Conditions `json:"conditions,omitempty"`
 
-	// FailureReason will be set in the event that there is a terminal problem
+	// failureReason will be set in the event that there is a terminal problem
 	// reconciling the metal3machine and will contain a succinct value suitable
 	// for machine interpretation.
 	//
@@ -270,7 +288,7 @@ type Metal3MachineV1Beta1DeprecatedStatus struct {
 	// +optional
 	FailureReason *capierrors.MachineStatusError `json:"failureReason,omitempty"`
 
-	// FailureMessage will be set in the event that there is a terminal problem
+	// failureMessage will be set in the event that there is a terminal problem
 	// reconciling the metal3machine and will contain a more verbose string suitable
 	// for logging and human consumption.
 	//
@@ -300,18 +318,21 @@ type Metal3MachineV1Beta1DeprecatedStatus struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp",description="Time duration since creation of Metal3Machine"
 // +kubebuilder:printcolumn:name="ProviderID",type="string",JSONPath=".spec.providerID",description="Provider ID"
-// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="metal3machine is Ready"
+// +kubebuilder:printcolumn:name="Provisioned",type="string",JSONPath=".status.initialization.provisioned",description="Metal3Machine is provisioned"
 // +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this M3Machine belongs"
-// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="metal3machine current phase"
 
 // Metal3Machine is the Schema for the metal3machines API.
 type Metal3Machine struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// spec defines the desired state of Metal3Machine.
 	// +optional
 	Spec Metal3MachineSpec `json:"spec,omitempty"`
+
+	// status defines the observed state of Metal3Machine.
 	// +optional
 	Status Metal3MachineStatus `json:"status,omitempty"`
 }
@@ -321,9 +342,13 @@ type Metal3Machine struct {
 // Metal3MachineList contains a list of Metal3Machine.
 type Metal3MachineList struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard list's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#lists-and-simple-kinds
 	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Metal3Machine `json:"items"`
+
+	// items is the list of Metal3Machines.
+	Items []Metal3Machine `json:"items"`
 }
 
 // GetConditions returns the list of conditions for an Metal3Machine API object.

@@ -285,18 +285,18 @@ var _ = Describe("Reconcile metal3machine", func() {
 				Expect(baremetal.Contains(testBMmachine.Finalizers, infrav1.MachineFinalizer)).To(BeTrue())
 			}
 			if tc.CheckBMState {
-				Expect(testBMmachine.Status.Ready).To(BeTrue())
+				Expect(ptr.Deref(testBMmachine.Status.Initialization.Provisioned, false)).To(BeTrue())
 			}
 			if tc.CheckBMProviderID {
 				if tc.CheckBMProviderIDUnchanged {
 					Expect(testBMmachine.Spec.ProviderID).To(Equal(oldProviderID))
 				} else {
 					if tc.CheckBMProviderIDNew {
-						Expect(testBMmachine.Spec.ProviderID).To(Equal(ptr.To(fmt.Sprintf("%s%s/%s/%s", baremetal.ProviderIDPrefix,
-							testBMHost.ObjectMeta.Namespace, testBMHost.ObjectMeta.Name, testBMmachine.ObjectMeta.Name))))
+						Expect(testBMmachine.Spec.ProviderID).To(Equal(fmt.Sprintf("%s%s/%s/%s", baremetal.ProviderIDPrefix,
+							testBMHost.ObjectMeta.Namespace, testBMHost.ObjectMeta.Name, testBMmachine.ObjectMeta.Name)))
 					} else {
-						Expect(testBMmachine.Spec.ProviderID).To(Equal(ptr.To(fmt.Sprintf("%s%s", baremetal.ProviderIDPrefix,
-							string(testBMHost.ObjectMeta.UID)))))
+						Expect(testBMmachine.Spec.ProviderID).To(Equal(fmt.Sprintf("%s%s", baremetal.ProviderIDPrefix,
+							string(testBMHost.ObjectMeta.UID))))
 					}
 				}
 			}
@@ -316,10 +316,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 			}
 			if tc.CheckBMHostProvisioned {
 				Expect(testBMHost.Spec.Image.URL).Should(BeEquivalentTo(testBMmachine.Spec.Image.URL))
-				Expect(testBMHost.Spec.Image.Checksum).Should(BeEquivalentTo(testBMmachine.Spec.Image.Checksum))
-				Expect(testBMHost.Spec.Image.DiskFormat).Should(BeEquivalentTo(testBMmachine.Spec.Image.DiskFormat))
-				if testBMmachine.Spec.Image.ChecksumType != nil {
-					Expect(testBMHost.Spec.Image.ChecksumType).Should(BeEquivalentTo(*testBMmachine.Spec.Image.ChecksumType))
+				Expect(testBMHost.Spec.Image.Checksum).Should(BeEquivalentTo(ptr.Deref(testBMmachine.Spec.Image.Checksum, "")))
+				Expect(testBMHost.Spec.Image.DiskFormat).Should(BeEquivalentTo(&testBMmachine.Spec.Image.DiskFormat))
+				if testBMmachine.Spec.Image.ChecksumType != "" {
+					Expect(testBMHost.Spec.Image.ChecksumType).Should(BeEquivalentTo(testBMmachine.Spec.Image.ChecksumType))
 				} else {
 					Expect(testBMHost.Spec.Image.ChecksumType).Should(BeEquivalentTo(""))
 				}
@@ -405,12 +405,12 @@ var _ = Describe("Reconcile metal3machine", func() {
 				ClusterInfraReady: false,
 				ConditionsExpected: []metav1.Condition{
 					{
-						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Type:   infrav1.AssociateBareMetalHostCondition,
 						Status: metav1.ConditionFalse,
-						Reason: infrav1.WaitingForClusterInfrastructureReadyV1Beta2Reason,
+						Reason: infrav1.WaitingForClusterInfrastructureReadyReason,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionFalse,
 					},
 				},
@@ -432,12 +432,12 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady: false,
 				ConditionsExpected: []metav1.Condition{
 					{
-						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Type:   infrav1.AssociateBareMetalHostCondition,
 						Status: metav1.ConditionFalse,
-						Reason: infrav1.WaitingForBootstrapDataV1Beta2Reason,
+						Reason: infrav1.WaitingForBootstrapDataReason,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionFalse,
 					},
 				},
@@ -496,7 +496,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 						Reason: clusterv1.PausedReason,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionFalse,
 					},
 				},
@@ -526,10 +526,12 @@ var _ = Describe("Reconcile metal3machine", func() {
 				Objects: []client.Object{
 					newMetal3Machine(metal3machineName, m3mMetaWithAnnotation(),
 						&infrav1.Metal3MachineSpec{
-							ProviderID: &providerID,
+							ProviderID: providerID,
 						},
 						&infrav1.Metal3MachineStatus{
-							Ready: true,
+							Initialization: infrav1.Metal3MachineInitializationStatus{
+								Provisioned: ptr.To(true),
+							},
 						},
 						false,
 					),
@@ -559,12 +561,12 @@ var _ = Describe("Reconcile metal3machine", func() {
 					newMetal3Machine(
 						metal3machineName, m3mMetaWithOwnerRef(), &infrav1.Metal3MachineSpec{
 							Image: infrav1.Image{
-								Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+								Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 								// Checking the pointers,
 								// CheckBMHostProvisioned is true
-								ChecksumType: ptr.To("sha512"),
-								DiskFormat:   ptr.To("raw"),
+								ChecksumType: "sha512",
+								DiskFormat:   "raw",
 							},
 						}, nil, false,
 					),
@@ -599,7 +601,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 					newMetal3Machine(
 						metal3machineName, m3mMetaWithOwnerRef(), &infrav1.Metal3MachineSpec{
 							Image: infrav1.Image{
-								Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+								Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 								// No ChecksumType and DiskFormat given to test without them
 								// CheckBMHostProvisioned is true
@@ -633,7 +635,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 						metal3machineName, m3mMetaWithAnnotation(),
 						&infrav1.Metal3MachineSpec{
 							Image: infrav1.Image{
-								Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+								Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 							},
 						}, nil, false,
@@ -663,7 +665,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady:  true,
 				ConditionsExpected: []metav1.Condition{
 					{
-						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Type:   infrav1.AssociateBareMetalHostCondition,
 						Status: metav1.ConditionTrue,
 					},
 				},
@@ -677,9 +679,9 @@ var _ = Describe("Reconcile metal3machine", func() {
 					newMetal3Machine(
 						metal3machineName, m3mMetaWithAnnotation(),
 						&infrav1.Metal3MachineSpec{
-							ProviderID: ptr.To(providerID),
+							ProviderID: providerID,
 							Image: infrav1.Image{
-								Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+								Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 								URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 							},
 						}, nil, false,
@@ -715,15 +717,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady:  true,
 				ConditionsExpected: []metav1.Condition{
 					{
-						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Type:   infrav1.AssociateBareMetalHostCondition,
 						Status: metav1.ConditionTrue,
 					},
 					{
-						Type:   infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition,
+						Type:   infrav1.AssociateMetal3MachineMetaDataCondition,
 						Status: metav1.ConditionTrue,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionTrue,
 					},
 				},
@@ -737,7 +739,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 				Objects: []client.Object{
 					newMetal3Machine(metal3machineName, m3mMetaWithAnnotation(), &infrav1.Metal3MachineSpec{
 						Image: infrav1.Image{
-							Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+							Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 							URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 						},
 					}, nil, false),
@@ -770,13 +772,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 			TestCaseReconcile{
 				Objects: []client.Object{
 					newMetal3Machine(metal3machineName, m3mMetaWithAnnotation(), &infrav1.Metal3MachineSpec{
-						ProviderID: ptr.To("abc"),
+						ProviderID: "abc",
 						Image: infrav1.Image{
-							Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+							Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 							URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 						},
 					}, &infrav1.Metal3MachineStatus{
-						Ready: true,
+						Initialization: infrav1.Metal3MachineInitializationStatus{
+							Provisioned: ptr.To(true),
+						},
 						// NOTE: Addresses will be populated from BMH
 					}, false),
 					machineWithDataSecret(),
@@ -819,13 +823,15 @@ var _ = Describe("Reconcile metal3machine", func() {
 			TestCaseReconcile{
 				Objects: []client.Object{
 					newMetal3Machine(metal3machineName, m3mMetaWithAnnotation(), &infrav1.Metal3MachineSpec{
-						ProviderID: ptr.To("abc"),
+						ProviderID: "abc",
 						Image: infrav1.Image{
-							Checksum: "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum",
+							Checksum: ptr.To("http://172.22.0.1/images/rhcos-ootpa-latest.qcow2.sha256sum"),
 							URL:      "http://172.22.0.1/images/rhcos-ootpa-latest.qcow2",
 						},
 					}, &infrav1.Metal3MachineStatus{
-						Ready: true,
+						Initialization: infrav1.Metal3MachineInitializationStatus{
+							Provisioned: ptr.To(true),
+						},
 						// NOTE: Addresses will be populated from BMH
 					}, false),
 					machineWithDataSecret(),
@@ -870,7 +876,7 @@ var _ = Describe("Reconcile metal3machine", func() {
 				CheckBootStrapReady:     true,
 				ConditionsExpected: []metav1.Condition{
 					{
-						Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
+						Type:   infrav1.AssociateBareMetalHostCondition,
 						Status: metav1.ConditionTrue,
 					},
 				},
@@ -978,10 +984,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 					{
 						Type:   clusterv1.PausedCondition,
 						Status: metav1.ConditionFalse,
-						Reason: infrav1.BareMetalHostPauseAnnotationRemoveFailedV1Beta2Reason,
+						Reason: infrav1.BareMetalHostPauseAnnotationRemoveFailedReason,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionFalse,
 					},
 				},
@@ -1006,10 +1012,10 @@ var _ = Describe("Reconcile metal3machine", func() {
 					{
 						Type:   clusterv1.PausedCondition,
 						Status: metav1.ConditionFalse,
-						Reason: infrav1.BareMetalHostPauseAnnotationSetFailedV1Beta2Reason,
+						Reason: infrav1.BareMetalHostPauseAnnotationSetFailedReason,
 					},
 					{
-						Type:   infrav1.Metal3MachineReadyV1Beta2Condition,
+						Type:   infrav1.Metal3MachineReadyCondition,
 						Status: metav1.ConditionFalse,
 					},
 				},

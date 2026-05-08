@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"regexp"
 	"strconv"
@@ -52,6 +53,7 @@ const (
 	networkDataSuffix = "-networkdata"
 	metaDataSuffix    = "-metadata"
 	IPPoolKind        = "IPPool"
+	IPPoolAPIGroup    = "ipam.metal3.io"
 )
 
 var (
@@ -101,17 +103,23 @@ func (m *DataManager) UnsetFinalizer() {
 
 // clearError clears error message from Metal3Data status.
 func (m *DataManager) clearError(_ context.Context) {
-	m.Data.Status.ErrorMessage = nil
+	m.Data.Status.ErrorMessage = ""
 }
 
 // setError sets error message to Metal3Data status.
 func (m *DataManager) setError(_ context.Context, msg string) {
-	m.Data.Status.ErrorMessage = &msg
+	m.Data.Status.ErrorMessage = msg
 }
 
 // Reconcile handles Metal3Data events.
 func (m *DataManager) Reconcile(ctx context.Context) error {
 	m.Log.V(VerbosityLevelTrace).Info("Starting Metal3Data reconciliation")
+
+	// Ensure Status fields are properly initialized
+	if m.Data.Status.Ready == nil {
+		m.Data.Status.Ready = ptr.To(false)
+	}
+
 	m.clearError(ctx)
 
 	if err := m.createSecrets(ctx); err != nil {
@@ -119,11 +127,19 @@ func (m *DataManager) Reconcile(ctx context.Context) error {
 		if errors.As(err, &reconcileError) && reconcileError.IsTransient() {
 			m.Log.V(VerbosityLevelDebug).Info("Transient error during secret creation, will retry",
 				LogFieldError, err.Error())
+			// Ensure Ready status reflects transient error state
+			if m.Data.Status.Ready == nil {
+				m.Data.Status.Ready = ptr.To(false)
+			}
 			return err
 		}
 		m.Log.V(VerbosityLevelDebug).Info("Error during secret creation",
 			LogFieldError, RootCause(err).Error())
 		m.setError(ctx, RootCause(err).Error())
+		// Mark as not ready when error occurs
+		if m.Data.Status.Ready == nil {
+			m.Data.Status.Ready = ptr.To(false)
+		}
 		return err
 	}
 
@@ -136,14 +152,17 @@ func (m *DataManager) createSecrets(ctx context.Context) error {
 	m.Log.V(VerbosityLevelTrace).Info("Creating secrets for Metal3Data")
 	var metaDataErr, networkDataErr error
 
-	if m.Data.Spec.Template.Name == "" {
+	// Initialize Ready status
+	m.Data.Status.Ready = ptr.To(false)
+
+	if m.Data.Spec.Template == nil || m.Data.Spec.Template.Name == "" {
 		return nil
 	}
 	if m.Data.Spec.Template.Namespace == "" {
 		m.Data.Spec.Template.Namespace = m.Data.Namespace
 	}
 	// Fetch the Metal3DataTemplate object to get the templates
-	m3dt, err := fetchM3DataTemplate(ctx, &m.Data.Spec.Template, m.client,
+	m3dt, err := fetchM3DataTemplate(ctx, m.Data.Spec.Template, m.client,
 		m.Log, m.Data.Labels[clusterv1.ClusterNameLabel],
 	)
 	if err != nil {
@@ -218,7 +237,7 @@ func (m *DataManager) createSecrets(ctx context.Context) error {
 	// No secret needs creation
 	if metaDataErr == nil && networkDataErr == nil {
 		m.Log.Info("Metal3Data Reconciled")
-		m.Data.Status.Ready = true
+		m.Data.Status.Ready = ptr.To(true)
 		return nil
 	}
 
@@ -296,7 +315,7 @@ func (m *DataManager) createSecrets(ctx context.Context) error {
 	}
 
 	m.Log.Info("Metal3Data reconciled")
-	m.Data.Status.Ready = true
+	m.Data.Status.Ready = ptr.To(true)
 	return nil
 }
 
@@ -304,7 +323,7 @@ func (m *DataManager) createSecrets(ctx context.Context) error {
 func (m *DataManager) ReleaseLeases(ctx context.Context) error {
 	m.Log.V(VerbosityLevelTrace).Info("Releasing IP leases for Metal3Data",
 		LogFieldMetal3Data, m.Data.Name)
-	if m.Data.Spec.Template.Name == "" {
+	if m.Data.Spec.Template == nil || m.Data.Spec.Template.Name == "" {
 		m.Log.V(VerbosityLevelDebug).Info("No template specified, skipping lease release")
 		return nil
 	}
@@ -312,7 +331,7 @@ func (m *DataManager) ReleaseLeases(ctx context.Context) error {
 		m.Data.Spec.Template.Namespace = m.Data.Namespace
 	}
 	// Fetch the Metal3DataTemplate object to get the templates
-	m3dt, err := fetchM3DataTemplate(ctx, &m.Data.Spec.Template, m.client,
+	m3dt, err := fetchM3DataTemplate(ctx, m.Data.Spec.Template, m.client,
 		m.Log, m.Data.Labels[clusterv1.ClusterNameLabel],
 	)
 	if err != nil {
@@ -328,12 +347,32 @@ func (m *DataManager) ReleaseLeases(ctx context.Context) error {
 	return m.releaseAddressesFromPool(ctx, *m3dt)
 }
 
-// addressFromPool contains the elements coming from an IPPool.
-type addressFromPool struct {
+// AddressFromPool contains the elements coming from an IPPool.
+type AddressFromPool struct {
 	Address    ipamv1.IPAddressStr
-	Prefix     int
+	Prefix     *int32
 	Gateway    ipamv1.IPAddressStr
 	dnsServers []ipamv1.IPAddressStr
+}
+
+// newAddressFromIPAMv1 converts an ipamv1.IPAddress to AddressFromPool,
+// handling the type conversion from ipamv1's int Prefix to int32.
+func newAddressFromIPAMv1(ipAddress *ipamv1.IPAddress) (AddressFromPool, error) {
+	gateway := ipamv1.IPAddressStr("")
+	if ipAddress.Spec.Gateway != nil {
+		gateway = *ipAddress.Spec.Gateway
+	}
+
+	if ipAddress.Spec.Prefix < math.MinInt32 || ipAddress.Spec.Prefix > math.MaxInt32 {
+		return AddressFromPool{}, fmt.Errorf("prefix out of range: %d", ipAddress.Spec.Prefix)
+	}
+	prefix := int32(ipAddress.Spec.Prefix)
+	return AddressFromPool{
+		Address:    ipAddress.Spec.Address,
+		Prefix:     &prefix,
+		Gateway:    gateway,
+		dnsServers: ipAddress.Spec.DNSServers,
+	}, nil
 }
 
 type reconciledClaim struct {
@@ -351,10 +390,10 @@ func (m *DataManager) getAddressesFromPool(ctx context.Context,
 	m3m *infrav1.Metal3Machine,
 	machine *clusterv1.Machine,
 	bmh *bmov1alpha1.BareMetalHost,
-) (map[string]addressFromPool, error) {
+) (map[string]AddressFromPool, error) {
 	m.Log.V(VerbosityLevelTrace).Info("Getting addresses from IP pools")
 	var err error
-	addresses := map[string]addressFromPool{}
+	addresses := map[string]AddressFromPool{}
 
 	poolRefs, err := getReferencedPools(m3dt, m3m, machine, bmh)
 	if err != nil {
@@ -412,9 +451,9 @@ func (m *DataManager) getAddressesFromPool(ctx context.Context,
 	return addresses, nil
 }
 
-func isMetal3IPPoolRef(ref corev1.TypedLocalObjectReference) bool {
-	return (ref.APIGroup != nil && *ref.APIGroup == "ipam.metal3.io" && ref.Kind == IPPoolKind) ||
-		((ref.APIGroup == nil || *ref.APIGroup == "") && ref.Kind == "")
+func isMetal3IPPoolRef(ref infrav1.IPPoolReference) bool {
+	return (ref.APIGroup == IPPoolAPIGroup && ref.Kind == IPPoolKind) ||
+		(ref.APIGroup == "" && ref.Kind == "")
 }
 
 // releaseAddressesFromPool releases all addresses allocated by a [Metal3DataTemplate] by deleting the IP claims.
@@ -440,14 +479,14 @@ func (m *DataManager) releaseAddressesFromPool(ctx context.Context, m3dt infrav1
 
 // poolRefs is used to consolidate the various references of a Metal3DataTemplate into a single map of references.
 // The names of the referenced pools need to be unique.
-type poolRefs map[string]corev1.TypedLocalObjectReference
+type poolRefs map[string]infrav1.IPPoolReference
 
 // addRef adds a reference to the map.
 // It defaults the reference's group and kind to metal3 pools.
 // It returns an error if a reference with the same name but a different group or kind already exists.
-func (p poolRefs) addRef(ref corev1.TypedLocalObjectReference) error {
-	if ref.APIGroup == nil || *ref.APIGroup == "" {
-		ref.APIGroup = ptr.To("ipam.metal3.io")
+func (p poolRefs) addRef(ref infrav1.IPPoolReference) error {
+	if ref.APIGroup == "" {
+		ref.APIGroup = IPPoolAPIGroup
 	}
 	if ref.Kind == "" {
 		ref.Kind = IPPoolKind
@@ -459,7 +498,7 @@ func (p poolRefs) addRef(ref corev1.TypedLocalObjectReference) error {
 		return nil
 	}
 
-	if *old.APIGroup != *ref.APIGroup || old.Kind != ref.Kind {
+	if old.APIGroup != ref.APIGroup || old.Kind != ref.Kind {
 		return errors.New("multiple references with the same name but different resource types")
 	}
 
@@ -468,7 +507,7 @@ func (p poolRefs) addRef(ref corev1.TypedLocalObjectReference) error {
 
 // addFromPool adds a pool reference from a [FromPool] value.
 func (p poolRefs) addFromPool(pool infrav1.FromPool) error {
-	return p.addRef(corev1.TypedLocalObjectReference{Name: pool.Name, APIGroup: ptr.To(pool.APIGroup), Kind: pool.Kind})
+	return p.addRef(infrav1.IPPoolReference{Name: pool.Name, APIGroup: IPPoolAPIGroup, Kind: IPPoolKind})
 }
 
 // addName adds a reference to a metal3 pool using just its name.
@@ -476,19 +515,19 @@ func (p poolRefs) addName(name string) error {
 	if name == "" {
 		return nil
 	}
-	return p.addRef(corev1.TypedLocalObjectReference{Name: name})
+	return p.addRef(infrav1.IPPoolReference{Name: name})
 }
 
 // addFromAnnotation resolves a pool reference from an annotation and adds it to the pool refs.
 // The annotation value should be a string containing the pool name.
 // If the annotation pointer is nil or objects are nil (e.g., during release), this function returns nil without error.
 func (p poolRefs) addFromAnnotation(
-	fromPoolAnnotation *infrav1.FromPoolAnnotation,
+	fromPoolAnnotation infrav1.FromPoolAnnotation,
 	m3m *infrav1.Metal3Machine,
 	machine *clusterv1.Machine,
 	bmh *bmov1alpha1.BareMetalHost,
 ) error {
-	if fromPoolAnnotation == nil {
+	if fromPoolAnnotation == (infrav1.FromPoolAnnotation{}) {
 		return nil
 	}
 
@@ -505,9 +544,9 @@ func (p poolRefs) addFromAnnotation(
 		return fmt.Errorf("annotation %s not found or empty on %s", fromPoolAnnotation.Annotation, fromPoolAnnotation.Object)
 	}
 
-	ref := corev1.TypedLocalObjectReference{
+	ref := infrav1.IPPoolReference{
 		Name:     annotationValue,
-		APIGroup: ptr.To("ipam.metal3.io"),
+		APIGroup: IPPoolAPIGroup,
 		Kind:     IPPoolKind,
 	}
 
@@ -520,7 +559,7 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 	m3m *infrav1.Metal3Machine,
 	machine *clusterv1.Machine,
 	bmh *bmov1alpha1.BareMetalHost,
-) (map[string]corev1.TypedLocalObjectReference, error) {
+) (map[string]infrav1.IPPoolReference, error) {
 	pools := poolRefs{}
 	if m3dt.Spec.MetaData != nil {
 		for _, pool := range m3dt.Spec.MetaData.IPAddressesFromPool {
@@ -544,12 +583,12 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 			}
 		}
 	}
-	if m3dt.Spec.NetworkData != nil {
+	if m3dt.Spec.NetworkData != nil && m3dt.Spec.NetworkData.Networks != nil {
 		for _, network := range m3dt.Spec.NetworkData.Networks.IPv4 { //nolint:dupl
 			if err := pools.addFromAnnotation(network.FromPoolAnnotation, m3m, machine, bmh); err != nil {
 				return pools, err
-			} else if network.FromPoolRef != nil && network.FromPoolRef.Name != "" {
-				if err := pools.addRef(*network.FromPoolRef); err != nil {
+			} else if network.FromPoolRef.Name != "" {
+				if err := pools.addRef(network.FromPoolRef); err != nil {
 					return pools, err
 				}
 			} else if network.IPAddressFromIPPool != "" {
@@ -561,17 +600,17 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 			for _, route := range network.Routes {
 				if err := pools.addFromAnnotation(route.Gateway.FromPoolAnnotation, m3m, machine, bmh); err != nil {
 					return pools, err
-				} else if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
-					if err := pools.addRef(*route.Gateway.FromPoolRef); err != nil {
+				} else if route.Gateway.FromPoolRef.Name != "" {
+					if err := pools.addRef(route.Gateway.FromPoolRef); err != nil {
 						return pools, err
 					}
-				} else if route.Gateway.FromIPPool != nil {
-					if err := pools.addName(*route.Gateway.FromIPPool); err != nil {
+				} else if route.Gateway.FromIPPool != "" {
+					if err := pools.addName(route.Gateway.FromIPPool); err != nil {
 						return pools, err
 					}
 				}
-				if route.Services.DNSFromIPPool != nil {
-					if err := pools.addName(*route.Services.DNSFromIPPool); err != nil {
+				if route.Services != nil && route.Services.DNSFromIPPool != "" {
+					if err := pools.addName(route.Services.DNSFromIPPool); err != nil {
 						return pools, err
 					}
 				}
@@ -581,8 +620,8 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 		for _, network := range m3dt.Spec.NetworkData.Networks.IPv6 { //nolint:dupl
 			if err := pools.addFromAnnotation(network.FromPoolAnnotation, m3m, machine, bmh); err != nil {
 				return pools, err
-			} else if network.FromPoolRef != nil && network.FromPoolRef.Name != "" {
-				if err := pools.addRef(*network.FromPoolRef); err != nil {
+			} else if network.FromPoolRef.Name != "" {
+				if err := pools.addRef(network.FromPoolRef); err != nil {
 					return pools, err
 				}
 			} else if network.IPAddressFromIPPool != "" {
@@ -593,17 +632,17 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 			for _, route := range network.Routes {
 				if err := pools.addFromAnnotation(route.Gateway.FromPoolAnnotation, m3m, machine, bmh); err != nil {
 					return pools, err
-				} else if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
-					if err := pools.addRef(*route.Gateway.FromPoolRef); err != nil {
+				} else if route.Gateway.FromPoolRef.Name != "" {
+					if err := pools.addRef(route.Gateway.FromPoolRef); err != nil {
 						return pools, err
 					}
-				} else if route.Gateway.FromIPPool != nil {
-					if err := pools.addName(*route.Gateway.FromIPPool); err != nil {
+				} else if route.Gateway.FromIPPool != "" {
+					if err := pools.addName(route.Gateway.FromIPPool); err != nil {
 						return pools, err
 					}
 				}
-				if route.Services.DNSFromIPPool != nil {
-					if err := pools.addName(*route.Services.DNSFromIPPool); err != nil {
+				if route.Services != nil && route.Services.DNSFromIPPool != "" {
+					if err := pools.addName(route.Services.DNSFromIPPool); err != nil {
 						return pools, err
 					}
 				}
@@ -612,17 +651,17 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 
 		for _, network := range m3dt.Spec.NetworkData.Networks.IPv4DHCP {
 			for _, route := range network.Routes {
-				if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
-					if err := pools.addRef(*route.Gateway.FromPoolRef); err != nil {
+				if route.Gateway.FromPoolRef.Name != "" {
+					if err := pools.addRef(route.Gateway.FromPoolRef); err != nil {
 						return pools, err
 					}
-				} else if route.Gateway.FromIPPool != nil {
-					if err := pools.addName(*route.Gateway.FromIPPool); err != nil {
+				} else if route.Gateway.FromIPPool != "" {
+					if err := pools.addName(route.Gateway.FromIPPool); err != nil {
 						return pools, err
 					}
 				}
-				if route.Services.DNSFromIPPool != nil {
-					if err := pools.addName(*route.Services.DNSFromIPPool); err != nil {
+				if route.Services != nil && route.Services.DNSFromIPPool != "" {
+					if err := pools.addName(route.Services.DNSFromIPPool); err != nil {
 						return pools, err
 					}
 				}
@@ -631,17 +670,17 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 
 		for _, network := range m3dt.Spec.NetworkData.Networks.IPv6DHCP {
 			for _, route := range network.Routes {
-				if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
-					if err := pools.addRef(*route.Gateway.FromPoolRef); err != nil {
+				if route.Gateway.FromPoolRef.Name != "" {
+					if err := pools.addRef(route.Gateway.FromPoolRef); err != nil {
 						return pools, err
 					}
-				} else if route.Gateway.FromIPPool != nil {
-					if err := pools.addName(*route.Gateway.FromIPPool); err != nil {
+				} else if route.Gateway.FromIPPool != "" {
+					if err := pools.addName(route.Gateway.FromIPPool); err != nil {
 						return pools, err
 					}
 				}
-				if route.Services.DNSFromIPPool != nil {
-					if err := pools.addName(*route.Services.DNSFromIPPool); err != nil {
+				if route.Services != nil && route.Services.DNSFromIPPool != "" {
+					if err := pools.addName(route.Services.DNSFromIPPool); err != nil {
 						return pools, err
 					}
 				}
@@ -650,26 +689,26 @@ func getReferencedPools(m3dt infrav1.Metal3DataTemplate,
 
 		for _, network := range m3dt.Spec.NetworkData.Networks.IPv6SLAAC {
 			for _, route := range network.Routes {
-				if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
-					if err := pools.addRef(*route.Gateway.FromPoolRef); err != nil {
+				if route.Gateway.FromPoolRef.Name != "" {
+					if err := pools.addRef(route.Gateway.FromPoolRef); err != nil {
 						return pools, err
 					}
-				} else if route.Gateway.FromIPPool != nil {
-					if err := pools.addName(*route.Gateway.FromIPPool); err != nil {
+				} else if route.Gateway.FromIPPool != "" {
+					if err := pools.addName(route.Gateway.FromIPPool); err != nil {
 						return pools, err
 					}
 				}
-				if route.Services.DNSFromIPPool != nil {
-					if err := pools.addName(*route.Services.DNSFromIPPool); err != nil {
+				if route.Services != nil && route.Services.DNSFromIPPool != "" {
+					if err := pools.addName(route.Services.DNSFromIPPool); err != nil {
 						return pools, err
 					}
 				}
 			}
 		}
-		if m3dt.Spec.NetworkData.Services.DNSFromIPPool != nil {
-			if err := pools.addName(*m3dt.Spec.NetworkData.Services.DNSFromIPPool); err != nil {
-				return pools, err
-			}
+	}
+	if m3dt.Spec.NetworkData != nil && m3dt.Spec.NetworkData.Services != nil && m3dt.Spec.NetworkData.Services.DNSFromIPPool != "" {
+		if err := pools.addName(m3dt.Spec.NetworkData.Services.DNSFromIPPool); err != nil {
+			return pools, err
 		}
 	}
 	return pools, nil
@@ -704,7 +743,7 @@ func (m *DataManager) m3IPClaimObjectMeta(name, poolRefName string, preallocatio
 
 // ensureM3IPClaim ensures that a claim for a referenced pool exists.
 // It returns the claim and whether to fetch the claim again when fetching IP addresses.
-func (m *DataManager) ensureM3IPClaim(ctx context.Context, poolRef corev1.TypedLocalObjectReference) (reconciledClaim, error) {
+func (m *DataManager) ensureM3IPClaim(ctx context.Context, poolRef infrav1.IPPoolReference) (reconciledClaim, error) {
 	m.Log.Info("Ensuring Metal3IPClaim for Metal3Data", LogFieldMetal3Data, m.Data.Name)
 	ipClaim, err := fetchM3IPClaim(ctx, m.client, m.Log, m.Data.Name+"-"+poolRef.Name, m.Data.Namespace)
 	if err == nil {
@@ -716,7 +755,7 @@ func (m *DataManager) ensureM3IPClaim(ctx context.Context, poolRef corev1.TypedL
 		return reconciledClaim{m3Claim: ipClaim}, err
 	}
 
-	m3dt, err := fetchM3DataTemplate(ctx, &m.Data.Spec.Template, m.client,
+	m3dt, err := fetchM3DataTemplate(ctx, m.Data.Spec.Template, m.client,
 		m.Log, m.Data.Labels[clusterv1.ClusterNameLabel],
 	)
 	if err != nil {
@@ -786,9 +825,9 @@ func (m *DataManager) ensureM3IPClaim(ctx context.Context, poolRef corev1.TypedL
 }
 
 // addressFromM3Claim retrieves the [Metal3IPAddress] for a [Metal3IPClaim].
-func (m *DataManager) addressFromM3Claim(ctx context.Context, poolRef corev1.TypedLocalObjectReference, ipClaim *ipamv1.IPClaim) (addressFromPool, bool, error) {
+func (m *DataManager) addressFromM3Claim(ctx context.Context, poolRef infrav1.IPPoolReference, ipClaim *ipamv1.IPClaim) (AddressFromPool, bool, error) {
 	if ipClaim == nil {
-		return addressFromPool{}, true, errors.New("no claim provided")
+		return AddressFromPool{}, true, errors.New("no claim provided")
 	}
 
 	// Is it "our" ipClaim, or does it belong to an old and deleted Metal3Data with the same name?
@@ -810,7 +849,7 @@ func (m *DataManager) addressFromM3Claim(ctx context.Context, poolRef corev1.Typ
 					m.Log.Info("Failed to remove finalizer from old IPClaim", LogFieldIPClaim, ipClaim.Name, LogFieldError, err)
 				}
 			}
-			return addressFromPool{}, true, nil
+			return AddressFromPool{}, true, nil
 		}
 		m.Log.Info("IPClaim has deletion timestamp but is still in use!", LogFieldIPClaim, ipClaim.Name)
 	} else if !matchingOwnerRef {
@@ -818,19 +857,19 @@ func (m *DataManager) addressFromM3Claim(ctx context.Context, poolRef corev1.Typ
 		// This could happen due to misconfiguration (nameclash) or because the IPClaim
 		// just didn't get the deletionTimestamp before the new Metal3Data was created (race condition).
 		m.Log.Info("Found IPClaim with same name but different UID. Requeing and hoping it will go away.", LogFieldIPClaim, ipClaim.Name)
-		return addressFromPool{}, true, nil
+		return AddressFromPool{}, true, nil
 	}
 
 	if ipClaim.Status.ErrorMessage != nil {
 		m.setError(ctx, fmt.Sprintf(
 			"IP Allocation for %v failed : %v", poolRef.Name, *ipClaim.Status.ErrorMessage,
 		))
-		return addressFromPool{}, false, errors.New(*m.Data.Status.ErrorMessage)
+		return AddressFromPool{}, false, errors.New(m.Data.Status.ErrorMessage)
 	}
 
 	// verify if allocation is there, if not requeue
 	if ipClaim.Status.Address == nil {
-		return addressFromPool{}, true, nil
+		return AddressFromPool{}, true, nil
 	}
 
 	// get Metal3IPAddress object
@@ -843,27 +882,23 @@ func (m *DataManager) addressFromM3Claim(ctx context.Context, poolRef corev1.Typ
 	if err := m.client.Get(ctx, addressNamespacedName, ipAddress); err != nil {
 		if apierrors.IsNotFound(err) {
 			m.Log.Info("IPAddress not found, requeuing", LogFieldIPAddress, ipClaim.Status.Address.Name)
-			return addressFromPool{}, true, nil
+			return AddressFromPool{}, true, nil
 		}
 		m.Log.Error(err, "Unable to get IPAddress.", LogFieldIPAddress, ipClaim.Status.Address.Name)
-		return addressFromPool{}, false, err
+		return AddressFromPool{}, false, err
 	}
 
-	gateway := ipamv1.IPAddressStr("")
-	if ipAddress.Spec.Gateway != nil {
-		gateway = *ipAddress.Spec.Gateway
+	addressFromPool, err := newAddressFromIPAMv1(ipAddress)
+	if err != nil {
+		m.Log.Error(err, "Failed to create address from IPAMv1", LogFieldIPAddress, ipClaim.Status.Address.Name)
+		return AddressFromPool{}, false, err
 	}
 
-	return addressFromPool{
-		Address:    ipAddress.Spec.Address,
-		Prefix:     ipAddress.Spec.Prefix,
-		Gateway:    gateway,
-		dnsServers: ipAddress.Spec.DNSServers,
-	}, false, nil
+	return addressFromPool, false, nil
 }
 
 // releaseAddressFromM3Pool deletes the Metal3IPClaim for a referenced pool.
-func (m *DataManager) releaseAddressFromM3Pool(ctx context.Context, poolRef corev1.TypedLocalObjectReference) error {
+func (m *DataManager) releaseAddressFromM3Pool(ctx context.Context, poolRef infrav1.IPPoolReference) error {
 	m.Log.V(VerbosityLevelTrace).Info("Releasing address from Metal3IPPool",
 		LogFieldPool, poolRef.Name)
 	var ipClaim *ipamv1.IPClaim
@@ -910,10 +945,17 @@ func (m *DataManager) releaseAddressFromM3Pool(ctx context.Context, poolRef core
 }
 
 // ensureIPClaim creates a CAPI IPAddressClaim for a pool if it does not exist yet.
-func (m *DataManager) ensureIPClaim(ctx context.Context, poolRef corev1.TypedLocalObjectReference) (reconciledClaim, error) {
+func (m *DataManager) ensureIPClaim(ctx context.Context, poolRef infrav1.IPPoolReference) (reconciledClaim, error) {
 	m.Log.V(VerbosityLevelTrace).Info("Ensuring IPAddressClaim exists",
 		LogFieldMetal3Data, m.Data.Name,
 		LogFieldPool, poolRef.Name)
+
+	// Ensure m.Data.Name is not empty (defensive check for pointer field issues)
+	if m.Data.Name == "" {
+		m.Log.Error(nil, "Metal3Data name is empty, cannot create IPAddressClaim")
+		return reconciledClaim{}, errors.New("Metal3Data name is empty")
+	}
+
 	claim := &capipamv1.IPAddressClaim{}
 	nn := types.NamespacedName{
 		Namespace: m.Data.Namespace,
@@ -960,25 +1002,29 @@ func (m *DataManager) ensureIPClaim(ctx context.Context, poolRef corev1.TypedLoc
 	err := m.client.Create(ctx, claim)
 	// if the claim already exists we can try to fetch it again
 	if err == nil || apierrors.IsAlreadyExists(err) {
+		m.Log.V(VerbosityLevelDebug).Info("Successfully created or found existing IPAddressClaim",
+			LogFieldIPClaim, claim.Name)
 		return reconciledClaim{claim: claim, fetchAgain: true}, nil
 	}
+	m.Log.V(VerbosityLevelDebug).Info("Failed to create IPAddressClaim",
+		LogFieldError, err.Error(), LogFieldIPClaim, claim.Name)
 	return reconciledClaim{claim: claim}, err
 }
 
 // addressFromClaim retrieves the IPAddress for a CAPI IPAddressClaim.
-func (m *DataManager) addressFromClaim(ctx context.Context, _ corev1.TypedLocalObjectReference, claim *capipamv1.IPAddressClaim) (addressFromPool, bool, error) {
+func (m *DataManager) addressFromClaim(ctx context.Context, _ infrav1.IPPoolReference, claim *capipamv1.IPAddressClaim) (AddressFromPool, bool, error) {
 	m.Log.V(VerbosityLevelTrace).Info("Getting address from IPAddressClaim")
 	if claim == nil {
-		return addressFromPool{}, true, errors.New("no claim provided")
+		return AddressFromPool{}, true, errors.New("no claim provided")
 	}
 	if !claim.DeletionTimestamp.IsZero() {
 		// This IPClaim is about to be deleted so we cannot use it. Requeue.
 		m.Log.Info("Found IPClaim with deletion timestamp, requeuing.", LogFieldIPClaim, claim.Name)
-		return addressFromPool{}, true, nil
+		return AddressFromPool{}, true, nil
 	}
 
 	if claim.Status.AddressRef.Name == "" {
-		return addressFromPool{}, true, nil
+		return AddressFromPool{}, true, nil
 	}
 
 	address := &capipamv1.IPAddress{}
@@ -989,14 +1035,14 @@ func (m *DataManager) addressFromClaim(ctx context.Context, _ corev1.TypedLocalO
 
 	if err := m.client.Get(ctx, addressNamespacedName, address); err != nil {
 		if apierrors.IsNotFound(err) {
-			return addressFromPool{}, true, nil
+			return AddressFromPool{}, true, nil
 		}
-		return addressFromPool{}, false, err
+		return AddressFromPool{}, false, err
 	}
 
-	a := addressFromPool{
+	a := AddressFromPool{
 		Address:    ipamv1.IPAddressStr(address.Spec.Address),
-		Prefix:     int(*address.Spec.Prefix),
+		Prefix:     address.Spec.Prefix,
 		Gateway:    ipamv1.IPAddressStr(address.Spec.Gateway),
 		dnsServers: []ipamv1.IPAddressStr{},
 	}
@@ -1004,7 +1050,7 @@ func (m *DataManager) addressFromClaim(ctx context.Context, _ corev1.TypedLocalO
 }
 
 // releaseAddressFromPool deletes the CAPI IP claim for a pool.
-func (m *DataManager) releaseAddressFromPool(ctx context.Context, poolRef corev1.TypedLocalObjectReference) error {
+func (m *DataManager) releaseAddressFromPool(ctx context.Context, poolRef infrav1.IPPoolReference) error {
 	claim := &capipamv1.IPAddressClaim{}
 	nn := types.NamespacedName{
 		Namespace: m.Data.Namespace,
@@ -1030,35 +1076,45 @@ func (m *DataManager) releaseAddressFromPool(ctx context.Context, poolRef corev1
 // marshalled into the secret.
 func renderNetworkData(m3dt *infrav1.Metal3DataTemplate,
 	m3m *infrav1.Metal3Machine, machine *clusterv1.Machine, bmh *bmov1alpha1.BareMetalHost,
-	poolAddresses map[string]addressFromPool,
+	poolAddresses map[string]AddressFromPool,
 ) ([]byte, error) {
 	if m3dt.Spec.NetworkData == nil {
 		return nil, nil
 	}
 	var err error
 
-	networkData := map[string][]any{}
-
-	networkData["links"], err = renderNetworkLinks(m3dt.Spec.NetworkData.Links, m3m, machine, bmh)
-	if err != nil {
-		return nil, err
+	networkData := map[string][]any{
+		"links":    {},
+		"networks": {},
+		"services": {},
 	}
 
-	networkData["networks"], err = renderNetworkNetworks(m3dt.Spec.NetworkData.Networks, poolAddresses, m3m, machine, bmh)
-	if err != nil {
-		return nil, err
+	if m3dt.Spec.NetworkData.Links != nil {
+		networkData["links"], err = renderNetworkLinks(*m3dt.Spec.NetworkData.Links, m3m, machine, bmh)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	networkData["services"], err = renderNetworkServices(m3dt.Spec.NetworkData.Services, poolAddresses)
-	if err != nil {
-		return nil, err
+	if m3dt.Spec.NetworkData.Networks != nil {
+		networkData["networks"], err = renderNetworkNetworks(*m3dt.Spec.NetworkData.Networks, poolAddresses, m3m, machine, bmh)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if m3dt.Spec.NetworkData.Services != nil {
+		networkData["services"], err = renderNetworkServices(*m3dt.Spec.NetworkData.Services, poolAddresses)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return yaml.Marshal(networkData)
 }
 
 // renderNetworkServices renders the services.
-func renderNetworkServices(services infrav1.NetworkDataService, poolAddresses map[string]addressFromPool) ([]any, error) {
+func renderNetworkServices(services infrav1.NetworkDataService, poolAddresses map[string]AddressFromPool) ([]any, error) {
 	data := []any{}
 
 	for _, service := range services.DNS {
@@ -1068,8 +1124,8 @@ func renderNetworkServices(services infrav1.NetworkDataService, poolAddresses ma
 		})
 	}
 
-	if services.DNSFromIPPool != nil {
-		poolAddress, ok := poolAddresses[*services.DNSFromIPPool]
+	if services.DNSFromIPPool != "" {
+		poolAddress, ok := poolAddresses[services.DNSFromIPPool]
 		if !ok {
 			return nil, errors.New("pool not found in cache")
 		}
@@ -1113,14 +1169,14 @@ func renderNetworkLinks(networkLinks infrav1.NetworkDataLink,
 		}
 
 		illegalParameters := []string{}
-		for opt, value := range link.Parameters {
-			target := "bond_" + opt
+		for _, param := range link.Parameters {
+			target := "bond_" + param.Name
 			_, ok := entry[target]
 			if ok {
-				illegalParameters = append(illegalParameters, opt)
+				illegalParameters = append(illegalParameters, param.Name)
 				continue // Do not overwrite structured parameters
 			}
-			entry[target] = value
+			entry[target] = param.Value
 		}
 
 		if 0 < len(illegalParameters) {
@@ -1155,12 +1211,16 @@ func renderNetworkLinks(networkLinks infrav1.NetworkDataLink,
 
 	// Vlan links
 	for _, link := range networkLinks.Vlans {
+		// VlanID is required and must be non-nil; return an error if missing
+		if link.VlanID == nil {
+			return nil, fmt.Errorf("renderNetworkLinks: VLAN link %q is missing required VlanID", link.Id)
+		}
 		entry := map[string]any{
 			"type":      "vlan",
 			"id":        link.Id,
 			"mtu":       link.MTU,
-			"vlan_id":   link.VlanID,
 			"vlan_link": link.VlanLink,
+			"vlan_id":   *link.VlanID,
 		}
 		// Name is optional - if provided, cloud-init will use it for interface renaming
 		if link.Name != "" {
@@ -1182,7 +1242,7 @@ func renderNetworkLinks(networkLinks infrav1.NetworkDataLink,
 
 // renderNetworkNetworks renders the different types of network.
 func renderNetworkNetworks(networks infrav1.NetworkDataNetwork,
-	poolAddresses map[string]addressFromPool,
+	poolAddresses map[string]AddressFromPool,
 	m3m *infrav1.Metal3Machine, machine *clusterv1.Machine, bmh *bmov1alpha1.BareMetalHost,
 ) ([]any, error) {
 	data := []any{}
@@ -1190,15 +1250,15 @@ func renderNetworkNetworks(networks infrav1.NetworkDataNetwork,
 	// IPv4 networks static allocation
 	//nolint:dupl
 	for _, network := range networks.IPv4 {
-		var poolAddress addressFromPool
+		var poolAddress AddressFromPool
 		var ok bool
-		if network.FromPoolAnnotation != nil {
+		if network.FromPoolAnnotation != (infrav1.FromPoolAnnotation{}) {
 			poolName, err := getValueFromAnnotation(network.FromPoolAnnotation.Object, network.FromPoolAnnotation.Annotation, m3m, machine, bmh)
 			if err != nil {
 				return nil, err
 			}
 			poolAddress, ok = poolAddresses[poolName]
-		} else if network.FromPoolRef != nil && network.FromPoolRef.Name != "" {
+		} else if network.FromPoolRef.Name != "" {
 			poolAddress, ok = poolAddresses[network.FromPoolRef.Name]
 		} else {
 			poolAddress, ok = poolAddresses[network.IPAddressFromIPPool]
@@ -1225,15 +1285,15 @@ func renderNetworkNetworks(networks infrav1.NetworkDataNetwork,
 	// IPv6 networks static allocation
 	//nolint:dupl
 	for _, network := range networks.IPv6 {
-		var poolAddress addressFromPool
+		var poolAddress AddressFromPool
 		var ok bool
-		if network.FromPoolAnnotation != nil {
+		if network.FromPoolAnnotation != (infrav1.FromPoolAnnotation{}) {
 			poolName, err := getValueFromAnnotation(network.FromPoolAnnotation.Object, network.FromPoolAnnotation.Annotation, m3m, machine, bmh)
 			if err != nil {
 				return nil, err
 			}
 			poolAddress, ok = poolAddresses[poolName]
-		} else if network.FromPoolRef != nil && network.FromPoolRef.Name != "" {
+		} else if network.FromPoolRef.Name != "" {
 			poolAddress, ok = poolAddresses[network.FromPoolRef.Name]
 		} else {
 			poolAddress, ok = poolAddresses[network.IPAddressFromIPPool]
@@ -1308,7 +1368,7 @@ func renderNetworkNetworks(networks infrav1.NetworkDataNetwork,
 //
 //nolint:dupl
 func getRoutesv4(netRoutes []infrav1.NetworkDataRoutev4,
-	poolAddresses map[string]addressFromPool,
+	poolAddresses map[string]AddressFromPool,
 	m3m *infrav1.Metal3Machine, machine *clusterv1.Machine, bmh *bmov1alpha1.BareMetalHost,
 ) ([]any, error) {
 	routes := []any{}
@@ -1316,7 +1376,7 @@ func getRoutesv4(netRoutes []infrav1.NetworkDataRoutev4,
 		gateway := ipamv1.IPAddressv4Str("")
 		if route.Gateway.String != nil {
 			gateway = *route.Gateway.String
-		} else if route.Gateway.FromPoolAnnotation != nil {
+		} else if route.Gateway.FromPoolAnnotation != (infrav1.FromPoolAnnotation{}) {
 			poolName, err := getValueFromAnnotation(route.Gateway.FromPoolAnnotation.Object, route.Gateway.FromPoolAnnotation.Annotation, m3m, machine, bmh)
 			if err != nil {
 				return []any{}, err
@@ -1326,39 +1386,45 @@ func getRoutesv4(netRoutes []infrav1.NetworkDataRoutev4,
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv4Str(poolAddress.Gateway)
-		} else if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
+		} else if route.Gateway.FromPoolRef.Name != "" {
 			poolAddress, ok := poolAddresses[route.Gateway.FromPoolRef.Name]
 			if !ok {
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv4Str(poolAddress.Gateway)
-		} else if route.Gateway.FromIPPool != nil {
-			poolAddress, ok := poolAddresses[*route.Gateway.FromIPPool]
+		} else if route.Gateway.FromIPPool != "" {
+			poolAddress, ok := poolAddresses[route.Gateway.FromIPPool]
 			if !ok {
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv4Str(poolAddress.Gateway)
 		}
 		services := []any{}
-		for _, service := range route.Services.DNS {
-			services = append(services, map[string]any{
-				"type":    "dns",
-				"address": service,
-			})
-		}
-		if route.Services.DNSFromIPPool != nil {
-			poolAddress, ok := poolAddresses[*route.Services.DNSFromIPPool]
-			if !ok {
-				return []any{}, errors.New("pool not found in cache")
-			}
-			for _, service := range poolAddress.dnsServers {
+		if route.Services != nil {
+			for _, service := range route.Services.DNS {
 				services = append(services, map[string]any{
 					"type":    "dns",
 					"address": service,
 				})
 			}
+			if route.Services.DNSFromIPPool != "" {
+				poolAddress, ok := poolAddresses[route.Services.DNSFromIPPool]
+				if !ok {
+					return []any{}, errors.New("pool not found in cache")
+				}
+				for _, service := range poolAddress.dnsServers {
+					services = append(services, map[string]any{
+						"type":    "dns",
+						"address": service,
+					})
+				}
+			}
 		}
-		mask := translateMask(route.Prefix, true)
+		prefix := int32(0)
+		if route.Prefix != nil {
+			prefix = *route.Prefix
+		}
+		mask := translateMask(&prefix, true)
 		routes = append(routes, map[string]any{
 			"network":  route.Network,
 			"netmask":  mask,
@@ -1373,7 +1439,7 @@ func getRoutesv4(netRoutes []infrav1.NetworkDataRoutev4,
 //
 //nolint:dupl
 func getRoutesv6(netRoutes []infrav1.NetworkDataRoutev6,
-	poolAddresses map[string]addressFromPool,
+	poolAddresses map[string]AddressFromPool,
 	m3m *infrav1.Metal3Machine, machine *clusterv1.Machine, bmh *bmov1alpha1.BareMetalHost,
 ) ([]any, error) {
 	routes := []any{}
@@ -1381,7 +1447,7 @@ func getRoutesv6(netRoutes []infrav1.NetworkDataRoutev6,
 		gateway := ipamv1.IPAddressv6Str("")
 		if route.Gateway.String != nil {
 			gateway = *route.Gateway.String
-		} else if route.Gateway.FromPoolAnnotation != nil {
+		} else if route.Gateway.FromPoolAnnotation != (infrav1.FromPoolAnnotation{}) {
 			poolName, err := getValueFromAnnotation(route.Gateway.FromPoolAnnotation.Object, route.Gateway.FromPoolAnnotation.Annotation, m3m, machine, bmh)
 			if err != nil {
 				return []any{}, err
@@ -1391,39 +1457,45 @@ func getRoutesv6(netRoutes []infrav1.NetworkDataRoutev6,
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv6Str(poolAddress.Gateway)
-		} else if route.Gateway.FromPoolRef != nil && route.Gateway.FromPoolRef.Name != "" {
+		} else if route.Gateway.FromPoolRef.Name != "" {
 			poolAddress, ok := poolAddresses[route.Gateway.FromPoolRef.Name]
 			if !ok {
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv6Str(poolAddress.Gateway)
-		} else if route.Gateway.FromIPPool != nil {
-			poolAddress, ok := poolAddresses[*route.Gateway.FromIPPool]
+		} else if route.Gateway.FromIPPool != "" {
+			poolAddress, ok := poolAddresses[route.Gateway.FromIPPool]
 			if !ok {
 				return []any{}, errors.New("failed to fetch pool from cache")
 			}
 			gateway = ipamv1.IPAddressv6Str(poolAddress.Gateway)
 		}
 		services := []any{}
-		for _, service := range route.Services.DNS {
-			services = append(services, map[string]any{
-				"type":    "dns",
-				"address": service,
-			})
-		}
-		if route.Services.DNSFromIPPool != nil {
-			poolAddress, ok := poolAddresses[*route.Services.DNSFromIPPool]
-			if !ok {
-				return []any{}, errors.New("pool not found in cache")
-			}
-			for _, service := range poolAddress.dnsServers {
+		if route.Services != nil {
+			for _, service := range route.Services.DNS {
 				services = append(services, map[string]any{
 					"type":    "dns",
 					"address": service,
 				})
 			}
+			if route.Services.DNSFromIPPool != "" {
+				poolAddress, ok := poolAddresses[route.Services.DNSFromIPPool]
+				if !ok {
+					return []any{}, errors.New("pool not found in cache")
+				}
+				for _, service := range poolAddress.dnsServers {
+					services = append(services, map[string]any{
+						"type":    "dns",
+						"address": service,
+					})
+				}
+			}
 		}
-		mask := translateMask(route.Prefix, false)
+		prefix := int32(0)
+		if route.Prefix != nil {
+			prefix = *route.Prefix
+		}
+		mask := translateMask(&prefix, false)
 		routes = append(routes, map[string]any{
 			"network":  route.Network,
 			"netmask":  mask,
@@ -1435,18 +1507,27 @@ func getRoutesv6(netRoutes []infrav1.NetworkDataRoutev6,
 }
 
 // translateMask transforms a mask given as integer into a dotted-notation string.
-func translateMask(maskInt int, ipv4 bool) any {
+// Returns an empty string if maskInt is nil to avoid panic.
+func translateMask(maskInt *int32, ipv4 bool) any {
 	IPv4MaskLen := 32
 	IPv6MaskLen := 128
+	// Handle nil mask - return empty string
+	if maskInt == nil {
+		if ipv4 {
+			return ipamv1.IPAddressv4Str("")
+		}
+		return ipamv1.IPAddressv6Str("")
+	}
+
 	if ipv4 {
 		// Get the mask by concatenating the IPv4 prefix of net package and the mask
 		address := net.IP(append([]byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255},
-			[]byte(net.CIDRMask(maskInt, IPv4MaskLen))...,
+			[]byte(net.CIDRMask(int(*maskInt), IPv4MaskLen))...,
 		)).String()
 		return ipamv1.IPAddressv4Str(address)
 	}
 	// get the mask
-	address := net.IP(net.CIDRMask(maskInt, IPv6MaskLen)).String()
+	address := net.IP(net.CIDRMask(int(*maskInt), IPv6MaskLen)).String()
 	return ipamv1.IPAddressv6Str(address)
 }
 
@@ -1464,13 +1545,13 @@ func getLinkMacAddress(mac *infrav1.NetworkLinkEthernetMac,
 		err        error
 	)
 
-	if mac.String != nil {
+	if mac.String != "" {
 		// if a string was given
-		macaddress, err = *mac.String, nil
-	} else if mac.FromHostInterface != nil {
+		macaddress, err = mac.String, nil
+	} else if mac.FromHostInterface != "" {
 		// if a host interface is given
-		macaddress, err = getBMHMacByName(*mac.FromHostInterface, bmh)
-	} else if mac.FromAnnotation != nil {
+		macaddress, err = getBMHMacByName(mac.FromHostInterface, bmh)
+	} else if mac.FromAnnotation != (infrav1.NetworkLinkEthernetMacFromAnnotation{}) {
 		// if an annotation reference is given
 		macaddress, err = getValueFromAnnotation(mac.FromAnnotation.Object,
 			mac.FromAnnotation.Annotation, m3m, machine, bmh)
@@ -1494,7 +1575,7 @@ func getLinkMacAddress(mac *infrav1.NetworkLinkEthernetMac,
 // renderMetaData renders the MetaData items.
 func renderMetaData(m3d *infrav1.Metal3Data, m3dt *infrav1.Metal3DataTemplate,
 	m3m *infrav1.Metal3Machine, machine *clusterv1.Machine, bmh *bmov1alpha1.BareMetalHost,
-	poolAddresses map[string]addressFromPool,
+	poolAddresses map[string]AddressFromPool,
 ) ([]byte, error) {
 	if m3dt.Spec.MetaData == nil {
 		return nil, nil
@@ -1503,9 +1584,21 @@ func renderMetaData(m3d *infrav1.Metal3Data, m3dt *infrav1.Metal3DataTemplate,
 
 	// Mac addresses
 	for _, entry := range m3dt.Spec.MetaData.FromHostInterfaces {
-		value, err := getBMHMacByName(entry.Interface, bmh)
-		if err != nil {
-			return nil, err
+		var (
+			value string
+			err   error
+		)
+		if entry.FromBootMAC != nil && *entry.FromBootMAC {
+			if bmh.Spec.BootMACAddress == "" {
+				return nil, fmt.Errorf("metadata key %q: BareMetalHost %s/%s spec.bootMACAddress is empty",
+					entry.Key, bmh.Namespace, bmh.Name)
+			}
+			value = bmh.Spec.BootMACAddress
+		} else {
+			value, err = getBMHMacByName(entry.Interface, bmh)
+			if err != nil {
+				return nil, err
+			}
 		}
 		metadata[entry.Key] = value
 	}
@@ -1525,7 +1618,7 @@ func renderMetaData(m3d *infrav1.Metal3Data, m3dt *infrav1.Metal3DataTemplate,
 		if !ok {
 			return nil, errors.New("pool not found in cache")
 		}
-		metadata[entry.Key] = strconv.Itoa(poolAddress.Prefix)
+		metadata[entry.Key] = strconv.Itoa(int(*poolAddress.Prefix))
 	}
 
 	// Gateways
@@ -1542,7 +1635,11 @@ func renderMetaData(m3d *infrav1.Metal3Data, m3dt *infrav1.Metal3DataTemplate,
 		if entry.Step == 0 {
 			entry.Step = 1
 		}
-		metadata[entry.Key] = entry.Prefix + strconv.Itoa(entry.Offset+m3d.Spec.Index*entry.Step) + entry.Suffix
+		offset := int32(0)
+		if entry.Offset != nil {
+			offset = *entry.Offset
+		}
+		metadata[entry.Key] = entry.Prefix + strconv.Itoa(int(offset+ptr.Deref(m3d.Spec.Index, 0)*entry.Step)) + entry.Suffix
 	}
 
 	// Namespaces
@@ -1635,7 +1732,7 @@ func getValueFromAnnotation(object string, annotation string,
 }
 
 func (m *DataManager) getM3Machine(ctx context.Context, m3dt *infrav1.Metal3DataTemplate) (*infrav1.Metal3Machine, error) {
-	if m.Data.Spec.Claim.Name == "" {
+	if m.Data.Spec.Claim == nil || m.Data.Spec.Claim.Name == "" {
 		return nil, errors.New("Metal3DataClaim name not set")
 	}
 

@@ -44,6 +44,7 @@ const (
 	powerOffAnnotation              = "reboot.metal3.io/metal3-remediation-%s"
 	nodeAnnotationsBackupAnnotation = "remediation.metal3.io/node-annotations-backup"
 	nodeLabelsBackupAnnotation      = "remediation.metal3.io/node-labels-backup"
+	defaultTimeout                  = int32(600)
 )
 
 // RemediationManagerInterface is an interface for a RemediationManager.
@@ -51,7 +52,7 @@ type RemediationManagerInterface interface {
 	SetFinalizer()
 	UnsetFinalizer()
 	HasFinalizer() bool
-	TimeToRemediate(timeout time.Duration) (bool, time.Duration)
+	TimeToRemediate(timeoutSeconds int32) (bool, time.Duration)
 	SetPowerOffAnnotation(ctx context.Context) error
 	RemovePowerOffAnnotation(ctx context.Context) error
 	IsPowerOffRequested(ctx context.Context) (bool, error)
@@ -66,7 +67,7 @@ type RemediationManagerInterface interface {
 	GetRemediationPhase() string
 	GetLastRemediatedTime() *metav1.Time
 	SetLastRemediationTime(remediationTime *metav1.Time)
-	GetTimeout() *metav1.Duration
+	GetTimeoutSeconds() int32
 	IncreaseRetryCount()
 	SetOwnerRemediatedConditionNew(ctx context.Context) error
 	GetCapiMachine(ctx context.Context) (*clusterv1.Machine, error)
@@ -137,7 +138,11 @@ func (r *RemediationManager) HasFinalizer() bool {
 
 // TimeToRemediate checks if it is time to execute a next remediation step
 // and returns seconds to next remediation time.
-func (r *RemediationManager) TimeToRemediate(timeout time.Duration) (bool, time.Duration) {
+func (r *RemediationManager) TimeToRemediate(timeoutSeconds int32) (bool, time.Duration) {
+	var timeout time.Duration
+	if timeoutSeconds != 0 {
+		timeout = time.Duration(timeoutSeconds) * time.Second
+	}
 	r.Log.V(VerbosityLevelTrace).Info("Checking if time to remediate",
 		LogFieldMetal3Remediation, r.Metal3Remediation.Name,
 		LogFieldTimeout, timeout.String())
@@ -290,27 +295,31 @@ func getUnhealthyHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl 
 		err := fmt.Errorf("unable to get %s annotations", m3Machine.Name)
 		return nil, err
 	}
-	hostKey, ok := annotations[HostAnnotation]
+	hostAnnotationValue, ok := annotations[HostAnnotation]
 	if !ok {
 		err := fmt.Errorf("unable to get %s HostAnnotation", m3Machine.Name)
 		return nil, err
 	}
-	hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
+	// The namespace prefix is ignored; the Metal3Machine's own namespace is always used
+	// to prevent cross-namespace BareMetalHost references regardless of annotation content.
+	_, hostName, err := cache.SplitMetaNamespaceKey(hostAnnotationValue)
 	if err != nil {
-		rLog.Error(err, "Error parsing annotation value", "annotation key", hostKey)
+		rLog.Error(err, "Error parsing annotation value",
+			"annotation key", HostAnnotation,
+			"annotation value", hostAnnotationValue)
 		return nil, err
 	}
 
 	host := bmov1alpha1.BareMetalHost{}
 	key := client.ObjectKey{
 		Name:      hostName,
-		Namespace: hostNamespace,
+		Namespace: m3Machine.Namespace,
 	}
 	err = cl.Get(ctx, key, &host)
 	if apierrors.IsNotFound(err) {
 		rLog.Info("Annotated BareMetalHost not found",
 			LogFieldHost, hostName,
-			LogFieldNamespace, hostNamespace)
+			LogFieldNamespace, m3Machine.Namespace)
 		return nil, err
 	} else if err != nil {
 		return nil, err
@@ -375,9 +384,15 @@ func (r *RemediationManager) SetLastRemediationTime(remediationTime *metav1.Time
 	r.Metal3Remediation.Status.LastRemediated = remediationTime
 }
 
-// GetTimeout returns timeout duration from remediation request Spec.
-func (r *RemediationManager) GetTimeout() *metav1.Duration {
-	return r.Metal3Remediation.Spec.Strategy.Timeout
+// GetTimeoutSeconds returns timeout duration from remediation request Spec.
+// Returns the configured TimeoutSeconds if set, otherwise returns the default timeout.
+// A zero value indicates the field is not set and we should use the default instead.
+// Validation ensures any non-zero value meets the minimum threshold (100 seconds).
+func (r *RemediationManager) GetTimeoutSeconds() int32 {
+	if r.Metal3Remediation.Spec.Strategy != nil && r.Metal3Remediation.Spec.Strategy.TimeoutSeconds != 0 {
+		return r.Metal3Remediation.Spec.Strategy.TimeoutSeconds
+	}
+	return defaultTimeout
 }
 
 // IncreaseRetryCount increases the retry count on Status.

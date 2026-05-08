@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Support FROM override
-ARG BUILD_IMAGE=docker.io/golang:1.24.13@sha256:c29cdf32d47053ab0d914852d9c2ed2da12b3cf13079aaef1704ef21335e68a3
+ARG BUILD_IMAGE=docker.io/golang:1.25.10@sha256:69a7b8cc06cfb629da20d23be8f8f359a1f823481ab1a14b4e1ece153ea1d1c0
 ARG BASE_IMAGE=gcr.io/distroless/static:nonroot@sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f
 
 # Build the fkas binary on golang image

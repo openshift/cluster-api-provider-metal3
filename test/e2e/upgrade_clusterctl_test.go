@@ -20,11 +20,9 @@ import (
 )
 
 const (
-	workDir                  = "/opt/metal3-dev-env/"
-	capiContract             = "v1beta2"
-	capm3Contract            = "v1beta1"
-	releaseMarkerPrefixCAPM3 = "go://github.com/metal3-io/cluster-api-provider-metal3@v%s"
-	releaseMarkerPrefixIPAM  = "go://github.com/metal3-io/ip-address-manager@v%s"
+	workDir       = "/opt/metal3-dev-env/"
+	capiContract  = "v1beta2"
+	capm3Contract = "v1beta2"
 )
 
 var (
@@ -42,7 +40,7 @@ var (
 // Ironic 33.0 -> latest image tag.
 var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", Label("clusterctl-upgrade"), func() {
 	BeforeEach(func() {
-		k8sVersion = "v1.35.0"
+		k8sVersion = "v1.36.0"
 		validateGlobals(specName)
 		imageURL, imageChecksum := EnsureImage(k8sVersion)
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
@@ -57,10 +55,14 @@ var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", 
 	ironicToRelease := "main"
 	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
 	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
-	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPM3 minor release : %s", minorVersion)
-	ipamStableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixIPAM, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for IPAM minor release : %s", minorVersion)
+
+	// Use the .99 versions available in the local artifact repository (built from
+	// release branch kustomize overlays in e2e_conf.yaml). The old clusterctl binary
+	// resolves provider components from the local repo, which only has .99 versions —
+	// not the actual released patch versions. Core CAPI providers work because
+	// clusterctl has built-in GitHub URLs for them.
+	capm3InitVersion := minorVersion + ".99"
+	ipamInitVersion := minorVersion + ".99"
 
 	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
 		return capi_e2e.ClusterctlUpgradeSpecInput{
@@ -72,8 +74,8 @@ var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", 
 			InitWithCoreProvider:            fmt.Sprintf(providerCAPIPrefix, capiStableRelease),
 			InitWithBootstrapProviders:      []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithControlPlaneProviders:   []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
-			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3StableRelease)},
-			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamStableRelease)},
+			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3InitVersion)},
+			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamInitVersion)},
 			InitWithKubernetesVersion:       k8sVersion,
 			WorkloadKubernetesVersion:       k8sVersion,
 			InitWithBinary:                  fmt.Sprintf(clusterctlDownloadURL, capiStableRelease),
@@ -115,10 +117,14 @@ var _ = Describe("When testing cluster upgrade from releases (v1.11=>current)", 
 	ironicToRelease := "main"
 	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
 	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
-	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPM3 minor release : %s", minorVersion)
-	ipamStableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixIPAM, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for IPAM minor release : %s", minorVersion)
+
+	// Use the .99 versions available in the local artifact repository (built from
+	// release branch kustomize overlays in e2e_conf.yaml). The old clusterctl binary
+	// resolves provider components from the local repo, which only has .99 versions —
+	// not the actual released patch versions. Core CAPI providers work because
+	// clusterctl has built-in GitHub URLs for them.
+	capm3InitVersion := minorVersion + ".99"
+	ipamInitVersion := minorVersion + ".99"
 
 	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
 		return capi_e2e.ClusterctlUpgradeSpecInput{
@@ -130,8 +136,8 @@ var _ = Describe("When testing cluster upgrade from releases (v1.11=>current)", 
 			InitWithCoreProvider:            fmt.Sprintf(providerCAPIPrefix, capiStableRelease),
 			InitWithBootstrapProviders:      []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithControlPlaneProviders:   []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
-			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3StableRelease)},
-			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamStableRelease)},
+			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3InitVersion)},
+			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamInitVersion)},
 			InitWithKubernetesVersion:       k8sVersion,
 			WorkloadKubernetesVersion:       k8sVersion,
 			InitWithBinary:                  fmt.Sprintf(clusterctlDownloadURL, capiStableRelease),

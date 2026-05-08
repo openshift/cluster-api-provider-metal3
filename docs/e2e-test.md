@@ -61,6 +61,7 @@ Below are the tests that you can use with `GINKGO_FOCUS` and `GINKGO_SKIP`
 - integration
 - basic
 - capi-md-tests
+- in-place-upgrade
 
 You can combine both `GINKGO_FOCUS` and `GINKGO_SKIP` to run multiple tests
 according to your requirements. For example following will run ip-reuse and
@@ -93,9 +94,32 @@ make clean -C /opt/metal3-dev-env/metal3-dev-env/
 sudo rm -rf /opt/metal3-dev-env/
 ```
 
+## Environment Variables
+
+The e2e tests use the following Kubernetes version variables:
+
+| Variable | Purpose | Example | Used In |
+|----------|---------|---------|---------|
+| `KUBERNETES_VERSION` | Latest/target Kubernetes version | v1.36.0 | All tests |
+| `KUBERNETES_VERSION_UPGRADE_FROM` | Starting version for minor upgrades | v1.34.1 | k8s-upgrade, ip-reuse, scalability |
+| `KUBERNETES_VERSION_PATCH_TO` | Target version for patch upgrades | v1.34.2 | node-reuse (patch upgrade tests) |
+| `KUBERNETES_N0_VERSION` | Starting version for N+3 upgrade | v1.32.9 | k8s-upgrade-n3 |
+| `KUBERNETES_N1_VERSION` | N+1 version for N+3 upgrade | v1.33.5 | k8s-upgrade-n3 |
+| `KUBERNETES_N2_VERSION` | N+2 version for N+3 upgrade | v1.34.1 | k8s-upgrade-n3 |
+| `KUBERNETES_N3_VERSION` | N+3 target version for N+3 upgrade | v1.36.0 | k8s-upgrade-n3 |
+
+**Note:** KUBERNETES_VERSION_PATCH_TO is
+used only in node reuse test, we do this upgrade to make rollout happen to test
+node-reuse feature, we are not testing k8s upgrade here, so what version of k8s
+we are using for this upgrade is not important, as long as it is a patch
+upgrade and it triggers the rollout. Why we are doing patch upgrade and not
+minor please check this PR:
+<https://github.com/metal3-io/cluster-api-provider-metal3/pull/2212>,
+In short it is to make the test bit more efficient.
+
 ## Included tests
 
-The e2e tests currently include six different sets:
+The e2e tests currently include seven different sets:
 
 1. Pivoting based feature tests
 1. Remediation based feature tests
@@ -103,6 +127,7 @@ The e2e tests currently include six different sets:
 1. K8s upgrade tests
 1. K8s conformance tests
 1. CAPI MachineDeployment tests
+1. In place upgrade test
 
 ### Pivoting based feature tests
 
@@ -159,7 +184,11 @@ For example:
 
 Main branch k8s-upgrade tests:
 
-- `v1.34` => `v1.35`
+- `v1.35` => `v1.36`
+
+Release 1.13 branch k8s-upgrade test:
+
+- `v1.35` => `v1.36`
 
 Release 1.12 branch k8s-upgrade test:
 
@@ -169,17 +198,13 @@ Release 1.11 branch k8s-upgrade test:
 
 - `v1.33` => `v1.34`
 
-Release 1.10 branch k8s-upgrade test:
-
-- `v1.32` => `v1.33`
-
-When Kubernetes 1.36 is released, k8s-upgrade `v1.35` => `v1.36` will be
+When Kubernetes 1.37 is released, k8s-upgrade `v1.36` => `v1.37` will be
 supported in latest release branch and main branch.
 
 ### K8s N+3 upgrade tests
 
-Kubernetes N+3(v1.34) version upgrade in target control plane nodes.
-We start the test with version N(v1.31) and gradually upgrade the
+Kubernetes N+3(v1.36) version upgrade in target control plane nodes.
+We start the test with version N(v1.33) and gradually upgrade the
 target cluster control plane one by one for main branch. We are
 excluding the worker node upgrade and keep it to initial N version.
 When a new Kubernetes minor release is available, we will try to support
@@ -191,13 +216,13 @@ export GINKGO_FOCUS=k8s-upgrade-n3
 
 Main branch k8s-upgrade-n3 tests:
 
-- `v1.31` => `v1.32`
-
 - `v1.32` => `v1.33`
 
 - `v1.33` => `v1.34`
 
-When Kubernetes 1.35 is released, k8s-upgrade-n3 test will be updated accordingly.
+- `v1.34` => `v1.35`
+
+When Kubernetes 1.36 is released, k8s-upgrade-n3 test will be updated accordingly.
 
 ### Test matrix for n+3 k8s upgrade version
 
@@ -207,7 +232,7 @@ planes:
 <!-- markdownlint-disable MD013 -->
 | KUBERNETES_N0_VERSION | KUBERNETES_N1_VERSION | KUBERNETES_N2_VERSION | KUBERNETES_N3_VERSION |
 | --------------------- | --------------------- | --------------------- | --------------------- |
-|       v1.32.9         |        v1.33.5        |       v1.34.1         |        v1.35.0        |
+|       1.33.11         |        1.34.7         |       1.35.4          |        v1.36.0        |
 <!-- markdownlint-enable MD013 -->
 
 ### K8s conformance tests
@@ -225,6 +250,35 @@ e2e tests:
 
 - [MachineDeployment rolling upgrades](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/kcp_md_rollout.go)
 - [MachineDeployment scale](https://github.com/kubernetes-sigs/cluster-api/blob/main/test/e2e/md_scale.go)
+
+### In place upgrade test
+
+The in-place upgrade test upgrades Kubernetes on existing cluster nodes
+(control plane) without reprovisioning or restarting machines. This approach
+upgrades the Kubernetes components directly on running nodes via SSH, avoiding
+the time and resource overhead of machine replacement.
+
+The test leverages CAPI's Runtime SDK and the experimental
+`EXP_IN_PLACE_UPDATES` feature gate to intercept machine update operations.
+A runtime extension server implements the necessary hooks
+(`DoCanUpdateMachine`, `DoCanUpdateMachineSet`, `DoUpdateMachine`) to perform
+the actual upgrade via SSH.
+See [test/extension/handlers/inplaceupdate/handlers.go](../test/extension/handlers/inplaceupdate/handlers.go)
+for the detailed implementation.
+
+**Test flow:**
+
+1. Test starts 5 bmh, 3 CP nodes and 0 worker node
+1. Get uids of machines before upgrade
+1. Upgrades Kubernetes
+1. Waits for control plane nodes to upgrade
+1. Check uids of upgraded CP machines with before upgrade uids to check
+   in-place upgrade
+1. Scales CP machines from 3→5 to validate new node uses the new image.
+1. Verifies all machines are running with the new version
+
+**Note:** Currently, the SSH-based upgrade implementation is only available
+for CentOS. The test runs exclusively with the CentOS flavor.
 
 ## Guidelines to follow when adding new E2E tests
 
@@ -261,7 +315,7 @@ clusters:
 
 | tests               | bootstrap cluster | metal3 cluster init | metal3 cluster final |
 | ------------------- | ----------------- | --------------------| -------------------- |
-| integration         | v1.35.0           | v1.35.0             | x                    |
-| remediation         | v1.35.0           | v1.35.0             | x                    |
-| pivot based feature | v1.35.0           | v1.35.0             | v1.35.0              |
-| upgrade             | v1.35.0           | v1.35.0             | v1.35.0              |
+| integration         | v1.36.0           | v1.36.0             | x                    |
+| remediation         | v1.36.0           | v1.36.0             | x                    |
+| pivot based feature | v1.36.0           | v1.36.0             | v1.36.0              |
+| upgrade             | v1.36.0           | v1.36.0             | v1.36.0              |

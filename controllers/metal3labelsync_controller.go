@@ -127,7 +127,7 @@ func (r *Metal3LabelSyncReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		// ignore BMH with no ConsumerRef
 		return ctrl.Result{}, nil
 	}
-	if host.Spec.ConsumerRef.Kind != metal3MachineKind &&
+	if host.Spec.ConsumerRef.Kind != metal3MachineKind ||
 		host.Spec.ConsumerRef.GroupVersionKind().Group != infrav1.GroupVersion.Group {
 		controllerLog.Info("Unknown GroupVersionKind in BareMetalHost Consumer Ref", "groupversion", host.Spec.ConsumerRef.GroupVersionKind())
 		return ctrl.Result{}, nil
@@ -392,14 +392,16 @@ func (r *Metal3LabelSyncReconciler) Metal3ClusterToBareMetalHosts(ctx context.Co
 			log.Error(fmt.Errorf("no %v annotation on Metal3Machine: %v", baremetal.HostAnnotation, name), "failed to get BareMetalHost annotation in Metal3Machine")
 			continue
 		}
-		hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
+		// The namespace prefix is ignored; the Metal3Machine's own namespace is always used
+		// to prevent cross-namespace BareMetalHost references regardless of annotation content.
+		_, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
 		if err != nil {
 			log.Error(err, "could not parse host annotation")
 			continue
 		}
 		hostObjKey := client.ObjectKey{
 			Name:      hostName,
-			Namespace: hostNamespace,
+			Namespace: capm3Machine.Namespace,
 		}
 		log.V(baremetal.VerbosityLevelTrace).Info("found BareMetalHost", "name", hostObjKey)
 		result = append(result, ctrl.Request{NamespacedName: hostObjKey})
