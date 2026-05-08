@@ -7,6 +7,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3clusters.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -310,9 +311,9 @@ spec:
       jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - description: metal3Cluster is Ready
-      jsonPath: .status.ready
-      name: Ready
+    - description: Metal3Cluster is provisioned
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
       type: string
     - description: Most recent error
       jsonPath: .status.deprecated.v1beta1.failureReason
@@ -349,32 +350,34 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3ClusterSpec defines the desired state of Metal3Cluster.
+            description: spec defines the desired state of Metal3Cluster.
             properties:
               cloudProviderEnabled:
                 description: |-
-                  Determines if the cluster is to be deployed with an external cloud provider.
+                  cloudProviderEnabled determines if the cluster is to be deployed with an external cloud provider.
                   If set to false, CAPM3 will use node labels to set providerID on the kubernetes nodes.
                   If set to true, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-                  Default value is true, it is set in the webhook.
                 type: boolean
               controlPlaneEndpoint:
-                description: ControlPlaneEndpoint represents the endpoint used to
+                description: controlPlaneEndpoint represents the endpoint used to
                   communicate with the control plane.
+                minProperties: 1
                 properties:
                   host:
-                    description: Host is the hostname on which the API server is serving.
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
                     type: string
                   port:
-                    description: Port is the port on which the API server is serving.
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               failureDomains:
-                description: FailureDomains specifies a list of failure zones that
-                  can be used
+                description: failureDomains is a list of failure domain objects synced
+                  from the infrastructure provider.
                 items:
                   description: |-
                     FailureDomain is the Schema for Cluster API failure domains.
@@ -398,18 +401,15 @@ spec:
                   required:
                   - name
                   type: object
+                maxItems: 100
+                minItems: 1
                 type: array
-              noCloudProvider:
-                description: |-
-                  Determines if the cluster is not to be deployed with an external cloud provider.
-                  If set to true, CAPM3 will use node labels to set providerID on the kubernetes nodes.
-                  If set to false, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-
-                  Deprecated: This field is deprecated, use cloudProviderEnabled instead
-                type: boolean
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             type: object
           status:
-            description: Metal3ClusterStatus defines the observed state of Metal3Cluster.
+            description: status defines the observed state of Metal3Cluster.
             properties:
               conditions:
                 description: |-
@@ -488,8 +488,10 @@ spec:
 
                           Deprecated: This field is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                         items:
-                          description: Condition defines an observation of a Cluster
-                            API resource operational state.
+                          description: |-
+                            Condition defines an observation of a Cluster API resource operational state.
+
+                            Deprecated: This type is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                           properties:
                             lastTransitionTime:
                               description: |-
@@ -540,12 +542,14 @@ spec:
                         type: array
                       failureMessage:
                         description: |-
-                          FailureMessage indicates that there is a fatal problem reconciling the
+                          failureMessage indicates that there is a fatal problem reconciling the
                           state, and will be set to a descriptive error message.
+                        maxLength: 1024
+                        minLength: 0
                         type: string
                       failureReason:
                         description: |-
-                          FailureReason indicates that there is a fatal problem reconciling the
+                          failureReason indicates that there is a fatal problem reconciling the
                           state, and will be set to a token value suitable for
                           programmatic interpretation.
                         type: string
@@ -583,17 +587,22 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              initialization:
+                description: |-
+                  initialization provides observations of the Metal3Cluster initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Cluster provisioning.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      provisioned is true when the infrastructure provider reports that the Cluster's infrastructure is fully provisioned.
+                      NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Cluster provisioning.
+                    type: boolean
+                type: object
               lastUpdated:
-                description: LastUpdated identifies when this status was last observed.
+                description: lastUpdated identifies when this status was last observed.
                 format: date-time
                 type: string
-              ready:
-                description: |-
-                  Ready denotes that the Metal3 cluster (infrastructure) is ready. In
-                  Baremetal case, it does not mean anything for now as no infrastructure
-                  steps need to be performed. Required by Cluster API. Set to True by the
-                  metal3Cluster controller after creation.
-                type: boolean
             type: object
         type: object
     served: true
@@ -610,6 +619,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3clustertemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
@@ -743,41 +753,68 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3ClusterTemplateSpec defines the desired state of Metal3ClusterTemplate.
+            description: spec defines the desired state of Metal3ClusterTemplate.
             properties:
               template:
-                description: Metal3ClusterTemplateResource describes the data for
-                  creating a Metal3Cluster from a template.
+                description: template describes the data for creating a Metal3Cluster
+                  from a template
                 properties:
+                  metadata:
+                    description: |-
+                      metadata is the standard object's metadata.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
                   spec:
-                    description: Metal3ClusterSpec defines the desired state of Metal3Cluster.
+                    description: spec defines the desired state of Metal3Cluster.
                     properties:
                       cloudProviderEnabled:
                         description: |-
-                          Determines if the cluster is to be deployed with an external cloud provider.
+                          cloudProviderEnabled determines if the cluster is to be deployed with an external cloud provider.
                           If set to false, CAPM3 will use node labels to set providerID on the kubernetes nodes.
                           If set to true, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-                          Default value is true, it is set in the webhook.
                         type: boolean
                       controlPlaneEndpoint:
-                        description: ControlPlaneEndpoint represents the endpoint
+                        description: controlPlaneEndpoint represents the endpoint
                           used to communicate with the control plane.
+                        minProperties: 1
                         properties:
                           host:
-                            description: Host is the hostname on which the API server
+                            description: host is the hostname on which the API server
                               is serving.
+                            maxLength: 512
+                            minLength: 1
                             type: string
                           port:
-                            description: Port is the port on which the API server
+                            description: port is the port on which the API server
                               is serving.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
                             type: integer
-                        required:
-                        - host
-                        - port
                         type: object
                       failureDomains:
-                        description: FailureDomains specifies a list of failure zones
-                          that can be used
+                        description: failureDomains is a list of failure domain objects
+                          synced from the infrastructure provider.
                         items:
                           description: |-
                             FailureDomain is the Schema for Cluster API failure domains.
@@ -801,15 +838,12 @@ spec:
                           required:
                           - name
                           type: object
+                        maxItems: 100
+                        minItems: 1
                         type: array
-                      noCloudProvider:
-                        description: |-
-                          Determines if the cluster is not to be deployed with an external cloud provider.
-                          If set to true, CAPM3 will use node labels to set providerID on the kubernetes nodes.
-                          If set to false, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-
-                          Deprecated: This field is deprecated, use cloudProviderEnabled instead
-                        type: boolean
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                     type: object
                 required:
                 - spec
@@ -817,6 +851,8 @@ spec:
             required:
             - template
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: false
@@ -830,6 +866,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3machines.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -1076,7 +1113,9 @@ spec:
               providerID:
                 description: |-
                   ProviderID will be the Metal3 machine in ProviderID format
-                  (metal3://<bmh-uuid>)
+                  (metal3://<namespace>/<bmh-name>/<m3m-name>).
+                  The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                  and removed in CAPM3 v1.14.
                 type: string
               userData:
                 description: |-
@@ -1406,17 +1445,13 @@ spec:
       jsonPath: .spec.providerID
       name: ProviderID
       type: string
-    - description: metal3machine is Ready
-      jsonPath: .status.ready
-      name: Ready
+    - description: Metal3Machine is provisioned
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
       type: string
     - description: Cluster to which this M3Machine belongs
       jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
       name: Cluster
-      type: string
-    - description: metal3machine current phase
-      jsonPath: .status.phase
-      name: Phase
       type: string
     name: v1beta2
     schema:
@@ -1441,10 +1476,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3MachineSpec defines the desired state of Metal3Machine.
+            description: spec defines the desired state of Metal3Machine.
             properties:
               automatedCleaningMode:
                 description: |-
+                  automatedCleaningMode determines the mode of automated cleaning.
                   When set to disabled, automated cleaning of host disks will be skipped
                   during provisioning and deprovisioning.
                 enum:
@@ -1452,120 +1488,116 @@ spec:
                 - disabled
                 type: string
               customDeploy:
-                description: A custom deploy procedure.
+                description: |-
+                  customDeploy is a custom deploy procedure.
+                  Either image or customDeploy is required.
                 properties:
                   method:
                     description: |-
-                      Custom deploy method name.
+                      method is the name of the deploy method.
                       This name is specific to the deploy ramdisk used. If you don't have
                       a custom deploy ramdisk, you shouldn't use CustomDeploy.
+                    maxLength: 512
+                    minLength: 1
                     type: string
                 required:
                 - method
                 type: object
               dataTemplate:
                 description: |-
-                  MetadataTemplate is a reference to a Metal3DataTemplate object containing
+                  dataTemplate is a reference to a Metal3DataTemplate object containing
                   a template of metadata to be rendered. Metadata keys defined in the
                   metadataTemplate take precedence over keys defined in metadata field.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
               failureDomain:
-                description: FailureDomain is the failure domain unique identifier
-                  this Machine should be attached to, as defined in Cluster API.
+                description: failureDomain is the failure domain unique identifier
+                  this machine should be attached to, as defined in Cluster API.
+                maxLength: 256
+                minLength: 1
                 type: string
               hostSelector:
                 description: |-
-                  HostSelector specifies matching criteria for labels on BareMetalHosts.
+                  hostSelector specifies matching criteria for labels on BareMetalHosts.
                   This is used to limit the set of BareMetalHost objects considered for
                   claiming for a metal3machine.
                 properties:
                   matchExpressions:
-                    description: Label match expressions that must be true on a chosen
-                      BareMetalHost
+                    description: matchExpressions specifies match expressions that
+                      must be true on a chosen BareMetalHost
                     items:
                       properties:
                         key:
+                          description: key is the label key that the selector applies
+                            to.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         operator:
-                          description: |-
-                            Operator represents a key/field's relationship to value(s).
-                            See labels.Requirement and fields.Requirement for more details.
+                          description: operator represents a key's relationship to
+                            a set of values.
                           type: string
                         values:
+                          description: values is an array of string of required values.
                           items:
+                            maxLength: 512
+                            minLength: 1
                             type: string
+                          maxItems: 512
                           type: array
+                          x-kubernetes-list-type: set
                       required:
                       - key
                       - operator
                       - values
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   matchLabels:
                     additionalProperties:
                       type: string
-                    description: Key/value pairs of labels that must exist on a chosen
-                      BareMetalHost
+                    description: matchLabels specifies key/value pairs of labels that
+                      must exist on a chosen BareMetalHost
                     type: object
                 type: object
               image:
-                description: Image is the image to be provisioned.
+                description: |-
+                  image is the image to be provisioned.
+                  Either image or customDeploy is required.
                 properties:
                   checksum:
-                    description: Checksum is a md5sum, sha256sum or sha512sum value
-                      or a URL to retrieve one.
+                    description: |-
+                      checksum is a md5sum, sha256sum or sha512sum value or a URL to retrieve one.
+                      When diskFormat is live-iso, empty string is also a valid value.
+                    maxLength: 512
+                    minLength: 0
                     type: string
                   checksumType:
                     description: |-
-                      ChecksumType is the checksum algorithm for the image.
+                      checksumType is the checksum algorithm for the image.
                       e.g md5, sha256, sha512
                     enum:
                     - md5
                     - sha256
                     - sha512
                     type: string
-                  format:
-                    description: DiskFormat contains the image disk format.
+                  diskFormat:
+                    description: diskFormat contains the image disk format.
                     enum:
                     - raw
                     - qcow2
@@ -1574,7 +1606,10 @@ spec:
                     - live-iso
                     type: string
                   url:
-                    description: URL is a location of an image to deploy.
+                    description: url is a location of an image to deploy.
+                    format: uri
+                    maxLength: 512
+                    minLength: 1
                     type: string
                 required:
                 - checksum
@@ -1582,8 +1617,8 @@ spec:
                 type: object
               metaData:
                 description: |-
-                  MetaData is an object storing the reference to the secret containing the
-                  Metadata given by the user.
+                  metaData is an object storing the reference to the secret containing the
+                  metadata given by the user.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -1597,7 +1632,7 @@ spec:
                 x-kubernetes-map-type: atomic
               networkData:
                 description: |-
-                  NetworkData is an object storing the reference to the secret containing the
+                  networkData is an object storing the reference to the secret containing the
                   network data given by the user.
                 properties:
                   name:
@@ -1612,12 +1647,17 @@ spec:
                 x-kubernetes-map-type: atomic
               providerID:
                 description: |-
-                  ProviderID will be the Metal3 machine in ProviderID format
-                  (metal3://<bmh-uuid>)
+                  providerID must match the provider ID as seen on the node object corresponding to this machine.
+                  For Kubernetes Nodes running on the Metal3 provider, this value is set by the corresponding CPI component
+                  and it has the format metal3://<namespace>/<bmh-name>/<m3m-name>.
+                  The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                  and removed in CAPM3 v1.14.
+                maxLength: 512
+                minLength: 1
                 type: string
               userData:
                 description: |-
-                  UserData references the Secret that holds user data needed by the bare metal
+                  userData references the Secret that holds user data needed by the bare metal
                   operator. The Namespace is optional; it will default to the metal3machine's
                   namespace if not specified.
                 properties:
@@ -1633,12 +1673,10 @@ spec:
                 x-kubernetes-map-type: atomic
             type: object
           status:
-            description: Metal3MachineStatus defines the observed state of Metal3Machine.
+            description: status defines the observed state of Metal3Machine.
             properties:
               addresses:
-                description: |-
-                  Addresses is a list of addresses assigned to the machine.
-                  This field is copied from the infrastructure provider reference.
+                description: addresses contains the associated addresses for the machine.
                 items:
                   description: MachineAddress contains information for the node's
                     address.
@@ -1662,7 +1700,8 @@ spec:
                   - address
                   - type
                   type: object
-                maxItems: 128
+                maxItems: 32
+                minItems: 1
                 type: array
                 x-kubernetes-list-type: atomic
               conditions:
@@ -1740,12 +1779,14 @@ spec:
                     properties:
                       conditions:
                         description: |-
-                          Conditions defines current service state of the Metal3Machine.
+                          conditions defines current service state of the Metal3Machine.
 
                           Deprecated: This field is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                         items:
-                          description: Condition defines an observation of a Cluster
-                            API resource operational state.
+                          description: |-
+                            Condition defines an observation of a Cluster API resource operational state.
+
+                            Deprecated: This type is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                           properties:
                             lastTransitionTime:
                               description: |-
@@ -1796,7 +1837,7 @@ spec:
                         type: array
                       failureMessage:
                         description: |-
-                          FailureMessage will be set in the event that there is a terminal problem
+                          failureMessage will be set in the event that there is a terminal problem
                           reconciling the metal3machine and will contain a more verbose string suitable
                           for logging and human consumption.
 
@@ -1817,7 +1858,7 @@ spec:
                         type: string
                       failureReason:
                         description: |-
-                          FailureReason will be set in the event that there is a terminal problem
+                          failureReason will be set in the event that there is a terminal problem
                           reconciling the metal3machine and will contain a succinct value suitable
                           for machine interpretation.
 
@@ -1838,14 +1879,26 @@ spec:
                         type: string
                     type: object
                 type: object
+              initialization:
+                description: |-
+                  initialization provides observations of the Metal3Machine initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Machine provisioning.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      provisioned is true when the infrastructure provider reports that the Machine's infrastructure is fully provisioned.
+                      NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Machine provisioning.
+                    type: boolean
+                type: object
               lastUpdated:
-                description: LastUpdated identifies when this status was last observed.
+                description: lastUpdated identifies when this status was last observed.
                 format: date-time
                 type: string
               metaData:
                 description: |-
-                  MetaData is an object storing the reference to the secret containing the
-                  Metadata used to deploy the BareMetalHost.
+                  metaData is an object storing the reference to the secret containing the
+                  metadata used to deploy the BareMetalHost.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -1859,7 +1912,7 @@ spec:
                 x-kubernetes-map-type: atomic
               networkData:
                 description: |-
-                  NetworkData is an object storing the reference to the secret containing the
+                  networkData is an object storing the reference to the secret containing the
                   network data used to deploy the BareMetalHost.
                 properties:
                   name:
@@ -1872,65 +1925,26 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              phase:
-                description: |-
-                  Phase represents the current phase of machine actuation.
-                  E.g. Pending, Running, Terminating, Failed etc.
-                type: string
-              ready:
-                description: |-
-                  Ready is the state of the metal3.
-                  mhrivnak: " it would be good to document what this means, how to interpret
-                  it, under what circumstances the value changes, etc."
-                type: boolean
               renderedData:
                 description: |-
-                  RenderedData is a reference to a rendered Metal3Data object containing
+                  renderedData is a reference to a rendered Metal3Data object containing
                   the references to metaData and networkData secrets.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
               userData:
                 description: |-
-                  UserData references the Secret that holds user data needed by the bare metal
+                  userData references the Secret that holds user data needed by the bare metal
                   operator. The Namespace is optional; it will default to the metal3machine's
                   namespace if not specified.
                 properties:
@@ -1960,6 +1974,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3machinetemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -2206,7 +2221,9 @@ spec:
                       providerID:
                         description: |-
                           ProviderID will be the Metal3 machine in ProviderID format
-                          (metal3://<bmh-uuid>)
+                          (metal3://<namespace>/<bmh-name>/<m3m-name>).
+                          The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                          and removed in CAPM3 v1.14.
                         type: string
                       userData:
                         description: |-
@@ -2264,24 +2281,51 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3MachineTemplateSpec defines the desired state of Metal3MachineTemplate.
+            description: spec defines the desired state of Metal3MachineTemplate.
             properties:
               nodeReuse:
                 default: false
                 description: |-
+                  nodeReuse is a flag that can be set to True to enable node reuse during upgrade.
                   When set to True, CAPM3 Machine controller will
                   pick the same pool of BMHs' that were released during the upgrade operation.
                 type: boolean
               template:
-                description: Metal3MachineTemplateResource describes the data needed
-                  to create a Metal3Machine from a template.
+                description: template describes the data needed to create a Metal3Machine
+                  from a template
                 properties:
+                  metadata:
+                    description: |-
+                      metadata is the standard object's metadata.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
                   spec:
-                    description: Spec is the specification of the desired behavior
+                    description: spec is the specification of the desired behavior
                       of the machine.
                     properties:
                       automatedCleaningMode:
                         description: |-
+                          automatedCleaningMode determines the mode of automated cleaning.
                           When set to disabled, automated cleaning of host disks will be skipped
                           during provisioning and deprovisioning.
                         enum:
@@ -2289,121 +2333,118 @@ spec:
                         - disabled
                         type: string
                       customDeploy:
-                        description: A custom deploy procedure.
+                        description: |-
+                          customDeploy is a custom deploy procedure.
+                          Either image or customDeploy is required.
                         properties:
                           method:
                             description: |-
-                              Custom deploy method name.
+                              method is the name of the deploy method.
                               This name is specific to the deploy ramdisk used. If you don't have
                               a custom deploy ramdisk, you shouldn't use CustomDeploy.
+                            maxLength: 512
+                            minLength: 1
                             type: string
                         required:
                         - method
                         type: object
                       dataTemplate:
                         description: |-
-                          MetadataTemplate is a reference to a Metal3DataTemplate object containing
+                          dataTemplate is a reference to a Metal3DataTemplate object containing
                           a template of metadata to be rendered. Metadata keys defined in the
                           metadataTemplate take precedence over keys defined in metadata field.
                         properties:
-                          apiVersion:
-                            description: API version of the referent.
-                            type: string
-                          fieldPath:
-                            description: |-
-                              If referring to a piece of an object instead of an entire object, this string
-                              should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                              For example, if the object reference is to a container within a pod, this would take on a value like:
-                              "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                              the event) or if no container name is specified "spec.containers[2]" (container with
-                              index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                              referencing a part of an object.
-                            type: string
-                          kind:
-                            description: |-
-                              Kind of the referent.
-                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                            type: string
                           name:
-                            description: |-
-                              Name of the referent.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            description: name of the resource.
+                            maxLength: 253
+                            minLength: 1
                             type: string
                           namespace:
-                            description: |-
-                              Namespace of the referent.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                            type: string
-                          resourceVersion:
-                            description: |-
-                              Specific resourceVersion to which this reference is made, if any.
-                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                            type: string
-                          uid:
-                            description: |-
-                              UID of the referent.
-                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                            description: namespace of the resource.
+                            maxLength: 253
+                            minLength: 1
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
                       failureDomain:
-                        description: FailureDomain is the failure domain unique identifier
-                          this Machine should be attached to, as defined in Cluster
+                        description: failureDomain is the failure domain unique identifier
+                          this machine should be attached to, as defined in Cluster
                           API.
+                        maxLength: 256
+                        minLength: 1
                         type: string
                       hostSelector:
                         description: |-
-                          HostSelector specifies matching criteria for labels on BareMetalHosts.
+                          hostSelector specifies matching criteria for labels on BareMetalHosts.
                           This is used to limit the set of BareMetalHost objects considered for
                           claiming for a metal3machine.
                         properties:
                           matchExpressions:
-                            description: Label match expressions that must be true
-                              on a chosen BareMetalHost
+                            description: matchExpressions specifies match expressions
+                              that must be true on a chosen BareMetalHost
                             items:
                               properties:
                                 key:
+                                  description: key is the label key that the selector
+                                    applies to.
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 operator:
-                                  description: |-
-                                    Operator represents a key/field's relationship to value(s).
-                                    See labels.Requirement and fields.Requirement for more details.
+                                  description: operator represents a key's relationship
+                                    to a set of values.
                                   type: string
                                 values:
+                                  description: values is an array of string of required
+                                    values.
                                   items:
+                                    maxLength: 512
+                                    minLength: 1
                                     type: string
+                                  maxItems: 512
                                   type: array
+                                  x-kubernetes-list-type: set
                               required:
                               - key
                               - operator
                               - values
                               type: object
+                            maxItems: 512
+                            minItems: 1
                             type: array
+                            x-kubernetes-list-map-keys:
+                            - key
+                            x-kubernetes-list-type: map
                           matchLabels:
                             additionalProperties:
                               type: string
-                            description: Key/value pairs of labels that must exist
-                              on a chosen BareMetalHost
+                            description: matchLabels specifies key/value pairs of
+                              labels that must exist on a chosen BareMetalHost
                             type: object
                         type: object
                       image:
-                        description: Image is the image to be provisioned.
+                        description: |-
+                          image is the image to be provisioned.
+                          Either image or customDeploy is required.
                         properties:
                           checksum:
-                            description: Checksum is a md5sum, sha256sum or sha512sum
-                              value or a URL to retrieve one.
+                            description: |-
+                              checksum is a md5sum, sha256sum or sha512sum value or a URL to retrieve one.
+                              When diskFormat is live-iso, empty string is also a valid value.
+                            maxLength: 512
+                            minLength: 0
                             type: string
                           checksumType:
                             description: |-
-                              ChecksumType is the checksum algorithm for the image.
+                              checksumType is the checksum algorithm for the image.
                               e.g md5, sha256, sha512
                             enum:
                             - md5
                             - sha256
                             - sha512
                             type: string
-                          format:
-                            description: DiskFormat contains the image disk format.
+                          diskFormat:
+                            description: diskFormat contains the image disk format.
                             enum:
                             - raw
                             - qcow2
@@ -2412,7 +2453,10 @@ spec:
                             - live-iso
                             type: string
                           url:
-                            description: URL is a location of an image to deploy.
+                            description: url is a location of an image to deploy.
+                            format: uri
+                            maxLength: 512
+                            minLength: 1
                             type: string
                         required:
                         - checksum
@@ -2420,8 +2464,8 @@ spec:
                         type: object
                       metaData:
                         description: |-
-                          MetaData is an object storing the reference to the secret containing the
-                          Metadata given by the user.
+                          metaData is an object storing the reference to the secret containing the
+                          metadata given by the user.
                         properties:
                           name:
                             description: name is unique within a namespace to reference
@@ -2435,7 +2479,7 @@ spec:
                         x-kubernetes-map-type: atomic
                       networkData:
                         description: |-
-                          NetworkData is an object storing the reference to the secret containing the
+                          networkData is an object storing the reference to the secret containing the
                           network data given by the user.
                         properties:
                           name:
@@ -2450,12 +2494,17 @@ spec:
                         x-kubernetes-map-type: atomic
                       providerID:
                         description: |-
-                          ProviderID will be the Metal3 machine in ProviderID format
-                          (metal3://<bmh-uuid>)
+                          providerID must match the provider ID as seen on the node object corresponding to this machine.
+                          For Kubernetes Nodes running on the Metal3 provider, this value is set by the corresponding CPI component
+                          and it has the format metal3://<namespace>/<bmh-name>/<m3m-name>.
+                          The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                          and removed in CAPM3 v1.14.
+                        maxLength: 512
+                        minLength: 1
                         type: string
                       userData:
                         description: |-
-                          UserData references the Secret that holds user data needed by the bare metal
+                          userData references the Secret that holds user data needed by the bare metal
                           operator. The Namespace is optional; it will default to the metal3machine's
                           namespace if not specified.
                         properties:
@@ -2476,6 +2525,8 @@ spec:
             required:
             - template
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: false
@@ -2490,6 +2541,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3datatemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -2629,6 +2681,10 @@ spec:
                       description: MetaDataHostInterface contains the information
                         to render the object name.
                       properties:
+                        fromBootMAC:
+                          description: FromBootMAC will fetch the MAC address from
+                            the BareMetalHost Spec BootMACAddress field.
+                          type: boolean
                         interface:
                           description: |-
                             Interface is the name of the interface in the BareMetalHost Status Hardware
@@ -2639,7 +2695,6 @@ spec:
                             map for cloud-init
                           type: string
                       required:
-                      - interface
                       - key
                       type: object
                     type: array
@@ -3852,46 +3907,60 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3DataTemplateSpec defines the desired state of Metal3DataTemplate.
+            description: spec defines the desired state of Metal3DataTemplate.
             properties:
               clusterName:
-                description: ClusterName is the name of the Cluster this object belongs
+                description: clusterName is the name of the Cluster this object belongs
                   to.
+                maxLength: 512
                 minLength: 1
                 type: string
               metaData:
-                description: MetaData contains the information needed to generate
+                description: metaData contains the information needed to generate
                   the metadata secret
                 properties:
-                  dnsServersFromIPPool:
-                    description: DNSServersFromPool is the list of metadata items
+                  dnsServersFromPool:
+                    description: dnsServersFromPool is the list of metadata items
                       to be rendered as dns servers.
                     items:
                       properties:
                         apiGroup:
-                          description: APIGroup is the api group of the IP pool.
+                          default: ipam.metal3.io
+                          description: apiGroup is the api group of the IP pool.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         kind:
-                          description: Kind is the kind of the IP pool
+                          default: IPPool
+                          description: kind is the kind of the IP pool
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         name:
-                          description: Name is the name of the IP pool used to fetch
+                          description: name is the name of the IP pool used to fetch
                             the value to set in the metadata map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
-                      - apiGroup
                       - key
-                      - kind
                       - name
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   fromAnnotations:
                     description: |-
-                      FromAnnotations is the list of metadata items to be fetched from object
+                      fromAnnotations is the list of metadata items to be fetched from object
                       Annotations
                     items:
                       description: |-
@@ -3899,15 +3968,19 @@ spec:
                         content, if the label does not exist, it is rendered as empty string.
                       properties:
                         annotation:
-                          description: Annotation is the key of the Annotation to
+                          description: annotation is the key of the annotation to
                             fetch
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         object:
-                          description: Object is the type of the object from which
+                          description: object is the type of the object from which
                             we retrieve the name
                           enum:
                           - machine
@@ -3919,31 +3992,48 @@ spec:
                       - key
                       - object
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   fromHostInterfaces:
                     description: |-
-                      FromHostInterfaces is the list of metadata items to be rendered as MAC
+                      fromHostInterfaces is the list of metadata items to be rendered as MAC
                       addresses of the host interfaces.
                     items:
                       description: MetaDataHostInterface contains the information
                         to render the object name.
                       properties:
+                        fromBootMAC:
+                          description: fromBootMAC will fetch the MAC address from
+                            the BareMetalHost Spec BootMACAddress field.
+                          type: boolean
                         interface:
                           description: |-
-                            Interface is the name of the interface in the BareMetalHost Status Hardware
+                            interface is the name of the interface in the BareMetalHost Status Hardware
                             Details list of interfaces from which to fetch the MAC address.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
-                      - interface
                       - key
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   fromLabels:
-                    description: FromLabels is the list of metadata items to be fetched
+                    description: fromLabels is the list of metadata items to be fetched
                       from object labels
                     items:
                       description: |-
@@ -3951,14 +4041,18 @@ spec:
                         label does not exist, it is rendered as empty string.
                       properties:
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         label:
-                          description: Label is the key of the label to fetch
+                          description: label is the key of the label to fetch
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         object:
-                          description: Object is the type of the object from which
+                          description: object is the type of the object from which
                             we retrieve the name
                           enum:
                           - machine
@@ -3970,118 +4064,173 @@ spec:
                       - label
                       - object
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
-                  gatewaysFromIPPool:
-                    description: GatewaysFromPool is the list of metadata items to
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  gatewaysFromPool:
+                    description: gatewaysFromPool is the list of metadata items to
                       be rendered as gateway addresses.
                     items:
                       properties:
                         apiGroup:
-                          description: APIGroup is the api group of the IP pool.
+                          default: ipam.metal3.io
+                          description: apiGroup is the api group of the IP pool.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         kind:
-                          description: Kind is the kind of the IP pool
+                          default: IPPool
+                          description: kind is the kind of the IP pool
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         name:
-                          description: Name is the name of the IP pool used to fetch
+                          description: name is the name of the IP pool used to fetch
                             the value to set in the metadata map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
-                      - apiGroup
                       - key
-                      - kind
                       - name
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   indexes:
                     description: |-
-                      Indexes is the list of metadata items to be rendered from the index of the
+                      indexes is the list of metadata items to be rendered from the index of the
                       Metal3Data
                     items:
                       description: MetaDataIndex contains the information to render
                         the index.
                       properties:
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         offset:
-                          description: Offset is the offset to apply to the index
+                          description: offset is the offset to apply to the index
                             when rendering it
+                          format: int32
+                          minimum: 0
                           type: integer
                         prefix:
-                          description: Prefix is the prefix string
+                          description: prefix is the prefix string
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         step:
                           default: 1
-                          description: Step is the multiplier of the index
+                          description: step is the multiplier of the index
+                          format: int32
+                          minimum: 1
                           type: integer
                         suffix:
-                          description: Suffix is the suffix string
+                          description: suffix is the suffix string
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
                       - key
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
-                  ipAddressesFromIPPool:
-                    description: IPAddressesFromPool is the list of metadata items
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  ipAddressesFromPool:
+                    description: ipAddressesFromPool is the list of metadata items
                       to be rendered as ip addresses.
                     items:
                       properties:
                         apiGroup:
-                          description: APIGroup is the api group of the IP pool.
+                          default: ipam.metal3.io
+                          description: apiGroup is the api group of the IP pool.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         kind:
-                          description: Kind is the kind of the IP pool
+                          default: IPPool
+                          description: kind is the kind of the IP pool
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         name:
-                          description: Name is the name of the IP pool used to fetch
+                          description: name is the name of the IP pool used to fetch
                             the value to set in the metadata map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
-                      - apiGroup
                       - key
-                      - kind
                       - name
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   namespaces:
-                    description: Namespaces is the list of metadata items to be rendered
+                    description: namespaces is the list of metadata items to be rendered
                       from the namespace
                     items:
                       description: MetaDataNamespace contains the information to render
                         the namespace.
                       properties:
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
                       - key
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   objectNames:
                     description: |-
-                      ObjectNames is the list of metadata items to be rendered from the name
+                      objectNames is the list of metadata items to be rendered from the name
                       of objects.
                     items:
                       description: MetaDataObjectName contains the information to
                         render the object name.
                       properties:
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         object:
-                          description: Object is the type of the object from which
+                          description: object is the type of the object from which
                             we retrieve the name
                           enum:
                           - machine
@@ -4092,77 +4241,108 @@ spec:
                       - key
                       - object
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
-                  prefixesFromIPPool:
-                    description: PrefixesFromPool is the list of metadata items to
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
+                  prefixesFromPool:
+                    description: prefixesFromPool is the list of metadata items to
                       be rendered as network prefixes.
                     items:
                       properties:
                         apiGroup:
-                          description: APIGroup is the api group of the IP pool.
+                          default: ipam.metal3.io
+                          description: apiGroup is the api group of the IP pool.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         kind:
-                          description: Kind is the kind of the IP pool
+                          default: IPPool
+                          description: kind is the kind of the IP pool
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         name:
-                          description: Name is the name of the IP pool used to fetch
+                          description: name is the name of the IP pool used to fetch
                             the value to set in the metadata map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
-                      - apiGroup
                       - key
-                      - kind
                       - name
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   strings:
-                    description: Strings is the list of metadata items to be rendered
+                    description: strings is the list of metadata items to be rendered
                       from strings
                     items:
                       description: MetaDataString contains the information to render
                         the string.
                       properties:
                         key:
-                          description: Key will be used as the key to set in the metadata
+                          description: key will be used as the key to set in the metadata
                             map for cloud-init
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         value:
-                          description: Value is the string to render.
+                          description: value is the string to render.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                       required:
                       - key
                       - value
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                 type: object
               networkData:
                 description: |-
-                  NetworkData contains the information needed to generate the networkdata
+                  networkData contains the information needed to generate the networkdata
                   secret
                 properties:
                   links:
-                    description: Links is a structure containing lists of different
+                    description: links is a structure containing lists of different
                       types objects
                     properties:
                       bonds:
-                        description: Bonds contains a list of Bond links
+                        description: bonds contains a list of Bond links
                         items:
                           description: NetworkDataLinkBond represents a bond link
                             object.
                           properties:
                             bondLinks:
-                              description: BondLinks is the list of links that are
+                              description: bondLinks is the list of links that are
                                 part of the bond.
                               items:
+                                maxLength: 512
+                                minLength: 1
                                 type: string
+                              maxItems: 512
                               type: array
+                              x-kubernetes-list-type: set
                             bondMode:
                               description: |-
-                                BondMode is the mode of bond used. It can be one of
+                                bondMode is the mode of bond used. It can be one of
                                 balance-rr, active-backup, balance-xor, broadcast, balance-tlb, balance-alb, 802.3ad
                               enum:
                               - balance-rr
@@ -4174,33 +4354,38 @@ spec:
                               - 802.3ad
                               type: string
                             bondXmitHashPolicy:
-                              description: Selects the transmit hash policy used for
-                                port selection in balance-xor and 802.3ad modes
+                              description: bondXmitHashPolicy selects the transmit
+                                hash policy used for port selection in balance-xor
+                                and 802.3ad modes
                               enum:
                               - layer2
                               - layer3+4
                               - layer2+3
                               type: string
                             id:
-                              description: Id is the ID of the interface (used for
+                              description: id is the ID of the interface (used for
                                 naming)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             macAddress:
                               description: |-
-                                MACAddress is the MAC address of the interface, containing the object
+                                macAddress is the MAC address of the interface, containing the object
                                 used to render it.
                               properties:
                                 fromAnnotation:
                                   description: |-
-                                    FromAnnotation references an object Annotation to retrieve the
+                                    fromAnnotation references an object annotation to retrieve the
                                     MAC address from
                                   properties:
                                     annotation:
-                                      description: Annotation is the key of the Annotation
+                                      description: annotation is the key of the annotation
                                         to fetch
+                                      maxLength: 512
+                                      minLength: 1
                                       type: string
                                     object:
-                                      description: Object is the type of the object
+                                      description: object is the type of the object
                                         from which we retrieve the name
                                       enum:
                                       - machine
@@ -4213,65 +4398,101 @@ spec:
                                   type: object
                                 fromHostInterface:
                                   description: |-
-                                    FromHostInterface contains the name of the interface in the BareMetalHost
+                                    fromHostInterface contains the name of the interface in the BareMetalHost
                                     Introspection details from which to fetch the MAC address
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 string:
-                                  description: String contains the MAC address given
+                                  description: string contains the MAC address given
                                     as a string
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                               type: object
                             mtu:
                               default: 1500
-                              description: MTU is the MTU of the interface
+                              description: mtu is the MTU of the interface
+                              format: int32
                               maximum: 9000
+                              minimum: 1280
                               type: integer
                             name:
                               description: |-
-                                Name is the interface name to be used by cloud-init. When combined with
-                                MACAddress, cloud-init will rename the interface matching the MAC to this name.
-                                When MACAddress is omitted, cloud-init will use this name directly.
+                                name is the interface name to be used by cloud-init. When combined with
+                                macAddress, cloud-init will rename the interface matching the MAC to this name.
+                                When macAddress is omitted, cloud-init will use this name directly.
                               maxLength: 15
+                              minLength: 1
                               pattern: ^[a-zA-Z][a-zA-Z0-9._-]*$
                               type: string
                             parameters:
-                              additionalProperties:
-                                x-kubernetes-preserve-unknown-fields: true
-                              description: params blob passed without any validation/modifications
+                              description: parameters blob passed without any validation/modifications
                                 into cloud-init config
-                              type: object
+                              items:
+                                description: NetworkDataLinkBondParam represents a
+                                  single bond parameter.
+                                properties:
+                                  name:
+                                    description: name is the parameter name
+                                    maxLength: 512
+                                    minLength: 1
+                                    type: string
+                                  value:
+                                    description: value is the parameter value
+                                    type: object
+                                    x-kubernetes-preserve-unknown-fields: true
+                                required:
+                                - name
+                                type: object
+                              maxItems: 512
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-map-keys:
+                              - name
+                              x-kubernetes-list-type: map
                           required:
                           - bondMode
                           - id
                           - macAddress
+                          - parameters
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       ethernets:
-                        description: Ethernets contains a list of Ethernet links
+                        description: ethernets contains a list of Ethernet links
                         items:
                           description: NetworkDataLinkEthernet represents an ethernet
                             link object.
                           properties:
                             id:
-                              description: Id is the ID of the interface (used for
+                              description: id is the ID of the interface (used for
                                 naming)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             macAddress:
                               description: |-
-                                MACAddress is the MAC address of the interface, containing the object
+                                macAddress is the MAC address of the interface, containing the object
                                 used to render it.
                               properties:
                                 fromAnnotation:
                                   description: |-
-                                    FromAnnotation references an object Annotation to retrieve the
+                                    fromAnnotation references an object annotation to retrieve the
                                     MAC address from
                                   properties:
                                     annotation:
-                                      description: Annotation is the key of the Annotation
+                                      description: annotation is the key of the annotation
                                         to fetch
+                                      maxLength: 512
+                                      minLength: 1
                                       type: string
                                     object:
-                                      description: Object is the type of the object
+                                      description: object is the type of the object
                                         from which we retrieve the name
                                       enum:
                                       - machine
@@ -4284,30 +4505,37 @@ spec:
                                   type: object
                                 fromHostInterface:
                                   description: |-
-                                    FromHostInterface contains the name of the interface in the BareMetalHost
+                                    fromHostInterface contains the name of the interface in the BareMetalHost
                                     Introspection details from which to fetch the MAC address
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 string:
-                                  description: String contains the MAC address given
+                                  description: string contains the MAC address given
                                     as a string
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                               type: object
                             mtu:
                               default: 1500
-                              description: MTU is the MTU of the interface
+                              description: mtu is the MTU of the interface
+                              format: int32
                               maximum: 9000
+                              minimum: 1280
                               type: integer
                             name:
                               description: |-
-                                Name is the interface name to be used by cloud-init. When combined with
+                                name is the interface name to be used by cloud-init. When combined with
                                 MACAddress, cloud-init will rename the interface matching the MAC to this name.
                                 When MACAddress is omitted, cloud-init will use this name directly.
                               maxLength: 15
+                              minLength: 1
                               pattern: ^[a-zA-Z][a-zA-Z0-9._-]*$
                               type: string
                             type:
                               description: |-
-                                Type is the type of the ethernet link. It can be one of:
+                                type is the type of the ethernet link. It can be one of:
                                 bridge, dvs, hw_veb, hyperv, ovs, tap, vhostuser, vif, phy
                               enum:
                               - bridge
@@ -4325,33 +4553,42 @@ spec:
                           - macAddress
                           - type
                           type: object
+                        maxItems: 32
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       vlans:
-                        description: Vlans contains a list of Vlan links
+                        description: vlans contains a list of Vlan links
                         items:
                           description: NetworkDataLinkVlan represents a vlan link
                             object.
                           properties:
                             id:
-                              description: Id is the ID of the interface (used for
+                              description: id is the ID of the interface (used for
                                 naming)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             macAddress:
                               description: |-
-                                MACAddress is the MAC address of the interface, containing the object
+                                macAddress is the MAC address of the interface, containing the object
                                 used to render it.
                               properties:
                                 fromAnnotation:
                                   description: |-
-                                    FromAnnotation references an object Annotation to retrieve the
+                                    fromAnnotation references an object annotation to retrieve the
                                     MAC address from
                                   properties:
                                     annotation:
-                                      description: Annotation is the key of the Annotation
+                                      description: annotation is the key of the annotation
                                         to fetch
+                                      maxLength: 512
+                                      minLength: 1
                                       type: string
                                     object:
-                                      description: Object is the type of the object
+                                      description: object is the type of the object
                                         from which we retrieve the name
                                       enum:
                                       - machine
@@ -4364,34 +4601,45 @@ spec:
                                   type: object
                                 fromHostInterface:
                                   description: |-
-                                    FromHostInterface contains the name of the interface in the BareMetalHost
+                                    fromHostInterface contains the name of the interface in the BareMetalHost
                                     Introspection details from which to fetch the MAC address
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 string:
-                                  description: String contains the MAC address given
+                                  description: string contains the MAC address given
                                     as a string
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                               type: object
                             mtu:
                               default: 1500
-                              description: MTU is the MTU of the interface
+                              description: mtu is the MTU of the interface
+                              format: int32
                               maximum: 9000
+                              minimum: 1280
                               type: integer
                             name:
                               description: |-
-                                Name is the interface name to be used by cloud-init. When combined with
-                                MACAddress, cloud-init will rename the interface matching the MAC to this name.
-                                When MACAddress is omitted, cloud-init will use this name directly.
+                                name is the interface name to be used by cloud-init. When combined with
+                                macAddress, cloud-init will rename the interface matching the MAC to this name.
+                                When macAddress is omitted, cloud-init will use this name directly.
                               maxLength: 15
+                              minLength: 1
                               pattern: ^[a-zA-Z][a-zA-Z0-9._-]*$
                               type: string
                             vlanID:
-                              description: VlanID is the Vlan ID
+                              description: vlanID is the Vlan ID
+                              format: int32
                               maximum: 4096
+                              minimum: 0
                               type: integer
                             vlanLink:
-                              description: VlanLink is the name of the link on which
+                              description: vlanLink is the name of the link on which
                                 the vlan should be added
+                              maxLength: 512
+                              minLength: 1
                               type: string
                           required:
                           - id
@@ -4399,31 +4647,38 @@ spec:
                           - vlanID
                           - vlanLink
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - vlanID
+                        x-kubernetes-list-type: map
                     type: object
                   networks:
-                    description: Networks  is a structure containing lists of different
+                    description: networks  is a structure containing lists of different
                       types objects
                     properties:
                       ipv4:
-                        description: IPv4 contains a list of IPv4 static allocations
+                        description: ipv4 contains a list of IPv4 static allocations
                         items:
                           description: NetworkDataIPv4 represents an ipv4 static network
                             object.
                           properties:
                             fromPoolAnnotation:
                               description: |-
-                                FromPoolAnnotation allows specifying the pool reference via an annotation on
+                                fromPoolAnnotation allows specifying the pool reference via an annotation on
                                 a Machine, Metal3Machine, or BareMetalHost object.
-                                When set, IPAddressFromIPPool and FromPoolRef are ignored.
+                                When set, ipAddressFromIPPool and fromPoolRef are ignored.
                               properties:
                                 annotation:
                                   description: |-
-                                    Annotation is the key of the annotation that contains the pool name.
+                                    annotation is the key of the annotation that contains the pool name.
                                     The annotation value should be a string containing the pool name.
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 object:
-                                  description: Object is the type of the object from
+                                  description: object is the type of the object from
                                     which we retrieve the annotation
                                   enum:
                                   - machine
@@ -4435,65 +4690,85 @@ spec:
                               - object
                               type: object
                             fromPoolRef:
-                              description: FromPoolRef is a reference to a IP pool
+                              description: fromPoolRef is a reference to a IP pool
                                 to allocate an address from.
                               properties:
                                 apiGroup:
+                                  default: ipam.metal3.io
                                   description: |-
-                                    APIGroup is the group for the resource being referenced.
-                                    If APIGroup is not specified, the specified Kind must be in the core API group.
-                                    For any other third-party types, APIGroup is required.
+                                    apiGroup of the IPPool.
+                                    apiGroup must be fully qualified domain name.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                   type: string
                                 kind:
-                                  description: Kind is the type of resource being
-                                    referenced
+                                  default: IPPool
+                                  description: |-
+                                    kind of the IPPool.
+                                    kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                  maxLength: 63
+                                  minLength: 1
+                                  pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                   type: string
                                 name:
-                                  description: Name is the name of resource being
-                                    referenced
+                                  description: |-
+                                    name of the IPPool.
+                                    name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                   type: string
                               required:
-                              - kind
                               - name
                               type: object
-                              x-kubernetes-map-type: atomic
                             id:
-                              description: ID is the network ID (name)
+                              description: id is the network ID (name)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             ipAddressFromIPPool:
-                              description: IPAddressFromIPPool contains the name of
+                              description: ipAddressFromIPPool contains the name of
                                 the IP pool to use to get an ip address
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             link:
-                              description: Link is the link on which the network applies
+                              description: link is the link on which the network applies
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             routes:
-                              description: Routes contains a list of IPv4 routes
+                              description: routes contains a list of IPv4 routes
                               items:
                                 description: NetworkDataRoutev4 represents an ipv4
                                   route object.
                                 properties:
                                   gateway:
-                                    description: Gateway is the IPv4 address of the
+                                    description: gateway is the IPv4 address of the
                                       gateway
                                     properties:
                                       fromIPPool:
-                                        description: FromIPPool is the name of the
+                                        description: fromIPPool is the name of the
                                           IPPool to fetch the gateway from
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                       fromPoolAnnotation:
                                         description: |-
-                                          FromPoolAnnotation allows specifying the pool name via an annotation on
+                                          fromPoolAnnotation allows specifying the pool name via an annotation on
                                           a Machine, Metal3Machine, or BareMetalHost object.
-                                          When set, FromIPPool and FromPoolRef are ignored.
+                                          When set, fromIPPool and fromPoolRef are ignored.
                                         properties:
                                           annotation:
                                             description: |-
-                                              Annotation is the key of the annotation that contains the pool name.
+                                              annotation is the key of the annotation that contains the pool name.
                                               The annotation value should be a string containing the pool name.
+                                            maxLength: 512
+                                            minLength: 1
                                             type: string
                                           object:
-                                            description: Object is the type of the
+                                            description: object is the type of the
                                               object from which we retrieve the annotation
                                             enum:
                                             - machine
@@ -4505,108 +4780,143 @@ spec:
                                         - object
                                         type: object
                                       fromPoolRef:
-                                        description: FromPoolRef is a reference to
+                                        description: fromPoolRef is a reference to
                                           a IP pool to fetch the gateway from
                                         properties:
                                           apiGroup:
+                                            default: ipam.metal3.io
                                             description: |-
-                                              APIGroup is the group for the resource being referenced.
-                                              If APIGroup is not specified, the specified Kind must be in the core API group.
-                                              For any other third-party types, APIGroup is required.
+                                              apiGroup of the IPPool.
+                                              apiGroup must be fully qualified domain name.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                           kind:
-                                            description: Kind is the type of resource
-                                              being referenced
+                                            default: IPPool
+                                            description: |-
+                                              kind of the IPPool.
+                                              kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                            maxLength: 63
+                                            minLength: 1
+                                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                             type: string
                                           name:
-                                            description: Name is the name of resource
-                                              being referenced
+                                            description: |-
+                                              name of the IPPool.
+                                              name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                         required:
-                                        - kind
                                         - name
                                         type: object
-                                        x-kubernetes-map-type: atomic
                                       string:
-                                        description: String is the gateway given as
+                                        description: string is the gateway given as
                                           a string
                                         pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                         type: string
                                     type: object
                                   network:
-                                    description: Network is the IPv4 network address
+                                    description: network is the IPv4 network address
                                     pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                     type: string
                                   prefix:
-                                    description: Prefix is the mask of the network
+                                    description: prefix is the mask of the network
                                       as integer (max 32)
+                                    format: int32
                                     maximum: 32
+                                    minimum: 0
                                     type: integer
                                   services:
-                                    description: Services is a list of IPv4 services
+                                    description: services is a list of IPv4 services
                                     properties:
                                       dns:
-                                        description: DNS is a list of IPv4 DNS services
+                                        description: dns is a list of IPv4 DNS services
                                         items:
                                           description: IPAddressv4 is used for validation
                                             of an IPv6 address.
                                           pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                           type: string
+                                        maxItems: 512
+                                        minItems: 1
                                         type: array
+                                        x-kubernetes-list-type: set
                                       dnsFromIPPool:
-                                        description: DNSFromIPPool is the name of
+                                        description: dnsFromIPPool is the name of
                                           the IPPool from which to get the DNS servers
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                     type: object
                                 required:
                                 - gateway
                                 - network
                                 type: object
+                              maxItems: 512
+                              minItems: 1
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - network
+                              x-kubernetes-list-type: map
                           required:
                           - id
                           - link
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       ipv4DHCP:
-                        description: IPv4 contains a list of IPv4 DHCP allocations
+                        description: ipv4DHCP contains a list of IPv4 DHCP allocations
                         items:
                           description: NetworkDataIPv4DHCP represents an ipv4 DHCP
                             network object.
                           properties:
                             id:
-                              description: ID is the network ID (name)
+                              description: id is the network ID (name)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             link:
-                              description: Link is the link on which the network applies
+                              description: link is the link on which the network applies
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             routes:
-                              description: Routes contains a list of IPv4 routes
+                              description: routes contains a list of IPv4 routes
                               items:
                                 description: NetworkDataRoutev4 represents an ipv4
                                   route object.
                                 properties:
                                   gateway:
-                                    description: Gateway is the IPv4 address of the
+                                    description: gateway is the IPv4 address of the
                                       gateway
                                     properties:
                                       fromIPPool:
-                                        description: FromIPPool is the name of the
+                                        description: fromIPPool is the name of the
                                           IPPool to fetch the gateway from
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                       fromPoolAnnotation:
                                         description: |-
-                                          FromPoolAnnotation allows specifying the pool name via an annotation on
+                                          fromPoolAnnotation allows specifying the pool name via an annotation on
                                           a Machine, Metal3Machine, or BareMetalHost object.
-                                          When set, FromIPPool and FromPoolRef are ignored.
+                                          When set, fromIPPool and fromPoolRef are ignored.
                                         properties:
                                           annotation:
                                             description: |-
-                                              Annotation is the key of the annotation that contains the pool name.
+                                              annotation is the key of the annotation that contains the pool name.
                                               The annotation value should be a string containing the pool name.
+                                            maxLength: 512
+                                            minLength: 1
                                             type: string
                                           object:
-                                            description: Object is the type of the
+                                            description: object is the type of the
                                               object from which we retrieve the annotation
                                             enum:
                                             - machine
@@ -4618,88 +4928,117 @@ spec:
                                         - object
                                         type: object
                                       fromPoolRef:
-                                        description: FromPoolRef is a reference to
+                                        description: fromPoolRef is a reference to
                                           a IP pool to fetch the gateway from
                                         properties:
                                           apiGroup:
+                                            default: ipam.metal3.io
                                             description: |-
-                                              APIGroup is the group for the resource being referenced.
-                                              If APIGroup is not specified, the specified Kind must be in the core API group.
-                                              For any other third-party types, APIGroup is required.
+                                              apiGroup of the IPPool.
+                                              apiGroup must be fully qualified domain name.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                           kind:
-                                            description: Kind is the type of resource
-                                              being referenced
+                                            default: IPPool
+                                            description: |-
+                                              kind of the IPPool.
+                                              kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                            maxLength: 63
+                                            minLength: 1
+                                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                             type: string
                                           name:
-                                            description: Name is the name of resource
-                                              being referenced
+                                            description: |-
+                                              name of the IPPool.
+                                              name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                         required:
-                                        - kind
                                         - name
                                         type: object
-                                        x-kubernetes-map-type: atomic
                                       string:
-                                        description: String is the gateway given as
+                                        description: string is the gateway given as
                                           a string
                                         pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                         type: string
                                     type: object
                                   network:
-                                    description: Network is the IPv4 network address
+                                    description: network is the IPv4 network address
                                     pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                     type: string
                                   prefix:
-                                    description: Prefix is the mask of the network
+                                    description: prefix is the mask of the network
                                       as integer (max 32)
+                                    format: int32
                                     maximum: 32
+                                    minimum: 0
                                     type: integer
                                   services:
-                                    description: Services is a list of IPv4 services
+                                    description: services is a list of IPv4 services
                                     properties:
                                       dns:
-                                        description: DNS is a list of IPv4 DNS services
+                                        description: dns is a list of IPv4 DNS services
                                         items:
                                           description: IPAddressv4 is used for validation
                                             of an IPv6 address.
                                           pattern: ^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$
                                           type: string
+                                        maxItems: 512
+                                        minItems: 1
                                         type: array
+                                        x-kubernetes-list-type: set
                                       dnsFromIPPool:
-                                        description: DNSFromIPPool is the name of
+                                        description: dnsFromIPPool is the name of
                                           the IPPool from which to get the DNS servers
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                     type: object
                                 required:
                                 - gateway
                                 - network
                                 type: object
+                              maxItems: 512
+                              minItems: 1
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - network
+                              x-kubernetes-list-type: map
                           required:
                           - id
                           - link
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       ipv6:
-                        description: IPv4 contains a list of IPv6 static allocations
+                        description: ipv6 contains a list of IPv6 static allocations
                         items:
                           description: NetworkDataIPv6 represents an ipv6 static network
                             object.
                           properties:
                             fromPoolAnnotation:
                               description: |-
-                                FromPoolAnnotation allows specifying the pool reference via an annotation on
+                                fromPoolAnnotation allows specifying the pool reference via an annotation on
                                 a Machine, Metal3Machine, or BareMetalHost object.
-                                When set, IPAddressFromIPPool and FromPoolRef are ignored.
+                                When set, ipAddressFromIPPool and fromPoolRef are ignored.
                               properties:
                                 annotation:
                                   description: |-
-                                    Annotation is the key of the annotation that contains the pool name.
+                                    annotation is the key of the annotation that contains the pool name.
                                     The annotation value should be a string containing the pool name.
+                                  maxLength: 512
+                                  minLength: 1
                                   type: string
                                 object:
-                                  description: Object is the type of the object from
+                                  description: object is the type of the object from
                                     which we retrieve the annotation
                                   enum:
                                   - machine
@@ -4711,65 +5050,85 @@ spec:
                               - object
                               type: object
                             fromPoolRef:
-                              description: FromPoolRef is a reference to a IP pool
+                              description: fromPoolRef is a reference to a IP pool
                                 to allocate an address from.
                               properties:
                                 apiGroup:
+                                  default: ipam.metal3.io
                                   description: |-
-                                    APIGroup is the group for the resource being referenced.
-                                    If APIGroup is not specified, the specified Kind must be in the core API group.
-                                    For any other third-party types, APIGroup is required.
+                                    apiGroup of the IPPool.
+                                    apiGroup must be fully qualified domain name.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                   type: string
                                 kind:
-                                  description: Kind is the type of resource being
-                                    referenced
+                                  default: IPPool
+                                  description: |-
+                                    kind of the IPPool.
+                                    kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                  maxLength: 63
+                                  minLength: 1
+                                  pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                   type: string
                                 name:
-                                  description: Name is the name of resource being
-                                    referenced
+                                  description: |-
+                                    name of the IPPool.
+                                    name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                  maxLength: 253
+                                  minLength: 1
+                                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                   type: string
                               required:
-                              - kind
                               - name
                               type: object
-                              x-kubernetes-map-type: atomic
                             id:
-                              description: ID is the network ID (name)
+                              description: id is the network ID (name)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             ipAddressFromIPPool:
-                              description: IPAddressFromIPPool contains the name of
+                              description: ipAddressFromIPPool contains the name of
                                 the IPPool to use to get an ip address
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             link:
-                              description: Link is the link on which the network applies
+                              description: link is the link on which the network applies
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             routes:
-                              description: Routes contains a list of IPv6 routes
+                              description: routes contains a list of IPv6 routes
                               items:
                                 description: NetworkDataRoutev6 represents an ipv6
                                   route object.
                                 properties:
                                   gateway:
-                                    description: Gateway is the IPv6 address of the
+                                    description: gateway is the IPv6 address of the
                                       gateway
                                     properties:
                                       fromIPPool:
-                                        description: FromIPPool is the name of the
+                                        description: fromIPPool is the name of the
                                           IPPool to fetch the gateway from
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                       fromPoolAnnotation:
                                         description: |-
-                                          FromPoolAnnotation allows specifying the pool name via an annotation on
+                                          fromPoolAnnotation allows specifying the pool name via an annotation on
                                           a Machine, Metal3Machine, or BareMetalHost object.
-                                          When set, FromIPPool and FromPoolRef are ignored.
+                                          When set, fromIPPool and fromPoolRef are ignored.
                                         properties:
                                           annotation:
                                             description: |-
-                                              Annotation is the key of the annotation that contains the pool name.
+                                              annotation is the key of the annotation that contains the pool name.
                                               The annotation value should be a string containing the pool name.
+                                            maxLength: 512
+                                            minLength: 1
                                             type: string
                                           object:
-                                            description: Object is the type of the
+                                            description: object is the type of the
                                               object from which we retrieve the annotation
                                             enum:
                                             - machine
@@ -4781,109 +5140,143 @@ spec:
                                         - object
                                         type: object
                                       fromPoolRef:
-                                        description: FromPoolRef is a reference to
+                                        description: fromPoolRef is a reference to
                                           a IP pool to fetch the gateway from
                                         properties:
                                           apiGroup:
+                                            default: ipam.metal3.io
                                             description: |-
-                                              APIGroup is the group for the resource being referenced.
-                                              If APIGroup is not specified, the specified Kind must be in the core API group.
-                                              For any other third-party types, APIGroup is required.
+                                              apiGroup of the IPPool.
+                                              apiGroup must be fully qualified domain name.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                           kind:
-                                            description: Kind is the type of resource
-                                              being referenced
+                                            default: IPPool
+                                            description: |-
+                                              kind of the IPPool.
+                                              kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                            maxLength: 63
+                                            minLength: 1
+                                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                             type: string
                                           name:
-                                            description: Name is the name of resource
-                                              being referenced
+                                            description: |-
+                                              name of the IPPool.
+                                              name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                         required:
-                                        - kind
                                         - name
                                         type: object
-                                        x-kubernetes-map-type: atomic
                                       string:
-                                        description: String is the gateway given as
+                                        description: string is the gateway given as
                                           a string
                                         pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                         type: string
                                     type: object
                                   network:
-                                    description: Network is the IPv6 network address
+                                    description: network is the IPv6 network address
                                     pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                     type: string
                                   prefix:
-                                    description: Prefix is the mask of the network
+                                    description: prefix is the mask of the network
                                       as integer (max 128)
+                                    format: int32
                                     maximum: 128
+                                    minimum: 0
                                     type: integer
                                   services:
-                                    description: Services is a list of IPv6 services
+                                    description: services is a list of IPv6 services
                                     properties:
                                       dns:
-                                        description: DNS is a list of IPv6 DNS services
+                                        description: dns is a list of IPv6 DNS services
                                         items:
                                           description: IPAddressv6 is used for validation
                                             of an IPv6 address.
                                           pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                           type: string
+                                        maxItems: 512
+                                        minItems: 1
                                         type: array
+                                        x-kubernetes-list-type: set
                                       dnsFromIPPool:
-                                        description: DNSFromIPPool is the name of
+                                        description: dnsFromIPPool is the name of
                                           the IPPool from which to get the DNS servers
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                     type: object
                                 required:
                                 - gateway
                                 - network
                                 type: object
+                              maxItems: 512
+                              minItems: 1
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - network
+                              x-kubernetes-list-type: map
                           required:
                           - id
-                          - ipAddressFromIPPool
                           - link
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       ipv6DHCP:
-                        description: IPv4 contains a list of IPv6 DHCP allocations
+                        description: ipv6DHCP contains a list of IPv6 DHCP allocations
                         items:
                           description: NetworkDataIPv6DHCP represents an ipv6 DHCP
                             network object.
                           properties:
                             id:
-                              description: ID is the network ID (name)
+                              description: id is the network ID (name)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             link:
-                              description: Link is the link on which the network applies
+                              description: link is the link on which the network applies
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             routes:
-                              description: Routes contains a list of IPv6 routes
+                              description: routes contains a list of IPv6 routes
                               items:
                                 description: NetworkDataRoutev6 represents an ipv6
                                   route object.
                                 properties:
                                   gateway:
-                                    description: Gateway is the IPv6 address of the
+                                    description: gateway is the IPv6 address of the
                                       gateway
                                     properties:
                                       fromIPPool:
-                                        description: FromIPPool is the name of the
+                                        description: fromIPPool is the name of the
                                           IPPool to fetch the gateway from
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                       fromPoolAnnotation:
                                         description: |-
-                                          FromPoolAnnotation allows specifying the pool name via an annotation on
+                                          fromPoolAnnotation allows specifying the pool name via an annotation on
                                           a Machine, Metal3Machine, or BareMetalHost object.
-                                          When set, FromIPPool and FromPoolRef are ignored.
+                                          When set, fromIPPool and fromPoolRef are ignored.
                                         properties:
                                           annotation:
                                             description: |-
-                                              Annotation is the key of the annotation that contains the pool name.
+                                              annotation is the key of the annotation that contains the pool name.
                                               The annotation value should be a string containing the pool name.
+                                            maxLength: 512
+                                            minLength: 1
                                             type: string
                                           object:
-                                            description: Object is the type of the
+                                            description: object is the type of the
                                               object from which we retrieve the annotation
                                             enum:
                                             - machine
@@ -4895,108 +5288,143 @@ spec:
                                         - object
                                         type: object
                                       fromPoolRef:
-                                        description: FromPoolRef is a reference to
+                                        description: fromPoolRef is a reference to
                                           a IP pool to fetch the gateway from
                                         properties:
                                           apiGroup:
+                                            default: ipam.metal3.io
                                             description: |-
-                                              APIGroup is the group for the resource being referenced.
-                                              If APIGroup is not specified, the specified Kind must be in the core API group.
-                                              For any other third-party types, APIGroup is required.
+                                              apiGroup of the IPPool.
+                                              apiGroup must be fully qualified domain name.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                           kind:
-                                            description: Kind is the type of resource
-                                              being referenced
+                                            default: IPPool
+                                            description: |-
+                                              kind of the IPPool.
+                                              kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                            maxLength: 63
+                                            minLength: 1
+                                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                             type: string
                                           name:
-                                            description: Name is the name of resource
-                                              being referenced
+                                            description: |-
+                                              name of the IPPool.
+                                              name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                         required:
-                                        - kind
                                         - name
                                         type: object
-                                        x-kubernetes-map-type: atomic
                                       string:
-                                        description: String is the gateway given as
+                                        description: string is the gateway given as
                                           a string
                                         pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                         type: string
                                     type: object
                                   network:
-                                    description: Network is the IPv6 network address
+                                    description: network is the IPv6 network address
                                     pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                     type: string
                                   prefix:
-                                    description: Prefix is the mask of the network
+                                    description: prefix is the mask of the network
                                       as integer (max 128)
+                                    format: int32
                                     maximum: 128
+                                    minimum: 0
                                     type: integer
                                   services:
-                                    description: Services is a list of IPv6 services
+                                    description: services is a list of IPv6 services
                                     properties:
                                       dns:
-                                        description: DNS is a list of IPv6 DNS services
+                                        description: dns is a list of IPv6 DNS services
                                         items:
                                           description: IPAddressv6 is used for validation
                                             of an IPv6 address.
                                           pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                           type: string
+                                        maxItems: 512
+                                        minItems: 1
                                         type: array
+                                        x-kubernetes-list-type: set
                                       dnsFromIPPool:
-                                        description: DNSFromIPPool is the name of
+                                        description: dnsFromIPPool is the name of
                                           the IPPool from which to get the DNS servers
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                     type: object
                                 required:
                                 - gateway
                                 - network
                                 type: object
+                              maxItems: 512
+                              minItems: 1
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - network
+                              x-kubernetes-list-type: map
                           required:
                           - id
                           - link
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                       ipv6SLAAC:
-                        description: IPv4 contains a list of IPv6 SLAAC allocations
+                        description: ipv6SLAAC contains a list of IPv6 SLAAC allocations
                         items:
                           description: NetworkDataIPv6DHCP represents an ipv6 DHCP
                             network object.
                           properties:
                             id:
-                              description: ID is the network ID (name)
+                              description: id is the network ID (name)
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             link:
-                              description: Link is the link on which the network applies
+                              description: link is the link on which the network applies
+                              maxLength: 512
+                              minLength: 1
                               type: string
                             routes:
-                              description: Routes contains a list of IPv6 routes
+                              description: routes contains a list of IPv6 routes
                               items:
                                 description: NetworkDataRoutev6 represents an ipv6
                                   route object.
                                 properties:
                                   gateway:
-                                    description: Gateway is the IPv6 address of the
+                                    description: gateway is the IPv6 address of the
                                       gateway
                                     properties:
                                       fromIPPool:
-                                        description: FromIPPool is the name of the
+                                        description: fromIPPool is the name of the
                                           IPPool to fetch the gateway from
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                       fromPoolAnnotation:
                                         description: |-
-                                          FromPoolAnnotation allows specifying the pool name via an annotation on
+                                          fromPoolAnnotation allows specifying the pool name via an annotation on
                                           a Machine, Metal3Machine, or BareMetalHost object.
-                                          When set, FromIPPool and FromPoolRef are ignored.
+                                          When set, fromIPPool and fromPoolRef are ignored.
                                         properties:
                                           annotation:
                                             description: |-
-                                              Annotation is the key of the annotation that contains the pool name.
+                                              annotation is the key of the annotation that contains the pool name.
                                               The annotation value should be a string containing the pool name.
+                                            maxLength: 512
+                                            minLength: 1
                                             type: string
                                           object:
-                                            description: Object is the type of the
+                                            description: object is the type of the
                                               object from which we retrieve the annotation
                                             enum:
                                             - machine
@@ -5008,108 +5436,153 @@ spec:
                                         - object
                                         type: object
                                       fromPoolRef:
-                                        description: FromPoolRef is a reference to
+                                        description: fromPoolRef is a reference to
                                           a IP pool to fetch the gateway from
                                         properties:
                                           apiGroup:
+                                            default: ipam.metal3.io
                                             description: |-
-                                              APIGroup is the group for the resource being referenced.
-                                              If APIGroup is not specified, the specified Kind must be in the core API group.
-                                              For any other third-party types, APIGroup is required.
+                                              apiGroup of the IPPool.
+                                              apiGroup must be fully qualified domain name.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                           kind:
-                                            description: Kind is the type of resource
-                                              being referenced
+                                            default: IPPool
+                                            description: |-
+                                              kind of the IPPool.
+                                              kind must consist of alphanumeric characters or '-', start with an alphabetic character, and end with an alphanumeric character.
+                                            maxLength: 63
+                                            minLength: 1
+                                            pattern: ^[a-zA-Z]([-a-zA-Z0-9]*[a-zA-Z0-9])?$
                                             type: string
                                           name:
-                                            description: Name is the name of resource
-                                              being referenced
+                                            description: |-
+                                              name of the IPPool.
+                                              name must consist of lower case alphanumeric characters, '-' or '.', and must start and end with an alphanumeric character.
+                                            maxLength: 253
+                                            minLength: 1
+                                            pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                                             type: string
                                         required:
-                                        - kind
                                         - name
                                         type: object
-                                        x-kubernetes-map-type: atomic
                                       string:
-                                        description: String is the gateway given as
+                                        description: string is the gateway given as
                                           a string
                                         pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                         type: string
                                     type: object
                                   network:
-                                    description: Network is the IPv6 network address
+                                    description: network is the IPv6 network address
                                     pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                     type: string
                                   prefix:
-                                    description: Prefix is the mask of the network
+                                    description: prefix is the mask of the network
                                       as integer (max 128)
+                                    format: int32
                                     maximum: 128
+                                    minimum: 0
                                     type: integer
                                   services:
-                                    description: Services is a list of IPv6 services
+                                    description: services is a list of IPv6 services
                                     properties:
                                       dns:
-                                        description: DNS is a list of IPv6 DNS services
+                                        description: dns is a list of IPv6 DNS services
                                         items:
                                           description: IPAddressv6 is used for validation
                                             of an IPv6 address.
                                           pattern: ^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$
                                           type: string
+                                        maxItems: 512
+                                        minItems: 1
                                         type: array
+                                        x-kubernetes-list-type: set
                                       dnsFromIPPool:
-                                        description: DNSFromIPPool is the name of
+                                        description: dnsFromIPPool is the name of
                                           the IPPool from which to get the DNS servers
+                                        maxLength: 512
+                                        minLength: 1
                                         type: string
                                     type: object
                                 required:
                                 - gateway
                                 - network
                                 type: object
+                              maxItems: 512
+                              minItems: 1
                               type: array
+                              x-kubernetes-list-map-keys:
+                              - network
+                              x-kubernetes-list-type: map
                           required:
                           - id
                           - link
                           type: object
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-map-keys:
+                        - id
+                        x-kubernetes-list-type: map
                     type: object
                   services:
-                    description: Services  is a structure containing lists of different
+                    description: services  is a structure containing lists of different
                       types objects
                     properties:
                       dns:
-                        description: DNS is a list of DNS services
+                        description: dns is a list of DNS services
                         items:
                           description: IPAddress is used for validation of an IP address.
                           pattern: ((^((([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5]))$)|(^(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$))
                           type: string
+                        maxItems: 512
+                        minItems: 1
                         type: array
+                        x-kubernetes-list-type: set
                       dnsFromIPPool:
-                        description: DNSFromIPPool is the name of the IPPool from
+                        description: dnsFromIPPool is the name of the IPPool from
                           which to get the DNS servers
+                        maxLength: 512
+                        minLength: 1
                         type: string
                     type: object
                 type: object
-              templateReference:
-                description: |-
-                  TemplateReference refers to the Template the Metal3MachineTemplate refers to.
-                  It can be matched against the key or it may also point to the name of the template
-                  Metal3Data refers to.
-
-                  Deprecated: This field is deprecated and will be removed in a future release.
-                type: string
             required:
             - clusterName
             type: object
           status:
-            description: Metal3DataTemplateStatus defines the observed state of Metal3DataTemplate.
+            description: status defines the observed state of Metal3DataTemplate.
             properties:
               indexes:
-                additionalProperties:
-                  type: integer
-                description: Indexes contains the map of Metal3Machine and index used
-                type: object
+                description: indexes contains the list of Metal3Machines and their
+                  assigned indexes
+                items:
+                  description: IndexEntry represents the index assignment for a Metal3Machine.
+                  properties:
+                    index:
+                      description: index is the index value assigned to the Machine
+                      format: int32
+                      minimum: 0
+                      type: integer
+                    name:
+                      description: name is the name of the Metal3Machine
+                      maxLength: 512
+                      minLength: 1
+                      type: string
+                  required:
+                  - index
+                  - name
+                  type: object
+                maxItems: 512
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - index
+                x-kubernetes-list-type: map
               lastUpdated:
-                description: LastUpdated identifies when this status was last observed.
+                description: lastUpdated identifies when this status was last observed.
                 format: date-time
                 type: string
             type: object
@@ -5129,6 +5602,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3datas.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -5363,58 +5837,32 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3DataSpec defines the desired state of Metal3Data.
+            description: spec defines the desired state of Metal3Data.
             properties:
               claim:
-                description: DataClaim points to the Metal3DataClaim the Metal3Data
-                  was created for.
+                description: claim points to the Metal3DataClaim the Metal3Data was
+                  created for.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
               index:
-                description: Index stores the index value of this instance in the
+                description: index stores the index value of this instance in the
                   Metal3DataTemplate.
+                format: int32
+                minimum: 0
                 type: integer
               metaData:
-                description: MetaData points to the rendered MetaData secret.
+                description: metaData points to the rendered MetaData secret.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -5427,7 +5875,7 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               networkData:
-                description: NetworkData points to the rendered NetworkData secret.
+                description: networkData points to the rendered NetworkData secret.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -5440,69 +5888,32 @@ spec:
                 type: object
                 x-kubernetes-map-type: atomic
               template:
-                description: DataTemplate is the Metal3DataTemplate this was generated
+                description: template is the Metal3DataTemplate this was generated
                   from.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              templateReference:
-                description: |-
-                  TemplateReference refers to the Template the Metal3MachineTemplate refers to.
-                  It can be matched against the key or it may also point to the name of the template
-                  Metal3Data refers to.
-
-                  Deprecated: This field is deprecated and will be removed in a future release.
-                type: string
-            required:
-            - claim
-            - template
             type: object
           status:
-            description: Metal3DataStatus defines the observed state of Metal3Data.
+            description: status defines the observed state of Metal3Data.
             properties:
               errorMessage:
-                description: ErrorMessage contains the error message
+                description: errorMessage contains the error message
+                maxLength: 512
+                minLength: 1
                 type: string
               ready:
-                description: Ready is a flag set to True if the secrets were rendered
+                description: ready is a flag set to True if the secrets were rendered
                   properly
                 type: boolean
             type: object
@@ -5521,6 +5932,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3dataclaims.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -5711,101 +6123,45 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3DataClaimSpec defines the desired state of Metal3DataClaim.
+            description: spec defines the desired state of Metal3DataClaim.
             properties:
               template:
-                description: Template is the Metal3DataTemplate this was generated
+                description: template is the Metal3DataTemplate this was generated
                   for.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-            required:
-            - template
             type: object
           status:
-            description: Metal3DataClaimStatus defines the observed state of Metal3DataClaim.
+            description: status defines the observed state of Metal3DataClaim.
             properties:
               errorMessage:
-                description: ErrorMessage contains the error message
+                description: errorMessage contains the error message
+                maxLength: 512
+                minLength: 1
                 type: string
               renderedData:
-                description: RenderedData references the Metal3Data when ready
+                description: renderedData references the Metal3Data when ready
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
@@ -5825,6 +6181,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3remediations.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -5983,38 +6340,57 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3RemediationSpec defines the desired state of Metal3Remediation.
+            description: spec defines the desired state of Metal3Remediation.
             properties:
               strategy:
-                description: Strategy field defines remediation strategy.
+                description: strategy field defines remediation strategy.
                 properties:
                   retryLimit:
-                    description: Sets maximum number of remediation retries.
+                    default: 1
+                    description: |-
+                      retryLimit sets maximum number of remediation retries.
+                      retryLimit must be a positive integer. The default is 1.
+                    format: int32
+                    minimum: 1
                     type: integer
-                  timeout:
-                    description: Sets the timeout between remediation retries.
-                    type: string
+                  timeoutSeconds:
+                    default: 600
+                    description: |-
+                      timeoutSeconds defines the timeout between remediation retries.
+                      The minimum allowed value is 100 seconds. The default is 600 seconds.
+                    format: int32
+                    minimum: 100
+                    type: integer
                   type:
-                    description: Type of remediation.
+                    description: type of remediation.
+                    enum:
+                    - Reboot
                     type: string
                 type: object
             type: object
           status:
-            description: Metal3RemediationStatus defines the observed state of Metal3Remediation.
+            description: status defines the observed state of Metal3Remediation.
             properties:
               lastRemediated:
-                description: LastRemediated identifies when the host was last remediated
+                description: lastRemediated identifies when the host was last remediated
                 format: date-time
                 type: string
               phase:
                 description: |-
-                  Phase represents the current phase of machine remediation.
+                  phase represents the current phase of machine remediation.
                   E.g. Pending, Running, Done etc.
+                enum:
+                - Running
+                - Waiting
+                - Deleting machine
+                - Failed
                 type: string
               retryCount:
                 description: |-
-                  RetryCount can be used as a counter during the remediation.
+                  retryCount can be used as a counter during the remediation.
                   Field can hold number of reboots etc.
+                format: int32
+                minimum: 1
                 type: integer
             type: object
         type: object
@@ -6032,6 +6408,7 @@ metadata:
   labels:
     cluster.x-k8s.io/provider: infrastructure-metal3
     cluster.x-k8s.io/v1beta1: v1beta1
+    cluster.x-k8s.io/v1beta2: v1beta2
   name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
 spec:
   conversion:
@@ -6173,28 +6550,39 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3RemediationTemplateSpec defines the desired state of
-              Metal3RemediationTemplate.
+            description: spec defines the desired state of Metal3RemediationTemplate.
             properties:
               template:
-                description: Metal3RemediationTemplateResource describes the data
-                  needed to create a Metal3Remediation from a template.
+                description: template describes the data needed to create a Metal3Remediation
+                  from a template
                 properties:
                   spec:
-                    description: Spec is the specification of the desired behavior
+                    description: spec is the specification of the desired behavior
                       of the Metal3Remediation.
                     properties:
                       strategy:
-                        description: Strategy field defines remediation strategy.
+                        description: strategy field defines remediation strategy.
                         properties:
                           retryLimit:
-                            description: Sets maximum number of remediation retries.
+                            default: 1
+                            description: |-
+                              retryLimit sets maximum number of remediation retries.
+                              retryLimit must be a positive integer. The default is 1.
+                            format: int32
+                            minimum: 1
                             type: integer
-                          timeout:
-                            description: Sets the timeout between remediation retries.
-                            type: string
+                          timeoutSeconds:
+                            default: 600
+                            description: |-
+                              timeoutSeconds defines the timeout between remediation retries.
+                              The minimum allowed value is 100 seconds. The default is 600 seconds.
+                            format: int32
+                            minimum: 100
+                            type: integer
                           type:
-                            description: Type of remediation.
+                            description: type of remediation.
+                            enum:
+                            - Reboot
                             type: string
                         type: object
                     type: object
@@ -6205,31 +6593,34 @@ spec:
             - template
             type: object
           status:
-            description: Metal3RemediationTemplateStatus defines the observed state
-              of Metal3RemediationTemplate.
+            description: status defines the observed state of Metal3RemediationTemplate.
             properties:
               status:
-                description: Metal3RemediationStatus defines the observed state of
-                  Metal3Remediation
+                description: status defines the observed state of Metal3Remediation
                 properties:
                   lastRemediated:
-                    description: LastRemediated identifies when the host was last
+                    description: lastRemediated identifies when the host was last
                       remediated
                     format: date-time
                     type: string
                   phase:
                     description: |-
-                      Phase represents the current phase of machine remediation.
+                      phase represents the current phase of machine remediation.
                       E.g. Pending, Running, Done etc.
+                    enum:
+                    - Running
+                    - Waiting
+                    - Deleting machine
+                    - Failed
                     type: string
                   retryCount:
                     description: |-
-                      RetryCount can be used as a counter during the remediation.
+                      retryCount can be used as a counter during the remediation.
                       Field can hold number of reboots etc.
+                    format: int32
+                    minimum: 1
                     type: integer
                 type: object
-            required:
-            - status
             type: object
         type: object
     served: true
@@ -6332,7 +6723,6 @@ rules:
 - apiGroups:
   - cluster.x-k8s.io
   resources:
-  - kubeadmcontrolplanes
   - machinedeployments
   - machines
   - machines/status
@@ -6343,6 +6733,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - controlplane.cluster.x-k8s.io
+  resources:
+  - kubeadmcontrolplanes
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
@@ -6557,10 +6955,9 @@ spec:
       containers:
       - args:
         - --webhook-port=9443
-        - --enableBMHNameBasedPreallocation=${ENABLE_BMH_NAME_BASED_PREALLOCATION:=false}
+        - --enable-bmh-name-based-preallocation=${ENABLE_BMH_NAME_BASED_PREALLOCATION:=false}
         - --diagnostics-address=${CAPM3_DIAGNOSTICS_ADDRESS:=:8443}
         - --insecure-diagnostics=${CAPM3_INSECURE_DIAGNOSTICS:=false}
-        - --tls-min-version=${TLS_MIN_VERSION:=VersionTLS13}
         - --tls-cipher-suites=${TLS_CIPHER_SUITES}
         command:
         - /manager
