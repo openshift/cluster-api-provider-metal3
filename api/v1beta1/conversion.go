@@ -107,9 +107,11 @@ func (src *Metal3Machine) ConvertTo(dstRaw conversion.Hub) error {
 		dst.Status.Initialization = initialization
 	}
 
-	// Restore Image.Checksum nil state from hub data (v1beta2 uses *string, can be nil)
-	if ok && restored.Spec.Image.Checksum == nil {
-		dst.Spec.Image.Checksum = nil
+	// Restore Image.Checksum from hub data when v1beta1 Checksum is empty.
+	// v1beta1 uses string (can't distinguish "" from unset), v1beta2 uses
+	// *string (nil vs &""). Hub data preserves this distinction.
+	if ok && src.Spec.Image.Checksum == "" {
+		dst.Spec.Image.Checksum = restored.Spec.Image.Checksum
 	}
 	return nil
 }
@@ -139,9 +141,9 @@ func (src *Metal3MachineTemplate) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	dst.Spec.Template.ObjectMeta = restored.Spec.Template.ObjectMeta
-	// Restore Image.Checksum nil state from hub data
-	if restored.Spec.Template.Spec.Image.Checksum == nil {
-		dst.Spec.Template.Spec.Image.Checksum = nil
+	// Restore Image.Checksum from hub data when v1beta1 Checksum is empty.
+	if src.Spec.Template.Spec.Image.Checksum == "" {
+		dst.Spec.Template.Spec.Image.Checksum = restored.Spec.Template.Spec.Image.Checksum
 	}
 
 	return nil
@@ -586,7 +588,13 @@ func Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(in *APIEndpoint, out *in
 // In v1beta2: Checksum is *string, ChecksumType and DiskFormat are string.
 func Convert_v1beta1_Image_To_v1beta2_Image(in *Image, out *infrav1.Image, s apimachineryconversion.Scope) error {
 	out.URL = in.URL
-	out.Checksum = ptr.To(in.Checksum)
+	// Only set Checksum when the image is populated (URL or Checksum non-empty).
+	// When both are empty (customDeploy scenario), keeping Checksum nil ensures
+	// the v1beta2 Image struct is zero-valued so the omitzero tag can omit it,
+	// preventing "spec.image.url: Required value" schema validation errors.
+	if in.URL != "" || in.Checksum != "" {
+		out.Checksum = ptr.To(in.Checksum)
+	}
 	out.ChecksumType = ptr.Deref(in.ChecksumType, "")
 	out.DiskFormat = ptr.Deref(in.DiskFormat, "")
 	return nil
