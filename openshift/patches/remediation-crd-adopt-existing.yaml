@@ -1,0 +1,16 @@
+# Add the adopt-existing annotation to Metal3 Remediation CRDs.
+#
+# On Default clusters (ClusterAPIMachineManagementBareMetal feature gate off),
+# CVO deploys these CRDs via openshift/manifests/. When the
+# ClusterAPIMachineManagementBareMetal feature gate is enabled, the
+# cluster-capi-operator becomes responsible for managing them instead.
+# This annotation allows the operator to adopt the pre-existing CRDs
+# without being blocked by boxcutter's collision protection.
+#
+# Targets (specified in kustomization.yaml):
+#   - metal3remediations.infrastructure.cluster.x-k8s.io
+#   - metal3remediationtemplates.infrastructure.cluster.x-k8s.io
+
+- op: add
+  path: /metadata/annotations/capi-operator.openshift.io~1adopt-existing
+  value: "always"
