@@ -57,7 +57,19 @@ patches:
     version: v1
     kind: CustomResourceDefinition
     name: metal3remediations.infrastructure.cluster.x-k8s.io
+- path: ./patches/remediation-crd-adopt-existing.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3remediations.infrastructure.cluster.x-k8s.io
 - path: ./patches/crd-storage-version.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
+- path: ./patches/remediation-crd-adopt-existing.yaml
   target:
     group: apiextensions.k8s.io
     version: v1
