@@ -21,11 +21,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// ResourceKindConfigMap is the kind for ConfigMap resources.
+	ResourceKindConfigMap = "ConfigMap"
+	// ResourceKindSecret is the kind for Secret resources.
+	ResourceKindSecret = "Secret"
+)
+
 var (
 	VersionLatest = Version{}
+	Version370    = Version{Major: 37, Minor: 0}
+	Version350    = Version{Major: 35, Minor: 0}
+	Version340    = Version{Major: 34, Minor: 0}
 	Version330    = Version{Major: 33, Minor: 0}
-	Version320    = Version{Major: 32, Minor: 0}
-	Version310    = Version{Major: 31, Minor: 0}
 )
 
 // SupportedVersions is a mapping of supported versions to container image tags.
@@ -35,9 +43,10 @@ var (
 // expectations.
 var SupportedVersions = map[Version]string{
 	VersionLatest: "latest",
+	Version370:    "release-37.0",
+	Version350:    "release-35.0",
+	Version340:    "release-34.0",
 	Version330:    "release-33.0",
-	Version320:    "release-32.0",
-	Version310:    "release-31.0",
 }
 
 // Inspection defines inspection settings.
@@ -90,12 +99,60 @@ type DHCP struct {
 	ServeDNS bool `json:"serveDNS,omitempty"`
 }
 
+// Ingress defines ingress resource for Ironic services.
+type Ingress struct {
+	// Annotations to be added to Ingress resource
+	// +optional
+	Annotations map[string]string `json:"annotations,omitempty"`
+
+	// IngressClass of Ingress resource
+	// +optional
+	IngressClassName string `json:"ingressClassName,omitempty"`
+
+	// Host is the fully qualified domain name of a network host.
+	// This defines the hostname that the Ingress resource will route traffic for.
+	// +optional
+	Host string `json:"host,omitempty"`
+}
+
 type IPAddressManager string
 
 const (
 	IPAddressManagerNone       IPAddressManager = ""
 	IPAddressManagerKeepalived IPAddressManager = "keepalived"
 )
+
+// KeepalivedIP defines a virtual IP address to be managed by Keepalived.
+type KeepalivedIP struct {
+	// IPAddress is the virtual IP address to manage.
+	// +kubebuilder:validation:MinLength=1
+	IPAddress string `json:"ipAddress"`
+
+	// Interface is the Linux network interface on which to manage the IP.
+	// +kubebuilder:validation:MinLength=1
+	Interface string `json:"interface"`
+
+	// Prefix is the prefix length of the IP address (e.g. 24 for a /24 subnet).
+	// When not set, keepalived uses /32 for IPv4 and /128 for IPv6.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=128
+	// +optional
+	Prefix *int32 `json:"prefix,omitempty"`
+}
+
+// KeepalivedConfig defines the Keepalived configuration for managing virtual IPs.
+type KeepalivedConfig struct {
+	// Enabled indicates whether Keepalived should be started to manage the virtual IP.
+	// When enabled, the main ipAddress and interface from the networking configuration
+	// are always included automatically.
+	Enabled bool `json:"enabled"`
+
+	// AdditionalVIPs is a list of additional virtual IPs to be managed by Keepalived,
+	// beyond the main ipAddress/interface from the networking configuration.
+	// Use this when you need Keepalived to manage IPs on additional network interfaces.
+	// +optional
+	AdditionalVIPs []KeepalivedIP `json:"additionalVIPs,omitempty"`
+}
 
 // Networking defines networking settings for Ironic.
 type Networking struct {
@@ -116,8 +173,15 @@ type Networking struct {
 
 	// ExternalIP is used for accessing API and the image server from remote hosts.
 	// This settings only applies to virtual media deployments. The IP will not be accessed from the cluster itself.
+	// Cannot be set at the same time with networking.ingress.
 	// +optional
 	ExternalIP string `json:"externalIP,omitempty"`
+
+	// Configure Ingress resource for Ironic services.
+	// Set this option when you are planning to deploy Ironic in a public cluster and willing to use Ingress instead of IP address and NodePort.
+	// Cannot be set at the same time with networking.externalIP.
+	// +optional
+	Ingress *Ingress `json:"ingress,omitempty"`
 
 	// ImageServerPort is the public port used for serving images.
 	// +kubebuilder:default=6180
@@ -145,9 +209,19 @@ type Networking struct {
 	// By default, the IP address is expected to be already present.
 	// Use "keepalived" to start a Keepalived container managing the IP address.
 	// Warning: keepalived is not compatible with the highly available architecture.
+	//
+	// Deprecated: Use the keepalived field instead.
 	// +kubebuilder:validation:Enum="";keepalived
 	// +optional
 	IPAddressManager IPAddressManager `json:"ipAddressManager,omitempty"`
+
+	// Keepalived configures Keepalived to manage virtual IPs on the specified interfaces.
+	// When enabled, a Keepalived container will be started to manage the main ipAddress
+	// on the main interface, plus any additional VIPs listed in additionalVIPs.
+	// Cannot be used together with ipAddressManager.
+	// Warning: keepalived is not compatible with the highly available architecture.
+	// +optional
+	Keepalived *KeepalivedConfig `json:"keepalived,omitempty"`
 
 	// MACAddresses can be provided to make the start script pick the interface matching any of these addresses.
 	// Only set if no other options can be used.
@@ -169,6 +243,33 @@ type Networking struct {
 	RPCPort int32 `json:"rpcPort,omitempty"`
 }
 
+// CPUArchitecture represents a CPU architecture supported by IPA.
+// +kubebuilder:validation:Enum="";x86_64;aarch64
+type CPUArchitecture string
+
+const (
+	ArchX86_64  CPUArchitecture = "x86_64"
+	ArchAarch64 CPUArchitecture = "aarch64"
+)
+
+// AgentImages defines a single IPA (Ironic Python Agent) image configuration.
+type AgentImages struct {
+	// Kernel is the URL of the IPA kernel image.
+	// Supported schemes: file://, http://, https://, oci://.
+	// file:// URLs must use absolute paths (e.g. "file:///shared/html/images/ironic-python-agent.kernel").
+	Kernel string `json:"kernel"`
+
+	// Initramfs is the URL of the IPA initramfs/ramdisk image.
+	// Supported schemes: file://, http://, https://, oci://.
+	// file:// URLs must use absolute paths (e.g. "file:///shared/html/images/ironic-python-agent.initramfs").
+	Initramfs string `json:"initramfs"`
+
+	// Architecture is the target CPU architecture.
+	// When empty, sets the default DEPLOY_KERNEL_URL/DEPLOY_RAMDISK_URL.
+	// +optional
+	Architecture CPUArchitecture `json:"architecture,omitempty"`
+}
+
 // DeployRamdisk defines IPA ramdisk settings.
 type DeployRamdisk struct {
 	// DisableDownloader tells the operator not to start the IPA downloader as the init container.
@@ -188,9 +289,17 @@ type DeployRamdisk struct {
 
 // TLS defines the TLS settings.
 type TLS struct {
+	// BMCCA is a reference to a ConfigMap or Secret containing the CA certificate(s)
+	// to use when validating TLS connections to BMCs.
+	// Supported in Ironic 32.0 or newer.
+	// +optional
+	BMCCA *ResourceReference `json:"bmcCA,omitempty"`
+
 	// BMCCAName is a reference to the secret with the CA certificate(s)
 	// to use when validating TLS connections to BMC's.
 	// Supported in Ironic 32.0 or newer.
+	//
+	// Deprecated: Use BMCCA instead. This field will be removed in a future release.
 	// +optional
 	BMCCAName string `json:"bmcCAName,omitempty"`
 
@@ -199,11 +308,19 @@ type TLS struct {
 	// +optional
 	CertificateName string `json:"certificateName,omitempty"`
 
+	// TrustedCA is a reference to a ConfigMap or Secret containing the CA certificate(s)
+	// to use when validating TLS connections to image servers and other services.
+	// The resource should contain one or more CA certificates in PEM format.
+	// +optional
+	TrustedCA *ResourceReferenceWithKey `json:"trustedCA,omitempty"`
+
 	// TrustedCAName is a reference to the configmap with the CA certificate(s)
 	// to use when validating TLS connections to image servers and other services.
 	// The configmap should contain one or more CA certificates in PEM format.
 	// If the configmap contains multiple keys, only the first key will be used and
 	// a warning will be logged.
+	//
+	// Deprecated: Use TrustedCA instead. This field will be removed in a future release.
 	// +optional
 	TrustedCAName string `json:"trustedCAName,omitempty"`
 
@@ -219,6 +336,86 @@ type TLS struct {
 	// HighAvailability feature gate to be set.
 	// +optional
 	InsecureRPC *bool `json:"insecureRPC,omitempty"`
+}
+
+// SwitchportMode defines the switchport mode for network interfaces.
+type SwitchportMode string
+
+const (
+	// SwitchportModeAccess sets the interface to access mode (single VLAN).
+	SwitchportModeAccess SwitchportMode = "access"
+	// SwitchportModeTrunk sets the interface to trunk mode (multiple VLANs).
+	SwitchportModeTrunk SwitchportMode = "trunk"
+	// SwitchportModeHybrid sets the interface to hybrid mode (access + trunk).
+	SwitchportModeHybrid SwitchportMode = "hybrid"
+)
+
+// ProviderNetworkType defines the type of provider network.
+type ProviderNetworkType string
+
+const (
+	ProviderNetworkIdle         ProviderNetworkType = "idle"
+	ProviderNetworkInspection   ProviderNetworkType = "inspection"
+	ProviderNetworkCleaning     ProviderNetworkType = "cleaning"
+	ProviderNetworkRescuing     ProviderNetworkType = "rescuing"
+	ProviderNetworkServicing    ProviderNetworkType = "servicing"
+	ProviderNetworkProvisioning ProviderNetworkType = "provisioning"
+)
+
+// ProviderNetworkConfig defines the network configuration for Ironic service operations.
+type ProviderNetworkConfig struct {
+	// Type specifies which provider network this configuration applies to.
+	// +kubebuilder:validation:Enum=idle;inspection;cleaning;rescuing;servicing;provisioning
+	Type ProviderNetworkType `json:"type"`
+
+	// Mode specifies the switch port mode for service operations
+	// +kubebuilder:validation:Enum=access;trunk;hybrid
+	// +kubebuilder:default=access
+	Mode SwitchportMode `json:"mode"`
+
+	// NativeVLAN specifies the native VLAN ID for service operations
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4094
+	NativeVLAN int32 `json:"nativeVLAN"`
+
+	// AllowedVLANs specifies the list of allowed VLANs for trunk/hybrid modes.
+	// Each entry can be a single VLAN ID (e.g., "100") or a range (e.g., "100-200").
+	// +optional
+	AllowedVLANs []string `json:"allowedVLANs,omitempty"`
+
+	// MTU defines the MTU to be applied to the switch port configuration.
+	// +kubebuilder:validation:Minimum=1280
+	// +kubebuilder:validation:Maximum=9216
+	// +optional
+	MTU int32 `json:"mtu,omitempty"`
+}
+
+// NetworkingService defines configuration for the Ironic Networking Service.
+type NetworkingService struct {
+	// Enabled enables the Ironic Networking Service integration
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled"`
+
+	// ProviderNetworks defines the provider network configurations for Ironic
+	ProviderNetworks []ProviderNetworkConfig `json:"providerNetworks,omitempty"`
+
+	// SwitchConfigSecretName optionally specifies the name of the secret containing
+	// switch configuration. If not specified, defaults to "<ironic-name>-switch-config".
+	// The secret must have the environment label to be used by the operator.
+	// The operator creates an empty secret if it does not exist, and the Baremetal
+	// Operator populates it from BareMetalSwitch CRDs.
+	// +optional
+	SwitchConfigSecretName string `json:"switchConfigSecretName,omitempty"`
+
+	// SwitchCredentialsSecretName optionally specifies the name of the secret containing
+	// additional switch credentials (e.g., SSH private keys for switches using publickey
+	// authentication). If not specified, defaults to "<ironic-name>-switch-credentials".
+	// The secret must have the environment label to be used by the operator.
+	// The operator creates an empty secret if it does not exist, and the Baremetal
+	// Operator populates it from BareMetalSwitch CRDs.
+	// +optional
+	SwitchCredentialsSecretName string `json:"switchCredentialsSecretName,omitempty"`
 }
 
 type Images struct {
@@ -250,7 +447,6 @@ type Images struct {
 // Warning: modifying arbitrary options may cause your Ironic installation to
 // fail or misbehave. Do not modify anything you don't understand well.
 type ExtraConfig struct {
-
 	// The group that config belongs to.
 	// +optional
 	Group string `json:"group,omitempty"`
@@ -287,10 +483,23 @@ type Overrides struct {
 	// +optional
 	Annotations map[string]string `json:"annotations,omitempty"`
 
+	// AgentImages overrides the default IPA images with custom per-architecture images.
+	// Consider setting deployRamdisk.disableDownloader=true when using custom images.
+	// +optional
+	AgentImages []AgentImages `json:"agentImages,omitempty"`
+
 	// Containers to append to the main Ironic pod.
 	// If a container name matches an existing container, the existing container is replaced.
 	// +optional
 	Containers []corev1.Container `json:"containers,omitempty"`
+
+	// HttpdLivenessProbe overrides the httpd container liveness probe.
+	// +optional
+	HttpdLivenessProbe *corev1.Probe `json:"httpdLivenessProbe,omitempty"`
+
+	// HttpdReadinessProbe overrides the httpd container readiness probe.
+	// +optional
+	HttpdReadinessProbe *corev1.Probe `json:"httpdReadinessProbe,omitempty"`
 
 	// InitContainers to append to the main Ironic pod.
 	// If a container name matches an existing init container, the existing init container is replaced.
@@ -317,6 +526,17 @@ type PrometheusExporter struct {
 	// When true, configures Ironic to collect sensor data and deploys the
 	// ironic-prometheus-exporter container.
 	Enabled bool `json:"enabled"`
+
+	// BindAddress is the IP address the metrics endpoint listens on.
+	// Defaults to "0.0.0.0" to listen on all interfaces.
+	//
+	// Can be set to a specific IP address (e.g. the provisioning network IP)
+	// to limit exposure to a particular network interface, or to "127.0.0.1"
+	// to restrict access to the local host only (note: this makes
+	// ServiceMonitor-based scraping impossible).
+	// +kubebuilder:default="0.0.0.0"
+	// +optional
+	BindAddress string `json:"bindAddress,omitempty"`
 
 	// SensorCollectionInterval defines how often (in seconds) sensor data
 	// is collected from BMCs using Ironic. Must be at least 60 seconds.
@@ -365,6 +585,10 @@ type IronicSpec struct {
 	// Networking defines networking settings for Ironic.
 	// +optional
 	Networking Networking `json:"networking,omitempty"`
+
+	// NetworkingService provides configuration for the Ironic Networking Service
+	// +optional
+	NetworkingService *NetworkingService `json:"networkingService,omitempty"`
 
 	// NodeSelector is a selector which must be true for the Ironic pod to fit on a node.
 	// Selector which must match a node's labels for the vmi to be scheduled on that node.
@@ -425,6 +649,11 @@ type Ironic struct {
 
 	Spec   IronicSpec   `json:"spec,omitempty"`
 	Status IronicStatus `json:"status,omitempty"`
+}
+
+// IsNetworkingServiceEnabled returns true if the networking service is configured and enabled.
+func (i *Ironic) IsNetworkingServiceEnabled() bool {
+	return i.Spec.NetworkingService != nil && i.Spec.NetworkingService.Enabled
 }
 
 //+kubebuilder:object:root=true

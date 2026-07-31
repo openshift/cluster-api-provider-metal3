@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/util/duration"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -140,7 +141,11 @@ func PrintObjectTree(tree *tree.ObjectTree, w io.Writer) error {
 // PrintObjectTreeV1Beta1 prints the cluster status to stdout.
 // Note: this function is exposed only for usage in clusterctl and Cluster API E2E tests.
 func PrintObjectTreeV1Beta1(tree *tree.ObjectTree) error {
-	tbl := createObjectTreeV1Beta1(os.Stdin)
+	return printObjectTreeV1Beta1ToWriter(tree, os.Stdout)
+}
+
+func printObjectTreeV1Beta1ToWriter(tree *tree.ObjectTree, w io.Writer) error {
+	tbl := createObjectTreeV1Beta1(w)
 	tbl.Header([]string{"NAME", "READY", "SEVERITY", "REASON", "SINCE", "MESSAGE"})
 
 	// Add row for the root object, the cluster, and recursively for all the nodes representing the cluster status.
@@ -578,13 +583,29 @@ func getRowName(obj ctrlclient.Object) string {
 		return obj.GetName()
 	}
 
-	objName := fmt.Sprintf("%s/%s",
+	name := fmt.Sprintf("%s %s",
 		obj.GetObjectKind().GroupVersionKind().Kind,
-		color.New(color.Bold).Sprint(obj.GetName()))
+		color.New(color.Bold).Sprint(klog.KObj(obj)))
 
-	name := objName
-	if objectPrefix := tree.GetMetaName(obj); objectPrefix != "" {
-		name = fmt.Sprintf("%s - %s", objectPrefix, gray.Sprintf("%s", name))
+	switch obj := obj.(type) {
+	case *clusterv1.Cluster:
+		if obj.Spec.Topology.IsDefined() {
+			name += fmt.Sprintf(", %s", obj.Spec.Topology.Version)
+		}
+	case *unstructured.Unstructured:
+		if tree.GetObjectContract(obj) == "ControlPlane" {
+			if version, err := contract.ControlPlane().Version().Get(obj); err == nil && version != nil {
+				name += fmt.Sprintf(", %s", *version)
+			}
+		}
+	case *clusterv1.MachineDeployment:
+		name += fmt.Sprintf(", %s", obj.Spec.Template.Spec.Version)
+	case *clusterv1.MachineSet:
+		name += fmt.Sprintf(", %s", obj.Spec.Template.Spec.Version)
+	case *clusterv1.MachinePool:
+		name += fmt.Sprintf(", %s", obj.Spec.Template.Spec.Version)
+	case *clusterv1.Machine:
+		name += fmt.Sprintf(", %s", obj.Spec.Version)
 	}
 
 	if !obj.GetDeletionTimestamp().IsZero() {

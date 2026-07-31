@@ -40,6 +40,7 @@ const (
 	AWSProviderName        = "aws"
 	AzureProviderName      = "azure"
 	BYOHProviderName       = "byoh"
+	CloudscaleProviderName = "cloudscale-ch-cloudscale"
 	CloudStackProviderName = "cloudstack"
 	DockerProviderName     = "docker"
 	DOProviderName         = "digitalocean"
@@ -64,6 +65,7 @@ const (
 	MAASProviderName           = "maas"
 	KubevirtProviderName       = "kubevirt"
 	KubeKeyProviderName        = "kubekey"
+	KubeSwiftProviderName      = "kubeswift-io"
 	VclusterProviderName       = "vcluster"
 	VirtinkProviderName        = "virtink"
 	CoxEdgeProviderName        = "coxedge"
@@ -74,6 +76,7 @@ const (
 	OpenNebulaProviderName     = "opennebula"
 	ScalewayProviderName       = "scaleway"
 	MetalStackProviderName     = "metal-stack"
+	OxideProviderName          = "oxide"
 )
 
 // Bootstrap providers.
@@ -186,6 +189,11 @@ func (p *providersClient) defaults() []Provider {
 			// NB. The Docker provider is not designed for production use and is intended for development environments only.
 			name:         DockerProviderName,
 			url:          "https://github.com/kubernetes-sigs/cluster-api/releases/latest/infrastructure-components-development.yaml",
+			providerType: clusterctlv1.InfrastructureProviderType,
+		},
+		&provider{
+			name:         CloudscaleProviderName,
+			url:          "https://github.com/cloudscale-ch/cluster-api-provider-cloudscale/releases/latest/infrastructure-components.yaml",
 			providerType: clusterctlv1.InfrastructureProviderType,
 		},
 		&provider{
@@ -346,6 +354,16 @@ func (p *providersClient) defaults() []Provider {
 		&provider{
 			name:         MetalStackProviderName,
 			url:          "https://github.com/metal-stack/cluster-api-provider-metal-stack/releases/latest/infrastructure-components.yaml",
+			providerType: clusterctlv1.InfrastructureProviderType,
+		},
+		&provider{
+			name:         OxideProviderName,
+			url:          "https://github.com/oxidecomputer/cluster-api-provider-oxide/releases/latest/infrastructure-components.yaml",
+			providerType: clusterctlv1.InfrastructureProviderType,
+		},
+		&provider{
+			name:         KubeSwiftProviderName,
+			url:          "https://github.com/kubeswift-io/cluster-api-provider-kubeswift/releases/latest/infrastructure-components.yaml",
 			providerType: clusterctlv1.InfrastructureProviderType,
 		},
 

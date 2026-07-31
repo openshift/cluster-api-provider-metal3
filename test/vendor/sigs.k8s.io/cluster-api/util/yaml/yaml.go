@@ -98,7 +98,7 @@ func JoinYaml(yamls ...[]byte) []byte {
 
 // FromUnstructured takes a list of Unstructured objects and converts it into a YAML.
 func FromUnstructured(objs []unstructured.Unstructured) ([]byte, error) {
-	var ret [][]byte //nolint:prealloc
+	var ret [][]byte
 	for _, o := range objs {
 		content, err := yaml.Marshal(o.UnstructuredContent())
 		if err != nil {
