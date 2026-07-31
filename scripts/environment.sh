@@ -51,8 +51,8 @@ else
   export BOOTSTRAP_CLUSTER="minikube"
 fi
 
-export FROM_K8S_VERSION=${FROM_K8S_VERSION:-"v1.34.1"}
-export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.35.0"}
+export KUBERNETES_VERSION=${KUBERNETES_VERSION:-"v1.36.2"}
+export KUBERNETES_VERSION_UPGRADE_FROM=${KUBERNETES_VERSION_UPGRADE_FROM:-"v1.35.6"}
 
 # Can be overriden from jjbs
 export CAPI_VERSION=${CAPI_VERSION:-"v1beta2"}
@@ -86,10 +86,10 @@ case "${GINKGO_FOCUS:-}" in
     export NUM_NODES="4"
     export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"3"}
     export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"1"}
-    export KUBERNETES_N0_VERSION=${KUBERNETES_N0_VERSION:-"v1.32.9"}
-    export KUBERNETES_N1_VERSION=${KUBERNETES_N1_VERSION:-"v1.33.5"}
-    export KUBERNETES_N2_VERSION=${KUBERNETES_N2_VERSION:-"v1.34.1"}
-    export KUBERNETES_N3_VERSION=${KUBERNETES_N3_VERSION:-"v1.35.0"}
+    export KUBERNETES_N0_VERSION=${KUBERNETES_N0_VERSION:-"v1.33.13"}
+    export KUBERNETES_N1_VERSION=${KUBERNETES_N1_VERSION:-"v1.34.9"}
+    export KUBERNETES_N2_VERSION=${KUBERNETES_N2_VERSION:-"v1.35.6"}
+    export KUBERNETES_N3_VERSION=${KUBERNETES_N3_VERSION:-"v1.36.2"}
   ;;
 
   # Scalability test environment vars and config
@@ -98,7 +98,7 @@ case "${GINKGO_FOCUS:-}" in
     export BMH_BATCH_SIZE=${BMH_BATCH_SIZE:-"2"}
     export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"1"}
     export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"0"}
-    export KUBERNETES_VERSION_UPGRADE_FROM=${FROM_K8S_VERSION}
+    # Note: Uses KUBERNETES_VERSION_UPGRADE_FROM directly now (no duplication needed)
   ;;
 
   # CAPI md-tests environment vars and config
@@ -130,6 +130,12 @@ case "${GINKGO_FOCUS:-}" in
     export NUM_NODES="6"
     export CONTROL_PLANE_MACHINE_COUNT=${CONTROL_PLANE_MACHINE_COUNT:-"1"}
     export WORKER_MACHINE_COUNT=${WORKER_MACHINE_COUNT:-"5"}
+  ;;
+
+  in-place-upgrade)
+    export NUM_NODES="5"
+    export CONTROL_PLANE_MACHINE_COUNT=3
+    export WORKER_MACHINE_COUNT=0
   ;;
 
   *)
@@ -171,5 +177,5 @@ export PROVIDER_ID_FORMAT="metal3://{{ ds.meta_data.providerid }}"
 export EXP_CLUSTER_RESOURCE_SET="true"
 
 # IRSO version
-export IRSOBRANCH="release-0.7"
-export IRSOCOMMIT="v0.7.0"
+export IRSOBRANCH="release-0.9"
+export IRSOCOMMIT="v0.9.0"

@@ -95,12 +95,12 @@ var _ = Describe("Testing features in target cluster", Label("pivoting", "featur
 					BootstrapClusterProxy: bootstrapClusterProxy,
 					SpecName:              specName,
 					ClusterName:           clusterName,
-					K8sVersion:            e2eConfig.MustGetVariable("KUBERNETES_PATCH_FROM_VERSION"),
+					K8sVersion:            e2eConfig.MustGetVariable("KUBERNETES_VERSION_UPGRADE_FROM"),
 					KCPMachineCount:       int64(numberOfControlplane),
 					WorkerMachineCount:    int64(numberOfWorkers),
 					ClusterctlLogFolder:   clusterctlLogFolder,
 					ClusterctlConfigPath:  clusterctlConfigPath,
-					OSType:                osType,
+					OSType:                osType + flavorSuffix(),
 					Namespace:             namespace,
 				}
 			})

@@ -333,6 +333,33 @@ var _ = Describe("Metal3LabelSync controller", func() {
 				},
 			},
 		),
+		Entry("Host annotation with wrong namespace",
+			// We should ignore the namespace in the annotation and only look in the M3M namespace
+			TestCaseMetal3ClusterToBMHs{
+				Cluster:   newCluster(clusterName, nil, nil),
+				M3Cluster: newMetal3Cluster(metal3ClusterName, bmcOwnerRef(), bmcSpec(), nil, nil, false),
+				Machine:   newMachine(clusterName, machineName, metal3machineName, ""),
+				M3Machine: newMetal3Machine(metal3machineName, &metav1.ObjectMeta{
+					Name:            metal3machineName,
+					Namespace:       namespaceName,
+					OwnerReferences: m3mOwnerRefs(),
+					Labels: map[string]string{
+						clusterv1.ClusterNameLabel: clusterName,
+					},
+					Annotations: map[string]string{
+						baremetal.HostAnnotation: "other-namespace/" + baremetalhostName,
+					},
+				}, nil, nil, false),
+				ExpectRequests: []ctrl.Request{
+					{
+						NamespacedName: types.NamespacedName{
+							Name:      baremetalhostName,
+							Namespace: namespaceName,
+						},
+					},
+				},
+			},
+		),
 	)
 	Describe("Test labelsync Reconcile functions", func() {
 		testLabels := map[string]string{
@@ -352,6 +379,22 @@ var _ = Describe("Metal3LabelSync controller", func() {
 				Namespace:  namespaceName,
 				Kind:       "notMetal3Machine",
 				APIVersion: "not" + infrav1.GroupVersion.String(),
+			},
+		}
+		wrongGroupConsumerRefSpec := bmov1alpha1.BareMetalHostSpec{
+			ConsumerRef: &corev1.ObjectReference{
+				Name:       metal3machineName,
+				Namespace:  namespaceName,
+				Kind:       metal3MachineKind,
+				APIVersion: "not" + infrav1.GroupVersion.String(),
+			},
+		}
+		wrongKindConsumerRefSpec := bmov1alpha1.BareMetalHostSpec{
+			ConsumerRef: &corev1.ObjectReference{
+				Name:       metal3machineName,
+				Namespace:  namespaceName,
+				Kind:       "notMetal3Machine",
+				APIVersion: infrav1.GroupVersion.String(),
 			},
 		}
 		annotation := map[string]string{
@@ -451,6 +494,16 @@ var _ = Describe("Metal3LabelSync controller", func() {
 			}),
 			Entry("Unknown API version in BareMetalHost ConsumerRef", testCaseReconcile{
 				host: newBareMetalHost(baremetalhostName, &notMetal3MachineSpec, nil, testLabels, false),
+			}),
+			Entry("ConsumerRef with correct Kind but wrong Group", testCaseReconcile{
+				// Even though a Metal3Machine with this name exists, the controller must
+				// bail out because the Group does not match infrav1.
+				host:          newBareMetalHost(baremetalhostName, &wrongGroupConsumerRefSpec, nil, testLabels, false),
+				metal3Machine: newMetal3Machine(metal3machineName, m3mObjectMetaWithOwnerRef(), nil, nil, false),
+			}),
+			Entry("ConsumerRef with correct Group but wrong Kind", testCaseReconcile{
+				host:          newBareMetalHost(baremetalhostName, &wrongKindConsumerRefSpec, nil, testLabels, false),
+				metal3Machine: newMetal3Machine(metal3machineName, m3mObjectMetaWithOwnerRef(), nil, nil, false),
 			}),
 			Entry("Could not find associated Metal3Machine", testCaseReconcile{
 				host:          newBareMetalHost(baremetalhostName, &metal3MachineSpec, nil, testLabels, false),

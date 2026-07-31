@@ -195,7 +195,7 @@ spec:
     apiGroup: infrastructure.cluster.x-k8s.io
     kind: Metal3Machine
     name: test1-controlplane-0
-  providerID: metal3://8e16d3b6-d48c-41e0-af0f-e43dbf5ec0cd
+  providerID: metal3://metal3/node-1/test1-controlplane-0
   version: v1.18.0
 status:
   addresses:
@@ -247,7 +247,7 @@ spec:
   image:
     checksum: http://172.22.0.1/images/bionic-server-cloudimg-amd64.img.sha256sum
     url: http://172.22.0.1/images/bionic-server-cloudimg-amd64.img
-  providerID: metal3://8e16d3b6-d48c-41e0-af0f-e43dbf5ec0cd
+  providerID: metal3://metal3/node-1/test1-controlplane-0
   # dataTemplate comes from CR 'dataTemplate' and is added by 'CAPM3'
   dataTemplate:
     name: test1-workers-template
@@ -376,7 +376,7 @@ spec:
     etcd: {}
     imageRepository: ""
     kind: ClusterConfiguration
-    kubernetesVersion: v1.35.0
+    kubernetesVersion: v1.36.2
     networking:
       dnsDomain: cluster.local
       podSubnet: 192.168.0.0/18
@@ -396,6 +396,15 @@ status:
 ```
 
 #### Flow of information
+
+> **Note:** The `metal3.io/uuid` label shown in the KubeadmConfig examples
+> above is required for CAPM3's label-based ProviderID assignment path. The
+> ProviderID values shown in the `Machine` and `Metal3Machine` YAML examples
+> use the legacy format (`metal3://<BMH-UID>`); the current default is
+> `metal3://<namespace>/<bmh-name>/<m3m-name>`. **The legacy format will be
+> deprecated in CAPM3 v1.13 and removed in CAPM3 v1.14.** See
+> [ProviderID Workflow](https://book.metal3.io/capm3/providerid-workflow.html)
+> for the full explanation.
 
 As was shown on the above CRs, some of the fields are introduced in one CR and
 they travel through multiple CRs to reach the BMH, which is the closest to the

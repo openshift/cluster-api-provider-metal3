@@ -24,8 +24,9 @@ import (
 	"github.com/go-logr/logr"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capierrors "sigs.k8s.io/cluster-api/errors"
+	capierrors "sigs.k8s.io/cluster-api/api/deprecated/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	deprecatedv1beta1conditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
@@ -98,6 +99,12 @@ func (s *ClusterManager) Create(_ context.Context) error {
 		s.Log.V(VerbosityLevelDebug).Info("Invalid Metal3Cluster configuration",
 			LogFieldError, err.Error())
 		s.setError("Invalid Metal3Cluster provided", capierrors.InvalidConfigurationClusterError)
+		conditions.Set(s.Metal3Cluster, metav1.Condition{
+			Type:    infrav1.BaremetalInfrastructureReadyCondition,
+			Status:  metav1.ConditionFalse,
+			Reason:  infrav1.InvalidConfigurationReason,
+			Message: "Invalid Metal3Cluster provided: " + err.Error(),
+		})
 		return err
 	}
 	s.Log.V(VerbosityLevelDebug).Info("Metal3Cluster configuration is valid")
@@ -145,11 +152,11 @@ func (s *ClusterManager) UpdateClusterStatus() error {
 	if err != nil {
 		s.Log.V(VerbosityLevelDebug).Info("ControlPlaneEndpoint validation failed",
 			LogFieldError, err.Error())
-		s.Metal3Cluster.Status.Ready = false
+		s.Metal3Cluster.Status.Initialization.Provisioned = ptr.To(false)
 		s.setError("Invalid ControlPlaneEndpoint values", capierrors.InvalidConfigurationClusterError)
-		deprecatedv1beta1conditions.MarkFalse(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition, infrav1.ControlPlaneEndpointFailedReason, clusterv1.ConditionSeverityError, "%s", err.Error())
+		deprecatedv1beta1conditions.MarkFalse(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyV1Beta1Condition, infrav1.ControlPlaneEndpointFailedV1Beta1Reason, clusterv1.ConditionSeverityError, "%s", err.Error())
 		conditions.Set(s.Metal3Cluster, metav1.Condition{
-			Type:   infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+			Type:   infrav1.BaremetalInfrastructureReadyCondition,
 			Status: metav1.ConditionFalse,
 			Reason: infrav1.ControlPlaneEndpointFailedReason,
 		})
@@ -158,12 +165,12 @@ func (s *ClusterManager) UpdateClusterStatus() error {
 
 	// Mark the metal3Cluster ready.
 	s.Log.V(VerbosityLevelDebug).Info("Metal3Cluster is ready")
-	s.Metal3Cluster.Status.Ready = true
-	deprecatedv1beta1conditions.MarkTrue(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyCondition)
+	s.Metal3Cluster.Status.Initialization.Provisioned = ptr.To(true)
+	deprecatedv1beta1conditions.MarkTrue(s.Metal3Cluster, infrav1.BaremetalInfrastructureReadyV1Beta1Condition)
 	conditions.Set(s.Metal3Cluster, metav1.Condition{
-		Type:   infrav1.BaremetalInfrastructureReadyV1Beta2Condition,
+		Type:   infrav1.BaremetalInfrastructureReadyCondition,
 		Status: metav1.ConditionTrue,
-		Reason: infrav1.BaremetalInfrastructureReadyV1Beta2Reason,
+		Reason: infrav1.BaremetalInfrastructureReadyReason,
 	})
 	now := metav1.Now()
 	s.Metal3Cluster.Status.LastUpdated = &now
