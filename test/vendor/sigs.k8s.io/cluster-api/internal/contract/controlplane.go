@@ -35,6 +35,79 @@ import (
 // like e.g the KubeadmControlPlane etc.
 type ControlPlaneContract struct{}
 
+// StatusVersions represents an accessor to a []StatusVersion path value.
+type StatusVersions struct {
+	path Path
+}
+
+// Path returns the path to the status versions value.
+func (v *StatusVersions) Path() Path {
+	return v.path
+}
+
+// Get gets the status versions value.
+func (v *StatusVersions) Get(obj *unstructured.Unstructured) ([]clusterv1.StatusVersion, error) {
+	slice, ok, err := unstructured.NestedSlice(obj.UnstructuredContent(), v.path...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get %s from object", "."+strings.Join(v.path, "."))
+	}
+	if !ok {
+		return nil, errors.Wrapf(ErrFieldNotFound, "path %s", "."+strings.Join(v.path, "."))
+	}
+
+	versions := make([]clusterv1.StatusVersion, len(slice))
+	s, err := json.Marshal(slice)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to marshall field at %s to json", "."+strings.Join(v.path, "."))
+	}
+	err = json.Unmarshal(s, &versions)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to unmarshall field at %s to json", "."+strings.Join(v.path, "."))
+	}
+
+	var previousParsedVersion semver.Version
+	var previousVersion string
+	for i, currentVersion := range versions {
+		currentParsedVersion, err := semver.ParseTolerant(currentVersion.Version)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to parse %s[%d].version from object", "."+strings.Join(v.path, "."), i)
+		}
+
+		if previousVersion != "" && version.Compare(currentParsedVersion, previousParsedVersion, version.WithBuildTags()) < 0 {
+			return nil, errors.Errorf("version %q and %q are in the wrong order", previousVersion, currentVersion.Version)
+		}
+
+		if currentVersion.Replicas < 0 {
+			return nil, errors.Errorf("%s[%d].replicas must not be negative", "."+strings.Join(v.path, "."), i)
+		}
+
+		previousParsedVersion = currentParsedVersion
+		previousVersion = currentVersion.Version
+	}
+	return versions, nil
+}
+
+// Set sets the status versions value in the path.
+func (v *StatusVersions) Set(obj *unstructured.Unstructured, value []clusterv1.StatusVersion) error {
+	interfaces := make([]interface{}, 0, len(value))
+	for _, statusVersion := range value {
+		if statusVersion.Replicas == 0 {
+			interfaces = append(interfaces, map[string]interface{}{
+				"version": statusVersion.Version,
+			})
+			continue
+		}
+		interfaces = append(interfaces, map[string]interface{}{
+			"version":  statusVersion.Version,
+			"replicas": int64(statusVersion.Replicas),
+		})
+	}
+	if err := unstructured.SetNestedSlice(obj.UnstructuredContent(), interfaces, v.path...); err != nil {
+		return errors.Wrapf(err, "failed to set path %s of object %v", "."+strings.Join(v.path, "."), obj.GroupVersionKind())
+	}
+	return nil
+}
+
 var controlPlane *ControlPlaneContract
 var onceControlPlane sync.Once
 
@@ -98,6 +171,13 @@ func (c *ControlPlaneContract) StatusVersion() *String {
 	}
 }
 
+// StatusVersions provide access to the versions field in a ControlPlane object status, if any.
+func (c *ControlPlaneContract) StatusVersions() *StatusVersions {
+	return &StatusVersions{
+		path: []string{"status", "versions"},
+	}
+}
+
 // Initialized returns if the control plane has been initialized.
 func (c *ControlPlaneContract) Initialized(contractVersion string) *Bool {
 	if contractVersion == "v1beta1" {
@@ -115,6 +195,13 @@ func (c *ControlPlaneContract) Initialized(contractVersion string) *Bool {
 func (c *ControlPlaneContract) ControlPlaneEndpoint() *ControlPlaneEndpoint {
 	return &ControlPlaneEndpoint{
 		path: []string{"spec", "controlPlaneEndpoint"},
+	}
+}
+
+// RolloutAfter provides access to the rolloutAfter spec field.
+func (c *ControlPlaneContract) RolloutAfter() *Time {
+	return &Time{
+		path: Path{"spec", "rollout", "after"},
 	}
 }
 
@@ -185,45 +272,19 @@ func (c *ControlPlaneContract) Selector() *String {
 	}
 }
 
-// FailureReason provides access to the status.failureReason field in an ControlPlane object. Note that this field is optional.
-//
-// Deprecated: This function is deprecated and is going to be removed. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
-func (c *ControlPlaneContract) FailureReason() *String {
-	return &String{
-		path: []string{"status", "failureReason"},
-	}
-}
-
-// FailureMessage provides access to the status.failureMessage field in an ControlPlane object. Note that this field is optional.
-//
-// Deprecated: This function is deprecated and is going to be removed. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
-func (c *ControlPlaneContract) FailureMessage() *String {
-	return &String{
-		path: []string{"status", "failureMessage"},
-	}
-}
-
-// ExternalManagedControlPlane provides access to the status.externalManagedControlPlane field in an ControlPlane object.
-// Note that this field is optional.
-func (c *ControlPlaneContract) ExternalManagedControlPlane() *Bool {
-	return &Bool{
-		path: []string{"status", "externalManagedControlPlane"},
-	}
-}
-
 // IsProvisioning returns true if the control plane is being created for the first time.
 // Returns false, if the control plane was already previously provisioned.
 func (c *ControlPlaneContract) IsProvisioning(obj *unstructured.Unstructured) (bool, error) {
 	// We can know if the control plane was previously created or is being created for the first
-	// time by looking at controlplane.status.version. If the version in status is set to a valid
+	// time by looking at controlplane.status.versions (or status.version as fallback). If the version in status is set to a valid
 	// value then the control plane was already provisioned at a previous time. If not, we can
 	// assume that the control plane is being created for the first time.
-	statusVersion, err := c.StatusVersion().Get(obj)
+	statusVersion, err := c.CurrentStatusVersion(obj)
 	if err != nil {
 		if errors.Is(err, ErrFieldNotFound) {
 			return true, nil
 		}
-		return false, errors.Wrap(err, "failed to get control plane status version")
+		return false, errors.Wrap(err, "failed to get control plane status version(s)")
 	}
 	if *statusVersion == "" {
 		return true, nil
@@ -233,8 +294,12 @@ func (c *ControlPlaneContract) IsProvisioning(obj *unstructured.Unstructured) (b
 
 // IsUpgrading returns true if the control plane is in the middle of an upgrade, false otherwise.
 // A control plane is considered upgrading if:
-// - if spec.version is greater than status.version.
-// Note: A control plane is considered not upgrading if the status or status.version is not set.
+// - at least one status.versions entry is not at spec.version.
+// - if status.versions does not exist, spec.version is greater than status.version.
+// Note: A control plane is considered not upgrading if the status or status.versions/status.version is not set.
+// Note: status.versions are computed by Machine.status.nodeInfo.kubeletVersion and Machine.spec.version. kubeletVersion
+// has the higher priority and accordingly during in-place upgrades IsUpgrading returns true until the kubelet also reports
+// the new version.
 func (c *ControlPlaneContract) IsUpgrading(obj *unstructured.Unstructured) (bool, error) {
 	specVersion, err := c.Version().Get(obj)
 	if err != nil {
@@ -244,15 +309,38 @@ func (c *ControlPlaneContract) IsUpgrading(obj *unstructured.Unstructured) (bool
 	if err != nil {
 		return false, errors.Wrap(err, "failed to parse control plane spec version")
 	}
+
+	statusVersions, err := c.StatusVersions().Get(obj)
+	if err != nil && !errors.Is(err, ErrFieldNotFound) {
+		return false, errors.Wrap(err, "failed to get control plane status.versions")
+	}
+	if err == nil && len(statusVersions) > 0 {
+		for _, statusVersion := range statusVersions {
+			// Note: IsUpgrading should return true even if no replicas are reported, because
+			// not all control plane providers support replicas.
+			statusV, err := semver.ParseTolerant(statusVersion.Version)
+			if err != nil {
+				return false, errors.Wrap(err, "failed to parse control plane status version")
+			}
+			if version.Compare(specV, statusV, version.WithBuildTags()) >= 1 {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
 	statusVersion, err := c.StatusVersion().Get(obj)
 	if err != nil {
-		if errors.Is(err, ErrFieldNotFound) { // status version is not yet set
-			// If the status.version is not yet present in the object, it implies the
+		if errors.Is(err, ErrFieldNotFound) {
+			// If the status.version(s) is not yet present in the object, it implies the
 			// first machine of the control plane is provisioning. We can reasonably assume
 			// that the control plane is not upgrading at this stage.
 			return false, nil
 		}
-		return false, errors.Wrap(err, "failed to get control plane status version")
+		return false, errors.Wrap(err, "failed to get control plane status.version")
+	}
+	if *statusVersion == "" {
+		return false, nil
 	}
 	statusV, err := semver.ParseTolerant(*statusVersion)
 	if err != nil {
@@ -262,6 +350,25 @@ func (c *ControlPlaneContract) IsUpgrading(obj *unstructured.Unstructured) (bool
 	// NOTE: we are considering the control plane upgrading when the version is greater
 	// or when the version has a different build metadata.
 	return version.Compare(specV, statusV, version.WithBuildTags()) >= 1, nil
+}
+
+// CurrentStatusVersion provides access to the .status.version(s) fields in a ControlPlane object status, if any.
+func (c *ControlPlaneContract) CurrentStatusVersion(obj *unstructured.Unstructured) (*string, error) {
+	statusVersions, err := c.StatusVersions().Get(obj)
+	if err != nil && !errors.Is(err, ErrFieldNotFound) {
+		return nil, err
+	}
+	if err == nil && len(statusVersions) > 0 {
+		// ControlPlane providers must report status.versions ordered from older to newer.
+		// The first entry is therefore the current minimum version used by upgrade checks.
+		return &statusVersions[0].Version, nil
+	}
+
+	statusVersion, statusVersionErr := c.StatusVersion().Get(obj)
+	if statusVersionErr != nil {
+		return nil, statusVersionErr
+	}
+	return statusVersion, nil
 }
 
 // IsScaling returns true if the control plane is in the middle of a scale operation, false otherwise.
@@ -528,6 +635,67 @@ func (m *ReadinessGates) Set(obj *unstructured.Unstructured, readinessGates []cl
 	}
 
 	jsonValue, err := json.Marshal(readinessGates)
+	if err != nil {
+		return errors.Wrapf(err, "failed to Marshal control plane %s", "."+m.Path().String())
+	}
+	var unstructuredValue []interface{}
+	if err := json.Unmarshal(jsonValue, &unstructuredValue); err != nil {
+		return errors.Wrapf(err, "failed to Unmarshal control plane %s", "."+m.Path().String())
+	}
+	if err := unstructured.SetNestedSlice(obj.UnstructuredContent(), unstructuredValue, m.Path()...); err != nil {
+		return errors.Wrapf(err, "failed to set control plane %s", "."+m.Path().String())
+	}
+	return nil
+}
+
+// Taints provides access to control plane's Taints.
+func (c *ControlPlaneMachineTemplate) Taints() *Taints {
+	return &Taints{
+		path: []string{"spec", "machineTemplate", "spec", "taints"},
+	}
+}
+
+// Taints provides a helper struct for working with Taints.
+type Taints struct {
+	path Path
+}
+
+// Path returns the path of the Taints.
+func (m *Taints) Path() Path {
+	return m.path
+}
+
+// Get gets the Taints object.
+func (m *Taints) Get(obj *unstructured.Unstructured) ([]clusterv1.MachineTaint, error) {
+	unstructuredValue, ok, err := unstructured.NestedSlice(obj.UnstructuredContent(), m.Path()...)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to retrieve control plane %s", "."+m.Path().String())
+	}
+	if !ok {
+		return nil, errors.Wrapf(ErrFieldNotFound, "path %s", "."+m.Path().String())
+	}
+
+	var taints []clusterv1.MachineTaint
+	jsonValue, err := json.Marshal(unstructuredValue)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to Marshal control plane %s", "."+m.Path().String())
+	}
+	if err := json.Unmarshal(jsonValue, &taints); err != nil {
+		return nil, errors.Wrapf(err, "failed to Unmarshal control plane %s", "."+m.Path().String())
+	}
+
+	return taints, nil
+}
+
+// Set sets the Taints value.
+// Note: in case the value is nil, the system assumes that the control plane do not implement the optional list of taints.
+func (m *Taints) Set(obj *unstructured.Unstructured, taints []clusterv1.MachineTaint) error {
+	unstructured.RemoveNestedField(obj.UnstructuredContent(), m.Path()...)
+	if taints == nil {
+		return nil
+	}
+
+	jsonValue, err := json.Marshal(taints)
 	if err != nil {
 		return errors.Wrapf(err, "failed to Marshal control plane %s", "."+m.Path().String())
 	}

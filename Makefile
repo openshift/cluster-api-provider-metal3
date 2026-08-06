@@ -20,12 +20,14 @@ SHELL:=/usr/bin/env bash
 
 .DEFAULT_GOAL:=help
 
-GO_VERSION ?= 1.24.13
+GO_VERSION ?= 1.26.5
 GO := $(shell type -P go)
 # Use GOPROXY environment variable if set
-GOPROXY := $(shell $(GO) env GOPROXY)
+ifneq ($(GO),)
+	GOPROXY := $(shell $(GO) env GOPROXY)
+endif
 ifeq ($(GOPROXY),)
-GOPROXY := https://proxy.golang.org
+	GOPROXY := https://proxy.golang.org
 endif
 export GOPROXY
 
@@ -45,14 +47,18 @@ FAKE_APISERVER_DIR := hack/fake-apiserver
 MAKE_ROOT_DIR := $(CURDIR)
 
 # Set --output-base for conversion-gen if we are not within GOPATH
+ifneq ($(GO),)
 ifneq ($(abspath $(ROOT_DIR)),$(shell $(GO) env GOPATH)/src/github.com/metal3-io/cluster-api-provider-metal3)
 	CONVERSION_GEN_OUTPUT_BASE := --output-base=$(ROOT_DIR)
+endif
 endif
 
 # Binaries.
 CONTROLLER_GEN := $(TOOLS_BIN_DIR)/controller-gen
 GOLANGCI_LINT_BIN := golangci-lint
 GOLANGCI_LINT := $(TOOLS_BIN_DIR)/$(GOLANGCI_LINT_BIN)
+GOLANGCI_LINT_KAL_BIN := golangci-lint-kube-api-linter
+GOLANGCI_LINT_KAL := $(TOOLS_BIN_DIR)/$(GOLANGCI_LINT_KAL_BIN)
 MOCKGEN := $(TOOLS_BIN_DIR)/mockgen
 CONVERSION_GEN := $(TOOLS_BIN_DIR)/conversion-gen
 KUBEBUILDER := $(TOOLS_BIN_DIR)/kubebuilder
@@ -70,20 +76,22 @@ GINKGO_PKG := github.com/onsi/ginkgo/v2/ginkgo
 
 # Helper function to get dependency version from go.mod
 get_go_version = $(shell $(GO) list -m $1 | awk '{print $$2}')
-GINGKO_VER := $(call get_go_version,github.com/onsi/ginkgo/v2)
-ENVTEST_K8S_VERSION := 1.35.x
+ifneq ($(GO),)
+	GINKGO_VER := $(call get_go_version,github.com/onsi/ginkgo/v2)
+endif
+ENVTEST_K8S_VERSION := 1.36.x
 
 # Define Docker related variables. Releases should modify and double check these vars.
 # REGISTRY ?= gcr.io/$(shell gcloud config get-value project)
 REGISTRY ?= quay.io/metal3-io
-STAGING_REGISTRY := quay.io/metal3-io
-PROD_REGISTRY := quay.io/metal3-io
 IMAGE_NAME ?= cluster-api-provider-metal3
 CONTROLLER_IMG ?= $(REGISTRY)/$(IMAGE_NAME)
 BMO_IMAGE_NAME ?= baremetal-operator
 BMO_CONTROLLER_IMG ?= $(REGISTRY)/$(BMO_IMAGE_NAME)
+TEST_EXTENSION_IMG ?= $(REGISTRY)/test-extension:$(TAG)
 TAG ?= v1beta1
 BMO_TAG ?= capm3-$(TAG)
+FKAS_TAG ?= latest
 ARCH ?= $(shell go env GOARCH)
 ALL_ARCH = amd64 arm arm64 ppc64le s390x
 
@@ -115,7 +123,7 @@ help:  # Display this help
 ## --------------------------------------
 ##@ tests:
 
-export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.35.0
+export KUBEBUILDER_ENVTEST_KUBERNETES_VERSION ?= 1.36.2
 KUBEBUILDER_ASSETS ?= $(shell $(SETUP_ENVTEST) use --use-env -p path $(KUBEBUILDER_ENVTEST_KUBERNETES_VERSION))
 
 .PHONY: setup-envtest
@@ -153,6 +161,24 @@ unit-cover-verbose:
 .PHONY: test
 test: lint unit ## Run tests
 
+## Fuzz testing variables
+FUZZ_TIME ?= 30s
+
+.PHONY: fuzz
+fuzz: ## Run fuzz tests with seed corpus (no fuzzing, regression test only)
+	cd test/fuzz && $(GO) test -race -v -run='^Fuzz' ./...
+
+.PHONY: fuzz-run
+fuzz-run: ## Run all fuzz tests sequentially with fuzzing enabled (use FUZZ_TIME=duration)
+	@echo "Discovering fuzz tests..."
+	@cd test/fuzz && ( \
+		while read -r fuzz_test; do \
+			echo "Running $$fuzz_test for $(FUZZ_TIME)..."; \
+			$(GO) test -fuzz=$$fuzz_test -fuzztime='$(FUZZ_TIME)' || exit 1; \
+		done < <($(GO) test -list='Fuzz.*' ./... | grep '^Fuzz') \
+	)
+	@echo "All fuzz tests completed successfully!"
+
 .PHONY: test-e2e
 test-e2e: ## Run e2e tests with capi e2e testing framework
 	./scripts/ci-e2e.sh
@@ -173,9 +199,8 @@ SKIP_CREATE_MGMT_CLUSTER ?= true
 .PHONY: e2e-substitutions
 e2e-substitutions: $(ENVSUBST)
 	mkdir -p $(E2E_OUT_DIR)/main
+	mkdir -p $(E2E_OUT_DIR)/v1.13
 	mkdir -p $(E2E_OUT_DIR)/v1.12
-	mkdir -p $(E2E_OUT_DIR)/v1.11
-	mkdir -p $(E2E_OUT_DIR)/v1.10
 	$(ENVSUBST) < $(E2E_CONF_FILE) > $(E2E_CONF_FILE_ENVSUBST)
 
 ## --------------------------------------
@@ -183,11 +208,15 @@ e2e-substitutions: $(ENVSUBST)
 ## --------------------------------------
 ##@ templates
 E2E_TEMPLATES_DIR ?= $(ROOT_DIR)/test/e2e/data/infrastructure-metal3
-.PHONY: cluster-templates cluster-templates-main cluster-templates-v1.12 cluster-templates-v1.11 cluster-templates-v1.10
-cluster-templates: cluster-templates-main cluster-templates-v1.12 cluster-templates-v1.11 cluster-templates-v1.10
+.PHONY: cluster-templates cluster-templates-main cluster-templates-main-v1beta1 cluster-templates-v1.13 cluster-templates-v1.12
+cluster-templates: cluster-templates-main cluster-templates-main-v1beta1 cluster-templates-v1.13 cluster-templates-v1.12
+	mkdir -p $(ARTIFACTS)/templates
+	cp -r $(E2E_OUT_DIR)/. $(ARTIFACTS)/templates/
 
-PHONY: clusterclass-templates clusterclass-templates-main clusterclass-templates-v1.12 clusterclass-templates-v1.11 clusterclass-templates-v1.10
-clusterclass-templates: clusterclass-templates-main clusterclass-templates-v1.12 clusterclass-templates-v1.11 clusterclass-templates-v1.10
+.PHONY: clusterclass-templates clusterclass-templates-main clusterclass-templates-v1.13 clusterclass-templates-v1.12
+clusterclass-templates: clusterclass-templates-main clusterclass-templates-v1.13 clusterclass-templates-v1.12
+	mkdir -p $(ARTIFACTS)/templates
+	cp -r $(E2E_OUT_DIR)/. $(ARTIFACTS)/templates/
 
 .PHONY: cluster-templates-main
 cluster-templates-main: $(KUSTOMIZE) ## Generate cluster templates
@@ -202,7 +231,18 @@ cluster-templates-main: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-md-remediation.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-md-taints > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-md-taints.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-centos-md-taints > $(E2E_OUT_DIR)/main/cluster-template-centos-md-taints.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-ip-reuse.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-centos-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-centos-ip-reuse.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-opensuse-leap-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-opensuse-leap-ip-reuse.yaml
 	touch $(E2E_OUT_DIR)/main/clusterclass.yaml
+
+.PHONY: cluster-templates-main-v1beta1
+cluster-templates-main-v1beta1: $(KUSTOMIZE) ## Generate cluster templates for main-v1beta1
+	mkdir -p $(E2E_OUT_DIR)/main
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos > $(E2E_OUT_DIR)/main/cluster-template-centos-v1beta1.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/main/cluster-template-centos-md-remediation-v1beta1.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-md-taints > $(E2E_OUT_DIR)/main/cluster-template-centos-md-taints-v1beta1.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-centos-ip-reuse-v1beta1.yaml
 
 .PHONY: clusterclass-templates-main
 clusterclass-templates-main: $(KUSTOMIZE) ## Generate cluster templates
@@ -211,6 +251,18 @@ clusterclass-templates-main: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/clusterclass-template-centos > $(E2E_OUT_DIR)/main/cluster-template-centos.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/main/cluster-template-upgrade-workload.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/clusterclass > $(E2E_OUT_DIR)/main/clusterclass.yaml
+
+.PHONY: cluster-templates-v1.13
+cluster-templates-v1.13: $(KUSTOMIZE) ## Generate cluster templates
+	mkdir -p $(E2E_OUT_DIR)/v1.13
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-ubuntu > $(E2E_OUT_DIR)/v1.13/cluster-template-ubuntu.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-centos > $(E2E_OUT_DIR)/v1.13/cluster-template-centos.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-centos-fake > $(E2E_OUT_DIR)/v1.13/cluster-template-centos-fake.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/clusterclass-metal3 > $(E2E_OUT_DIR)/v1.13/clusterclass-metal3.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-upgrade-workload > $(E2E_OUT_DIR)/v1.13/cluster-template-upgrade-workload.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/v1.13/cluster-template-centos-md-remediation.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/v1.13/cluster-template-ubuntu-md-remediation.yaml
+	touch $(E2E_OUT_DIR)/v1.13/clusterclass.yaml
 
 .PHONY: cluster-templates-v1.12
 cluster-templates-v1.12: $(KUSTOMIZE) ## Generate cluster templates
@@ -224,18 +276,13 @@ cluster-templates-v1.12: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.12/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/v1.12/cluster-template-ubuntu-md-remediation.yaml
 	touch $(E2E_OUT_DIR)/v1.12/clusterclass.yaml
 
-
-.PHONY: cluster-templates-v1.11
-cluster-templates-v1.11: $(KUSTOMIZE) ## Generate cluster templates
-	mkdir -p $(E2E_OUT_DIR)/v1.10
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-ubuntu > $(E2E_OUT_DIR)/v1.11/cluster-template-ubuntu.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-centos > $(E2E_OUT_DIR)/v1.11/cluster-template-centos.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-centos-fake > $(E2E_OUT_DIR)/v1.11/cluster-template-centos-fake.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/clusterclass-metal3 > $(E2E_OUT_DIR)/v1.11/clusterclass-metal3.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-upgrade-workload > $(E2E_OUT_DIR)/v1.11/cluster-template-upgrade-workload.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/v1.11/cluster-template-centos-md-remediation.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/v1.11/cluster-template-ubuntu-md-remediation.yaml
-	touch $(E2E_OUT_DIR)/v1.11/clusterclass.yaml
+.PHONY: clusterclass-templates-v1.13
+clusterclass-templates-v1.13: $(KUSTOMIZE) ## Generate cluster templates
+	mkdir -p $(E2E_OUT_DIR)/v1.13
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/clusterclass-template-ubuntu > $(E2E_OUT_DIR)/v1.13/cluster-template-ubuntu.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/clusterclass-template-centos > $(E2E_OUT_DIR)/v1.13/cluster-template-centos.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/v1.13/cluster-template-upgrade-workload.yaml
+	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.13/clusterclass > $(E2E_OUT_DIR)/v1.13/clusterclass.yaml
 
 .PHONY: clusterclass-templates-v1.12
 clusterclass-templates-v1.12: $(KUSTOMIZE) ## Generate cluster templates
@@ -244,34 +291,6 @@ clusterclass-templates-v1.12: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.12/clusterclass-template-centos > $(E2E_OUT_DIR)/v1.12/cluster-template-centos.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.12/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/v1.12/cluster-template-upgrade-workload.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.12/clusterclass > $(E2E_OUT_DIR)/v1.12/clusterclass.yaml
-
-.PHONY: clusterclass-templates-v1.11
-clusterclass-templates-v1.11: $(KUSTOMIZE) ## Generate cluster templates
-	mkdir -p $(E2E_OUT_DIR)/v1.11
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/clusterclass-template-ubuntu > $(E2E_OUT_DIR)/v1.11/cluster-template-ubuntu.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/clusterclass-template-centos > $(E2E_OUT_DIR)/v1.11/cluster-template-centos.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/v1.11/cluster-template-upgrade-workload.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.11/clusterclass > $(E2E_OUT_DIR)/v1.11/clusterclass.yaml
-
-.PHONY: cluster-templates-v1.10
-cluster-templates-v1.10: $(KUSTOMIZE) ## Generate cluster templates
-	mkdir -p $(E2E_OUT_DIR)/v1.10
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-ubuntu > $(E2E_OUT_DIR)/v1.10/cluster-template-ubuntu.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-centos > $(E2E_OUT_DIR)/v1.10/cluster-template-centos.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-centos-fake > $(E2E_OUT_DIR)/v1.10/cluster-template-centos-fake.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/clusterclass-metal3 > $(E2E_OUT_DIR)/v1.10/clusterclass-metal3.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-upgrade-workload > $(E2E_OUT_DIR)/v1.10/cluster-template-upgrade-workload.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/v1.10/cluster-template-centos-md-remediation.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/v1.10/cluster-template-ubuntu-md-remediation.yaml
-	touch $(E2E_OUT_DIR)/v1.10/clusterclass.yaml
-
-.PHONY: clusterclass-templates-v1.10
-clusterclass-templates-v1.10: $(KUSTOMIZE) ## Generate cluster templates
-	mkdir -p $(E2E_OUT_DIR)/v1.10
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/clusterclass-template-ubuntu > $(E2E_OUT_DIR)/v1.10/cluster-template-ubuntu.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/clusterclass-template-centos > $(E2E_OUT_DIR)/v1.10/cluster-template-centos.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/clusterclass-template-upgrade-workload > $(E2E_OUT_DIR)/v1.10/cluster-template-upgrade-workload.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/v1.10/clusterclass > $(E2E_OUT_DIR)/v1.10/clusterclass.yaml
 
 ## --------------------------------------
 ## E2E Testing
@@ -295,11 +314,11 @@ ifneq ($(FOCUS_LABELS),)
 endif
 
 ifneq ($(SKIP_LABELS),)
-	ifneq ($(LABEL_FILTER),)
-		LABEL_FILTER := $(LABEL_FILTER) && !$(SKIP_EXPR)
-	else
-		LABEL_FILTER := !$(SKIP_EXPR)
-	endif
+ifneq ($(LABEL_FILTER),)
+	LABEL_FILTER := $(LABEL_FILTER) && !$(SKIP_EXPR)
+else
+	LABEL_FILTER := !$(SKIP_EXPR)
+endif
 endif
 
 .PHONY: e2e-tests
@@ -375,6 +394,12 @@ $(GOLANGCI_LINT):
 .PHONY: $(GOLANGCI_LINT_BIN)
 $(GOLANGCI_LINT_BIN): $(GOLANGCI_LINT) ## Build a local copy of golangci-lint.
 
+$(GOLANGCI_LINT_KAL):
+	cd $(TOOLS_DIR) && ${GOLANGCI_LINT} custom
+
+.PHONY: $(GOLANGCI_LINT_KAL_BIN)
+$(GOLANGCI_LINT_KAL_BIN): $(GOLANGCI_LINT_KAL) # Build golangci-lint-kal from custom configuration.
+
 $(MOCKGEN): $(TOOLS_DIR)/go.mod
 	cd $(TOOLS_DIR) && $(GO) build -tags=tools -o $(BIN_DIR)/mockgen go.uber.org/mock/mockgen
 
@@ -392,7 +417,7 @@ $(GINKGO_BIN): $(GINKGO) ## Build a local copy of ginkgo.
 
 .PHONY: $(GINKGO)
 $(GINKGO):
-	GOBIN=$(TOOLS_BIN_DIR) $(GO) install $(GINKGO_PKG)@$(GINGKO_VER)
+	GOBIN=$(TOOLS_BIN_DIR) $(GO) install $(GINKGO_PKG)@$(GINKGO_VER)
 
 $(ENVSUBST):
 	rm -f $(TOOLS_BIN_DIR)/$(ENVSUBST_BIN)*
@@ -415,11 +440,15 @@ $(ENVSUBST_BIN): $(ENVSUBST) ## Build envsubst from tools folder.
 ##@ linters:
 
 .PHONY: lint
-lint: $(GOLANGCI_LINT) ## Lint codebase
+lint: $(GOLANGCI_LINT) $(GOLANGCI_LINT_KAL) ## Lint codebase
 	$(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
 	cd $(APIS_DIR) && $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
 	cd $(TEST_DIR) && $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
 	cd $(FAKE_APISERVER_DIR) && $(GOLANGCI_LINT) run -v $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
+	cd $(APIS_DIR) && $(GOLANGCI_LINT_KAL) run -v --config $(ROOT_DIR)/.golangci-kal.yaml $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
+
+kube-api-lint: $(GOLANGCI_LINT) $(GOLANGCI_LINT_KAL) ## Run kube-api-linter on the codebase
+	cd $(APIS_DIR) && $(GOLANGCI_LINT_KAL) run -v --config $(ROOT_DIR)/.golangci-kal.yaml $(GOLANGCI_LINT_EXTRA_ARGS) --timeout=15m
 
 .PHONY: lint-fix
 lint-fix: $(GOLANGCI_LINT) ## Lint the codebase and run auto-fixers if supported by the linter
@@ -472,6 +501,11 @@ generate-go: $(CONTROLLER_GEN) $(MOCKGEN) $(CONVERSION_GEN) $(KUBEBUILDER) $(KUS
 		paths=./... \
 		object:headerFile=../hack/boilerplate/boilerplate.generatego.txt
 
+	cd $(APIS_DIR) && $(CONVERSION_GEN) \
+		--output-file=zz_generated.conversion.go \
+		--go-header-file=../hack/boilerplate/boilerplate.generatego.txt \
+		./v1beta1
+
 	$(MOCKGEN) \
 	  -destination=./baremetal/mocks/zz_generated.metal3cluster_manager.go \
 	  -source=./baremetal/metal3cluster_manager.go \
@@ -523,11 +557,10 @@ generate-go: $(CONTROLLER_GEN) $(MOCKGEN) $(CONVERSION_GEN) $(KUBEBUILDER) $(KUS
 
 .PHONY: generate-go-conversions
 generate-go-conversions: $(CONTROLLER_GEN) $(CONVERSION_GEN) ## Runs Go related generate targets
-	$(MAKE) clean-generated-conversions SRC_DIRS="./api/v1beta1"
-	$(CONVERSION_GEN) \
+	cd $(APIS_DIR) && $(CONVERSION_GEN) \
 		--output-file=zz_generated.conversion.go \
-		--go-header-file=./hack/boilerplate/boilerplate.generatego.txt \
-		./api/v1beta1
+		--go-header-file=../hack/boilerplate/boilerplate.generatego.txt \
+		./v1beta1
 
 .PHONY: generate-manifests
 generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
@@ -542,6 +575,13 @@ generate-manifests: $(CONTROLLER_GEN) ## Generate manifests e.g. CRD, RBAC etc.
 		output:rbac:dir=$(RBAC_ROOT) \
 		output:webhook:dir=$(WEBHOOK_ROOT) \
 		webhook
+
+.PHONY: generate-manifests-test-extension
+generate-manifests-test-extension: $(CONTROLLER_GEN) ## Generate manifests e.g. RBAC for test-extension provider
+	$(CONTROLLER_GEN) \
+		paths=./test/extension/... \
+		output:rbac:dir=./test/extension/config/rbac \
+		rbac:roleName=manager-role
 
 .PHONY: generate-examples
 generate-examples: $(KUSTOMIZE) clean-examples ## Generate examples configurations to run a cluster.
@@ -570,24 +610,23 @@ docker-build-debug: ## Build the docker image for controller-manager with debug 
 	MANIFEST_IMG=$(CONTROLLER_IMG)-$(ARCH) MANIFEST_TAG=$(TAG) $(MAKE) set-manifest-image
 	$(MAKE) set-manifest-pull-policy
 
-.PHONY: docker-push
-docker-push: ## Push the docker image
-	docker push $(CONTROLLER_IMG)-$(ARCH):$(TAG)
-
 .PHONY: docker-build-fkas
 # Allow overriding this by setting CONTAINER_RUNTIME var
 CONTAINER_RUNTIME := $(if $(CONTAINER_RUNTIME),$(CONTAINER_RUNTIME),docker)
 export CONTAINER_RUNTIME
 
 docker-build-fkas:
-	cp -r $(FAKE_APISERVER_DIR) /tmp && \
-	mkdir -p /tmp/fake-apiserver/capm3  && \
-	cp -r ./api /tmp/fake-apiserver/capm3 && \
-	cd /tmp/fake-apiserver && \
-	$(GO) mod edit -replace=github.com/metal3-io/cluster-api-provider-metal3=./capm3 && \
-	$(GO) mod tidy && \
-	$(CONTAINER_RUNTIME) build --build-arg ARCH=$(ARCH) -t "quay.io/metal3-io/metal3-fkas:latest" . || true
-	rm -rf /tmp/fake-apiserver
+	$(CONTAINER_RUNTIME) build --build-arg ARCH=$(ARCH) \
+	-f $(FAKE_APISERVER_DIR)/Dockerfile \
+	-t "quay.io/metal3-io/metal3-fkas:$(FKAS_TAG)" .
+
+.PHONY: docker-build-test-extension
+docker-build-test-extension: ## Build the docker image for test extension
+	$(CONTAINER_RUNTIME) build --network=host --pull \
+	--build-arg TARGETOS=linux \
+	--build-arg TARGETARCH=$(ARCH) \
+	-f test/extension/Dockerfile \
+	-t $(TEST_EXTENSION_IMG) .
 
 ## --------------------------------------
 ## Docker — All ARCH
@@ -599,26 +638,15 @@ docker-build-all: $(addprefix docker-build-,$(ALL_ARCH))
 docker-build-%:
 	$(MAKE) ARCH=$* docker-build
 
-.PHONY: docker-push-all ## Push all the architecture docker images
-docker-push-all: $(addprefix docker-push-,$(ALL_ARCH))
-	$(MAKE) docker-push-manifest
-
-docker-push-%:
-	$(MAKE) ARCH=$* docker-push
-
-.PHONY: docker-push-manifest
-docker-push-manifest: ## Push the fat manifest docker image.
-	## Minimum docker version 18.06.0 is required for creating and pushing manifest images.
-	docker manifest create --amend $(CONTROLLER_IMG):$(TAG) $(shell echo $(ALL_ARCH) | sed -e "s~[^ ]*~$(CONTROLLER_IMG)\-&:$(TAG)~g")
-	@for arch in $(ALL_ARCH); do docker manifest annotate --arch $${arch} ${CONTROLLER_IMG}:${TAG} ${CONTROLLER_IMG}-$${arch}:${TAG}; done
-	docker manifest push --purge ${CONTROLLER_IMG}:${TAG}
-	MANIFEST_IMG=$(CONTROLLER_IMG) MANIFEST_TAG=$(TAG) $(MAKE) set-manifest-image
-	$(MAKE) set-manifest-pull-policy
-
 .PHONY: set-manifest-image
 set-manifest-image:
 	$(info Updating kustomize image patch file for manager resource)
 	sed -i'' -e 's@image: .*@image: \"'"${MANIFEST_IMG}:$(MANIFEST_TAG)"'\"@' ./config/default/capm3/manager_image_patch.yaml
+
+.PHONY: set-manifest-image-test-extension
+set-manifest-image-test-extension:
+	$(info Updating kustomize image patch file for test extension)
+	sed -i'' -e 's@image: .*@image: \"'"${TEST_EXTENSION_IMG}"'\"@' ./test/extension/config/default/manager_image_patch.yaml
 
 .PHONY: set-manifest-pull-policy
 set-manifest-pull-policy:
@@ -689,6 +717,7 @@ endif
 PREVIOUS_TAG ?= $(shell git tag -l | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+" | sort -V | grep -B1 $(RELEASE_TAG) | grep -E "^v[0-9]+\.[0-9]+\.[0-9]+$$" | head -n 1 2>/dev/null)
 RELEASE_DIR := out
 RELEASE_NOTES_DIR := releasenotes
+TEST_EXTENSION_MANIFESTS_DIR := out/runtime-extension-test-extension
 
 $(RELEASE_DIR):
 	mkdir -p $(RELEASE_DIR)/
@@ -702,6 +731,12 @@ release-manifests: $(KUSTOMIZE) $(RELEASE_DIR) ## Builds the manifests to publis
 	cp metadata.yaml $(RELEASE_DIR)/metadata.yaml
 	cp examples/clusterctl-templates/clusterctl-cluster.yaml $(RELEASE_DIR)/cluster-template.yaml
 	cp examples/clusterctl-templates/example_variables.rc $(RELEASE_DIR)/example_variables.rc
+
+.PHONY: test-extension-manifests
+test-extension-manifests: $(KUSTOMIZE) $(RELEASE_DIR) ## Builds the runtime extension manifests for development
+	mkdir -p $(TEST_EXTENSION_MANIFESTS_DIR)
+	$(KUSTOMIZE) build test/extension/config/default > $(TEST_EXTENSION_MANIFESTS_DIR)/components.yaml
+	cp metadata.yaml $(TEST_EXTENSION_MANIFESTS_DIR)/metadata.yaml
 
 .PHONY: release-notes
 release-notes: $(RELEASE_NOTES_DIR) $(RELEASE_NOTES)

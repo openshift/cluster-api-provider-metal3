@@ -45,9 +45,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capicontrollerutil "sigs.k8s.io/cluster-api/internal/util/controller"
 	"sigs.k8s.io/cluster-api/util/cache"
 	"sigs.k8s.io/cluster-api/util/contract"
+	capicontrollerutil "sigs.k8s.io/cluster-api/util/controller"
 	"sigs.k8s.io/cluster-api/util/predicates"
 )
 
@@ -112,7 +112,7 @@ type ByObjectConfig struct {
 }
 
 func (r *CRDMigrator) SetupWithManager(ctx context.Context, mgr ctrl.Manager, controllerOptions controller.Options) error {
-	if err := r.setup(mgr.GetScheme()); err != nil {
+	if err := r.setup(ctx, mgr.GetScheme()); err != nil {
 		return err
 	}
 
@@ -137,7 +137,7 @@ func (r *CRDMigrator) SetupWithManager(ctx context.Context, mgr ctrl.Manager, co
 		).
 		Named("crdmigrator").
 		WithOptions(controllerOptions).
-		Complete(r)
+		Complete(ctx, r)
 	if err != nil {
 		return errors.Wrap(err, "failed setting up with a controller manager")
 	}
@@ -145,7 +145,7 @@ func (r *CRDMigrator) SetupWithManager(ctx context.Context, mgr ctrl.Manager, co
 	return nil
 }
 
-func (r *CRDMigrator) setup(scheme *runtime.Scheme) error {
+func (r *CRDMigrator) setup(ctx context.Context, scheme *runtime.Scheme) error {
 	if r.Client == nil || r.APIReader == nil || len(r.Config) == 0 {
 		return errors.New("Client and APIReader must not be nil and Config must not be empty")
 	}
@@ -172,7 +172,7 @@ func (r *CRDMigrator) setup(scheme *runtime.Scheme) error {
 		r.configByCRDName[contract.CalculateCRDName(gvk.Group, gvk.Kind)] = cfg
 	}
 
-	r.storageVersionMigrationCache = cache.New[objectEntry](1 * time.Hour)
+	r.storageVersionMigrationCache = cache.New[objectEntry](ctx, 1*time.Hour)
 	return nil
 }
 
@@ -394,26 +394,24 @@ func (r *CRDMigrator) reconcileStorageVersionMigration(ctx context.Context, crd 
 			continue
 		}
 
-		// Based on: https://github.com/kubernetes/kubernetes/blob/v1.32.0/pkg/controller/storageversionmigrator/storageversionmigrator.go#L275-L284
+		// Based on: https://github.com/kubernetes/kubernetes/blob/v1.36.0/pkg/controller/storageversionmigrator/storageversionmigrator.go#L309-L333
 		u := &unstructured.Unstructured{}
 		u.SetGroupVersionKind(gvk)
 		u.SetNamespace(obj.GetNamespace())
 		u.SetName(obj.GetName())
-		// Set UID so that when a resource gets deleted, we get an "uid mismatch"
-		// conflict error instead of trying to create it.
-		u.SetUID(obj.GetUID())
-		// Set RV so that when a resources gets updated or deleted+recreated, we get an "object has been modified"
-		// conflict error. We do not actually need to do this for the updated case because if RV
-		// was not set, it would just result in no-op request. But for the deleted+recreated case, if RV is
-		// not set but UID is set, we would get an immutable field validation error. Hence we must set both.
 		u.SetResourceVersion(obj.GetResourceVersion())
 
+		data, err := u.MarshalJSON()
+		if err != nil {
+			errs = append(errs, errors.Wrap(err, "failed to marshal object to JSON"))
+			continue
+		}
+
 		log.V(4).Info("Migrating to new storage version", gvk.Kind, klog.KObj(u))
-		var err error
 		if migrationConfig.UseStatusForStorageVersionMigration {
-			err = r.Client.Status().Patch(ctx, u, client.Apply, client.FieldOwner("crdmigrator"))
+			err = r.Client.Status().Patch(ctx, u, client.RawPatch(types.MergePatchType, data))
 		} else {
-			err = r.Client.Apply(ctx, client.ApplyConfigurationFromUnstructured(u), client.FieldOwner("crdmigrator"))
+			err = r.Client.Patch(ctx, u, client.RawPatch(types.MergePatchType, data))
 		}
 		// If we got a NotFound error, the object no longer exists so no need to update it.
 		// If we got a Conflict error, another client wrote the object already so no need to update it.
@@ -475,22 +473,13 @@ func (r *CRDMigrator) reconcileCleanupManagedFields(ctx context.Context, crd *ap
 				//       chances that the managedField entry gets cleaned up. In any case having a minimal entry only
 				//       for metadata.name is better than leaving the old entry that uses an apiVersion that is not
 				//       served anymore (see: https://github.com/kubernetes/kubernetes/issues/111937).
-				fieldV1Map := map[string]interface{}{
-					"f:metadata": map[string]interface{}{
-						"f:name": map[string]interface{}{},
-					},
-				}
-				fieldV1, err := json.Marshal(fieldV1Map)
-				if err != nil {
-					return errors.Wrap(err, "failed to create seeding managedField entry")
-				}
 				managedFields = append(managedFields, metav1.ManagedFieldsEntry{
 					Manager:    obj.GetManagedFields()[0].Manager,
 					Operation:  obj.GetManagedFields()[0].Operation,
 					APIVersion: schema.GroupVersion{Group: crd.Spec.Group, Version: storageVersion}.String(),
 					Time:       ptr.To(metav1.Now()),
 					FieldsType: "FieldsV1",
-					FieldsV1:   &metav1.FieldsV1{Raw: fieldV1},
+					FieldsV1:   metav1.NewFieldsV1(`{"f:metadata":{"f:name":{}}}`),
 				})
 			}
 

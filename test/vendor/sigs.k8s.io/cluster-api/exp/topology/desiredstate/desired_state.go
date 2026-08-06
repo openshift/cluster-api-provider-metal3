@@ -34,27 +34,25 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	runtimecatalog "sigs.k8s.io/cluster-api/api/runtime/catalog"
 	runtimehooksv1 "sigs.k8s.io/cluster-api/api/runtime/hooks/v1alpha1"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	"sigs.k8s.io/cluster-api/controllers/external"
-	runtimecatalog "sigs.k8s.io/cluster-api/exp/runtime/catalog"
+	"sigs.k8s.io/cluster-api/core/reconcilers/topology/cluster/patches"
+	coreadmission "sigs.k8s.io/cluster-api/core/webhooks/admission"
 	runtimeclient "sigs.k8s.io/cluster-api/exp/runtime/client"
 	"sigs.k8s.io/cluster-api/exp/topology/scope"
 	"sigs.k8s.io/cluster-api/feature"
 	"sigs.k8s.io/cluster-api/internal/contract"
-	"sigs.k8s.io/cluster-api/internal/controllers/topology/cluster/patches"
 	"sigs.k8s.io/cluster-api/internal/hooks"
 	"sigs.k8s.io/cluster-api/internal/topology/clustershim"
 	topologynames "sigs.k8s.io/cluster-api/internal/topology/names"
 	"sigs.k8s.io/cluster-api/internal/topology/ownerrefs"
 	"sigs.k8s.io/cluster-api/internal/topology/selectors"
-	"sigs.k8s.io/cluster-api/internal/webhooks"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/cache"
-	"sigs.k8s.io/cluster-api/util/conversion"
+	conversionutil "sigs.k8s.io/cluster-api/util/conversion"
 )
 
 // Generator is a generator to generate the desired state.
@@ -134,6 +132,7 @@ func (g *generator) Generate(ctx context.Context, s *scope.Scope) (*scope.Cluste
 	if err := ComputeUpgradePlan(ctx, s, getUpgradePlan); err != nil {
 		return nil, err
 	}
+	s.UpgradeTracker.ComputeUpgradePlanSucceeded = true
 
 	// Mark all the MachineDeployments that are currently upgrading.
 	// This captured information is used for:
@@ -264,7 +263,7 @@ func computeInfrastructureCluster(_ context.Context, s *scope.Scope) (*unstructu
 	// NOTE: this prevents to the ownerRef to be deleted by server side apply.
 	if s.Current.InfrastructureCluster != nil {
 		shim := clustershim.New(s.Current.Cluster)
-		if ref := getOwnerReferenceFrom(s.Current.InfrastructureCluster, shim); ref != nil {
+		if ref := getOwnerReferenceFrom(s.Current.InfrastructureCluster, shim, corev1.SchemeGroupVersion.WithKind("Secret")); ref != nil {
 			infrastructureCluster.SetOwnerReferences([]metav1.OwnerReference{*ref})
 		}
 	}
@@ -364,7 +363,7 @@ func (g *generator) computeControlPlane(ctx context.Context, s *scope.Scope, inf
 	// NOTE: this prevents to the ownerRef to be deleted by server side apply.
 	if s.Current.ControlPlane != nil && s.Current.ControlPlane.Object != nil {
 		shim := clustershim.New(s.Current.Cluster)
-		if ref := getOwnerReferenceFrom(s.Current.ControlPlane.Object, shim); ref != nil {
+		if ref := getOwnerReferenceFrom(s.Current.ControlPlane.Object, shim, corev1.SchemeGroupVersion.WithKind("Secret")); ref != nil {
 			controlPlane.SetOwnerReferences([]metav1.OwnerReference{*ref})
 		}
 	}
@@ -435,6 +434,13 @@ func (g *generator) computeControlPlane(ctx context.Context, s *scope.Scope, inf
 		}
 	}
 
+	// If it is required to manage rolloutAfter for the control plane, set the corresponding field.
+	if !s.Blueprint.Topology.ControlPlane.Rollout.After.IsZero() {
+		if err := contract.ControlPlane().RolloutAfter().Set(controlPlane, s.Blueprint.Topology.ControlPlane.Rollout.After); err != nil {
+			return nil, errors.Wrapf(err, "failed to set %s in the ControlPlane object", contract.ControlPlane().RolloutAfter().Path())
+		}
+	}
+
 	// If it is required to manage the readinessGates for the control plane, set the corresponding field.
 	// NOTE: If readinessGates value from both Cluster and ClusterClass is nil, it is assumed that the control plane controller
 	// does not implement support for this field and the ControlPlane object is generated without readinessGates.
@@ -445,6 +451,19 @@ func (g *generator) computeControlPlane(ctx context.Context, s *scope.Scope, inf
 	} else if s.Blueprint.ClusterClass.Spec.ControlPlane.ReadinessGates != nil {
 		if err := contract.ControlPlane().MachineTemplate().ReadinessGates(contractVersion).Set(controlPlane, s.Blueprint.ClusterClass.Spec.ControlPlane.ReadinessGates); err != nil {
 			return nil, errors.Wrapf(err, "failed to set %s in the ControlPlane object", contract.ControlPlane().MachineTemplate().ReadinessGates(contractVersion).Path())
+		}
+	}
+
+	// If it is required to manage the taints for the control plane, set the corresponding field.
+	// NOTE: If taints value from both Cluster and ClusterClass is nil, it is assumed that the control plane controller
+	// does not implement support for this field and the ControlPlane object is generated without taints.
+	if s.Blueprint.Topology.ControlPlane.Taints != nil {
+		if err := contract.ControlPlane().MachineTemplate().Taints().Set(controlPlane, s.Blueprint.Topology.ControlPlane.Taints); err != nil {
+			return nil, errors.Wrapf(err, "failed to set %s in the ControlPlane object", contract.ControlPlane().MachineTemplate().Taints().Path())
+		}
+	} else if s.Blueprint.ClusterClass.Spec.ControlPlane.Taints != nil {
+		if err := contract.ControlPlane().MachineTemplate().Taints().Set(controlPlane, s.Blueprint.ClusterClass.Spec.ControlPlane.Taints); err != nil {
+			return nil, errors.Wrapf(err, "failed to set %s in the ControlPlane object", contract.ControlPlane().MachineTemplate().Taints().Path())
 		}
 	}
 
@@ -716,6 +735,8 @@ func (g *generator) computeControlPlaneVersion(ctx context.Context, s *scope.Sco
 func computeCluster(_ context.Context, s *scope.Scope, infrastructureCluster, controlPlane *unstructured.Unstructured) (*clusterv1.Cluster, error) {
 	cluster := s.Current.Cluster.DeepCopy()
 
+	// Note: If additional fields should be modified here we have to adjust reconcileCluster accordingly.
+
 	// Enforce the topology labels.
 	// NOTE: The cluster label is added at creation time so this object could be read by the ClusterTopology
 	// controller immediately after creation, even before other controllers are going to add the label (if missing).
@@ -731,17 +752,19 @@ func computeCluster(_ context.Context, s *scope.Scope, infrastructureCluster, co
 	cluster.Spec.ControlPlaneRef = contract.ObjToContractVersionedObjectReference(controlPlane)
 
 	// Track the current upgrade step in the cluster object (otherwise make sure we cleanup tracking of previous upgrades).
-	// NOTE: to detect if we are upgrading, we check if the intent to call the AfterClusterUpgrade is already tracked.
+	// NOTE: to detect if we are upgrading, we check if the intent to call the AfterClusterUpgrade is already tracked;
+	//	as a temporary fallback to handle cases when RuntimeSDK feature gate is not enabled yet, we also check the upgrade plan not being empty.
 	// NOTE, it is required to surface intermediate steps of the upgrade plan to allow creation of machines in KCP/MS.
-	// TODO: consider if we want to surface the upgrade plan (or the list of desired versions) in cluster status;
-	//   TBD if the semantic of the new field can replace this annotation.
-	if hooks.IsPending(runtimehooksv1.AfterClusterUpgrade, s.Current.Cluster) {
-		// NOTE: to detect if we are at the beginning of an upgrade, we check if the intent to call the AfterClusterUpgrade is already tracked.
+	if cluster.Annotations == nil {
+		cluster.Annotations = map[string]string{}
+	}
+	if (feature.Gates.Enabled(feature.RuntimeSDK) && hooks.IsPending(runtimehooksv1.AfterClusterUpgrade, s.Current.Cluster)) ||
+		(!feature.Gates.Enabled(feature.RuntimeSDK) && (len(s.UpgradeTracker.ControlPlane.UpgradePlan) > 0 || len(s.UpgradeTracker.MachineDeployments.UpgradePlan) > 0 || len(s.UpgradeTracker.MachinePools.UpgradePlan) > 0)) {
 		controlPlaneVersion, err := contract.ControlPlane().Version().Get(controlPlane)
 		if err != nil {
 			return nil, errors.Wrap(err, "error getting control plane version")
 		}
-		annotations.AddAnnotations(cluster, map[string]string{clusterv1.ClusterTopologyUpgradeStepAnnotation: *controlPlaneVersion})
+		cluster.Annotations[clusterv1.ClusterTopologyUpgradeStepAnnotation] = *controlPlaneVersion
 	} else {
 		delete(cluster.Annotations, clusterv1.ClusterTopologyUpgradeStepAnnotation)
 	}
@@ -896,6 +919,7 @@ func (g *generator) computeMachineDeployment(ctx context.Context, s *scope.Scope
 	}
 	if !reflect.DeepEqual(machineDeploymentTopology.Rollout, clusterv1.MachineDeploymentTopologyRolloutSpec{}) {
 		rollout = clusterv1.MachineDeploymentRolloutSpec{
+			After: machineDeploymentTopology.Rollout.After,
 			Strategy: clusterv1.MachineDeploymentRolloutStrategy{
 				Type: machineDeploymentTopology.Rollout.Strategy.Type,
 				RollingUpdate: clusterv1.MachineDeploymentRolloutStrategyRollingUpdate{
@@ -941,6 +965,11 @@ func (g *generator) computeMachineDeployment(ctx context.Context, s *scope.Scope
 		readinessGates = machineDeploymentTopology.ReadinessGates
 	}
 
+	taints := machineDeploymentClass.Taints
+	if machineDeploymentTopology.Taints != nil {
+		taints = machineDeploymentTopology.Taints
+	}
+
 	// Compute the MachineDeployment object.
 	desiredBootstrapTemplateRef := contract.ObjToContractVersionedObjectReference(desiredMachineDeployment.BootstrapTemplate)
 	desiredInfraMachineTemplateRef := contract.ObjToContractVersionedObjectReference(desiredMachineDeployment.InfrastructureMachineTemplate)
@@ -956,10 +985,6 @@ func (g *generator) computeMachineDeployment(ctx context.Context, s *scope.Scope
 	}
 
 	desiredMachineDeploymentObj := &clusterv1.MachineDeployment{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "MachineDeployment",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: s.Current.Cluster.Namespace,
@@ -986,6 +1011,7 @@ func (g *generator) computeMachineDeployment(ctx context.Context, s *scope.Scope
 						NodeDeletionTimeoutSeconds:     nodeDeletionTimeout,
 					},
 					ReadinessGates:  readinessGates,
+					Taints:          taints,
 					MinReadySeconds: minReadySeconds,
 				},
 			},
@@ -1296,6 +1322,11 @@ func (g *generator) computeMachinePool(ctx context.Context, s *scope.Scope, mach
 		nodeDeletionTimeout = machinePoolTopology.Deletion.NodeDeletionTimeoutSeconds
 	}
 
+	taints := machinePoolClass.Taints
+	if machinePoolTopology.Taints != nil {
+		taints = machinePoolTopology.Taints
+	}
+
 	// Compute the MachinePool object.
 	desiredBootstrapConfigRef := contract.ObjToContractVersionedObjectReference(desiredMachinePool.BootstrapObject)
 	desiredInfraMachinePoolRef := contract.ObjToContractVersionedObjectReference(desiredMachinePool.InfrastructureMachinePoolObject)
@@ -1311,10 +1342,6 @@ func (g *generator) computeMachinePool(ctx context.Context, s *scope.Scope, mach
 	}
 
 	desiredMachinePoolObj := &clusterv1.MachinePool{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "MachinePool",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: s.Current.Cluster.Namespace,
@@ -1334,6 +1361,7 @@ func (g *generator) computeMachinePool(ctx context.Context, s *scope.Scope, mach
 						NodeDeletionTimeoutSeconds:     nodeDeletionTimeout,
 					},
 					MinReadySeconds: minReadySeconds,
+					Taints:          taints,
 				},
 			},
 		},
@@ -1623,10 +1651,6 @@ func templateToTemplate(in templateToInput) (*unstructured.Unstructured, error) 
 func computeMachineHealthCheck(ctx context.Context, healthCheckTarget client.Object, selector *metav1.LabelSelector, cluster *clusterv1.Cluster, mhcChecks clusterv1.MachineHealthCheckChecks, mhcRemediation clusterv1.MachineHealthCheckRemediation) *clusterv1.MachineHealthCheck {
 	// Create a MachineHealthCheck with the spec given in the ClusterClass.
 	mhc := &clusterv1.MachineHealthCheck{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "MachineHealthCheck",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      healthCheckTarget.GetName(),
 			Namespace: healthCheckTarget.GetNamespace(),
@@ -1649,39 +1673,25 @@ func computeMachineHealthCheck(ctx context.Context, healthCheckTarget client.Obj
 
 	// Default all fields in the MachineHealthCheck using the same function called in the webhook. This ensures the desired
 	// state of the object won't be different from the current state due to webhook Defaulting.
-	if err := (&webhooks.MachineHealthCheck{}).Default(ctx, mhc); err != nil {
+	if err := (&coreadmission.MachineHealthCheck{}).Default(ctx, mhc); err != nil {
 		panic(err)
 	}
 
 	return mhc
 }
 
-func getOwnerReferenceFrom(obj, owner client.Object) *metav1.OwnerReference {
+func getOwnerReferenceFrom(obj, owner client.Object, ownerGVK schema.GroupVersionKind) *metav1.OwnerReference {
 	for _, o := range obj.GetOwnerReferences() {
-		if o.Kind == owner.GetObjectKind().GroupVersionKind().Kind && o.Name == owner.GetName() {
+		if o.Kind == ownerGVK.Kind && o.Name == owner.GetName() {
 			return &o
 		}
 	}
 	return nil
 }
 
-func cleanupV1Beta1Cluster(cluster *clusterv1beta1.Cluster) *clusterv1beta1.Cluster {
-	// Optimize size of Cluster by not sending status, the managedFields and some specific annotations.
-	cluster.SetManagedFields(nil)
-
-	// The conversion that we run before calling cleanupCluster does not clone annotations
-	// So we have to do it here to not modify the original Cluster.
-	if cluster.Annotations != nil {
-		annotations := maps.Clone(cluster.Annotations)
-		delete(annotations, corev1.LastAppliedConfigAnnotation)
-		delete(annotations, conversion.DataAnnotation)
-		cluster.Annotations = annotations
-	}
-	cluster.Status = clusterv1beta1.ClusterStatus{}
-	return cluster
-}
-
 func cleanupCluster(cluster *clusterv1.Cluster) *clusterv1.Cluster {
+	cluster = cluster.DeepCopy()
+
 	// Optimize size of Cluster by not sending status, the managedFields and some specific annotations.
 	cluster.SetManagedFields(nil)
 
@@ -1690,7 +1700,7 @@ func cleanupCluster(cluster *clusterv1.Cluster) *clusterv1.Cluster {
 	if cluster.Annotations != nil {
 		annotations := maps.Clone(cluster.Annotations)
 		delete(annotations, corev1.LastAppliedConfigAnnotation)
-		delete(annotations, conversion.DataAnnotation)
+		delete(annotations, conversionutil.DataAnnotation)
 		cluster.Annotations = annotations
 	}
 	cluster.Status = clusterv1.ClusterStatus{}

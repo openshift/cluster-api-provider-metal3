@@ -29,7 +29,6 @@ import (
 	"sync"
 	"time"
 
-	// comment for go-lint.
 	"github.com/go-logr/logr"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
@@ -37,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/selection"
@@ -48,7 +48,7 @@ import (
 	"k8s.io/utils/ptr"
 	controlplanev1 "sigs.k8s.io/cluster-api/api/controlplane/kubeadm/v1beta2"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capierrors "sigs.k8s.io/cluster-api/errors"
+	capierrors "sigs.k8s.io/cluster-api/api/deprecated/errors"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	deprecatedv1beta1conditions "sigs.k8s.io/cluster-api/util/conditions/deprecated/v1beta1"
@@ -70,6 +70,10 @@ const (
 	bmRoleNode         = "node"
 	// PausedAnnotationKey is an annotation to be used for pausing a BMH.
 	PausedAnnotationKey = "metal3.io/capm3"
+	// BlockMoveAnnotation is the clusterctl annotation that prevents an object
+	// from being moved until it is removed. Used to synchronize pause/status
+	// annotation application with clusterctl pivot operations.
+	BlockMoveAnnotation = "clusterctl.cluster.x-k8s.io/block-move"
 	// ProviderIDPrefix is a prefix for ProviderID.
 	ProviderIDPrefix = "metal3://"
 	// ProviderLabelPrefix is a label prefix for ProviderID.
@@ -93,11 +97,10 @@ type MachineManagerInterface interface {
 	IsBaremetalHostProvisioned(context.Context) bool
 	IsBootstrapReady() bool
 	MachineHasNodeRef() bool
-	Associate(context.Context) error
+	Associate(context.Context) (string, error)
 	Delete(context.Context) error
 	Update(context.Context) error
 	HasAnnotation() bool
-	GetProviderIDAndBMHID() (string, *string)
 	SetProviderID(string)
 	SetDefaultProviderID() error
 	SetProviderIDFromCloudProviderNode(context.Context, ClientGetter) error
@@ -107,12 +110,13 @@ type MachineManagerInterface interface {
 	Metal3MachineHasProviderID() bool
 	SetPauseAnnotation(context.Context) error
 	RemovePauseAnnotation(context.Context) error
+	EnsureBlockMoveAnnotation(context.Context) error
 	DissociateM3Metadata(context.Context) error
 	AssociateM3Metadata(context.Context) error
 	SetError(string, capierrors.MachineStatusError)
-	SetConditionMetal3MachineToFalse(clusterv1.ConditionType, string, clusterv1.ConditionSeverity, string, ...any)
-	SetConditionMetal3MachineToTrue(clusterv1.ConditionType)
-	SetV1beta2Condition(string, metav1.ConditionStatus, string, string)
+	SetV1Beta1ConditionToFalse(clusterv1.ConditionType, string, clusterv1.ConditionSeverity, string, ...any)
+	SetV1Beta1ConditionToTrue(clusterv1.ConditionType)
+	SetCondition(string, metav1.ConditionStatus, string, string)
 	CloudProviderEnabled() bool
 	SetReadyTrue()
 	GetMetal3Machine() *infrav1.Metal3Machine
@@ -185,10 +189,10 @@ func (m *MachineManager) UnsetFinalizer() {
 
 // IsProvisioned checks if the metal3machine is provisioned.
 func (m *MachineManager) IsProvisioned() bool {
-	if m.Metal3Machine.Spec.ProviderID != nil && m.Metal3Machine.Status.Ready {
+	if m.Metal3Machine.Spec.ProviderID != "" && ptr.Deref(m.Metal3Machine.Status.Initialization.Provisioned, false) {
 		m.Log.V(VerbosityLevelTrace).Info("Metal3Machine is provisioned",
 			LogFieldMetal3Machine, m.Metal3Machine.Name,
-			LogFieldProviderID, *m.Metal3Machine.Spec.ProviderID)
+			LogFieldProviderID, m.Metal3Machine.Spec.ProviderID)
 		return true
 	}
 	m.Log.V(VerbosityLevelTrace).Info("Metal3Machine is not provisioned",
@@ -244,6 +248,46 @@ func (m *MachineManager) role() string {
 		return bmRoleControlPlane
 	}
 	return bmRoleNode
+}
+
+// EnsureBlockMoveAnnotation ensures the block-move annotation is present on
+// the associated BareMetalHost to prevent clusterctl from moving it while the
+// BareMetalHost is not paused.
+// The annotation is NOT re-set if the BMH already has a pause annotation.
+func (m *MachineManager) EnsureBlockMoveAnnotation(ctx context.Context) error {
+	host, helper, err := m.getHost(ctx)
+	if err != nil {
+		return err
+	}
+	if host == nil {
+		return nil
+	}
+	// Only set on BMH that are associated with a Metal3Machine (have a consumer)
+	if host.Spec.ConsumerRef == nil || !consumerRefMatches(host.Spec.ConsumerRef, m.Metal3Machine) {
+		return nil
+	}
+
+	annotations := host.GetAnnotations()
+	if annotations == nil {
+		annotations = make(map[string]string)
+	}
+
+	if _, exists := annotations[BlockMoveAnnotation]; exists {
+		return nil // Already present
+	}
+
+	// Don't re-set block-move if BMH is already paused — SetPauseAnnotation()
+	// already completed its lifecycle and intentionally removed block-move.
+	if _, paused := annotations[bmov1alpha1.PausedAnnotation]; paused {
+		return nil
+	}
+
+	m.Log.Info("Ensuring block-move annotation on BareMetalHost",
+		LogFieldHost, host.Name,
+		LogFieldNamespace, host.Namespace)
+	annotations[BlockMoveAnnotation] = ""
+	host.SetAnnotations(annotations)
+	return helper.Patch(ctx, host)
 }
 
 // RemovePauseAnnotation checks and/or Removes the pause annotations on associated bmh.
@@ -302,6 +346,16 @@ func (m *MachineManager) SetPauseAnnotation(ctx context.Context) error {
 
 	if annotations != nil {
 		if _, ok := annotations[bmov1alpha1.PausedAnnotation]; ok {
+			// BMH is already paused. Clean up block-move annotation if present.
+			if _, hasBlockMove := annotations[BlockMoveAnnotation]; hasBlockMove {
+				m.Log.Info("Removing stale block-move annotation from paused BMH",
+					LogFieldHost, host.Name,
+					LogFieldNamespace, host.Namespace)
+				delete(host.Annotations, BlockMoveAnnotation)
+				if patchErr := helper.Patch(ctx, host); patchErr != nil {
+					return fmt.Errorf("failed to remove stale block-move annotation: %w", patchErr)
+				}
+			}
 			m.Log.Info("BareMetalHost is already paused",
 				LogFieldHost, host.Name,
 				LogFieldNamespace, host.Namespace)
@@ -310,6 +364,24 @@ func (m *MachineManager) SetPauseAnnotation(ctx context.Context) error {
 	} else {
 		host.Annotations = make(map[string]string)
 	}
+
+	// Ensure block-move annotation is present to prevent clusterctl
+	// from moving the BMH before pause and status annotations are set.
+	if _, hasBlockMove := host.Annotations[BlockMoveAnnotation]; !hasBlockMove {
+		m.Log.Info("Setting block-move annotation on BareMetalHost",
+			LogFieldHost, host.Name,
+			LogFieldNamespace, host.Namespace)
+		host.Annotations[BlockMoveAnnotation] = ""
+		if patchErr := helper.Patch(ctx, host); patchErr != nil {
+			return fmt.Errorf("failed to set block-move annotation: %w", patchErr)
+		}
+		helper, err = patch.NewHelper(host, m.client)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Set pause and status annotations
 	m.Log.Info("Adding pause annotation to BareMetalHost",
 		LogFieldHost, host.Name,
 		LogFieldNamespace, host.Namespace)
@@ -336,11 +408,31 @@ func (m *MachineManager) SetPauseAnnotation(ctx context.Context) error {
 		return fmt.Errorf("failed to marshal status annotation: %w", err)
 	}
 	host.Annotations[bmov1alpha1.StatusAnnotation] = string(newAnnotation)
-	return helper.Patch(ctx, host)
+
+	if patchErr := helper.Patch(ctx, host); patchErr != nil {
+		return fmt.Errorf("failed to set pause annotations: %w", patchErr)
+	}
+
+	helper, err = patch.NewHelper(host, m.client)
+	if err != nil {
+		return err
+	}
+
+	if _, hasBlockMove := host.Annotations[BlockMoveAnnotation]; hasBlockMove {
+		m.Log.Info("Removing block-move annotation from BareMetalHost",
+			LogFieldHost, host.Name,
+			LogFieldNamespace, host.Namespace)
+		delete(host.Annotations, BlockMoveAnnotation)
+		if patchErr := helper.Patch(ctx, host); patchErr != nil {
+			return fmt.Errorf("failed to remove block-move annotation: %w", patchErr)
+		}
+	}
+
+	return nil
 }
 
 // Associate associates a machine and is invoked by the Machine Controller.
-func (m *MachineManager) Associate(ctx context.Context) error {
+func (m *MachineManager) Associate(ctx context.Context) (string, error) {
 	// Parallel attempts to associate is problematic since the same BMH
 	// could be selected for multiple M3Ms. Therefore we use a mutex lock here.
 	associateBMHMutex.Lock()
@@ -353,26 +445,27 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 	// load and validate the config
 	if m.Metal3Machine == nil {
 		// Should have been picked earlier. Do not requeue
-		return nil
+		return "", nil
 	}
 
 	// look for associated BMH
 	host, helper, err := m.getHost(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// no BMH found, trying to choose from available ones
+	chosenHostReason := infrav1.AssociateBareMetalHostSuccessReason
 	if host == nil {
-		host, helper, err = m.chooseHost(ctx)
+		host, helper, chosenHostReason, err = m.chooseHost(ctx)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if host == nil {
 			m.Log.Info("No available BareMetalHost found for Metal3Machine, requeuing",
 				LogFieldMetal3Machine, m.Metal3Machine.Name,
 				LogFieldNamespace, m.Metal3Machine.Namespace)
-			return WithTransientError(errors.New("no available host found. Requeuing"), requeueAfter)
+			return "", WithTransientError(errors.New("no available host found. Requeuing"), requeueAfter)
 		}
 		m.Log.Info("Associating Metal3Machine with selected BareMetalHost",
 			LogFieldMetal3Machine, m.Metal3Machine.Name,
@@ -387,26 +480,24 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 
 	// A machine bootstrap not ready case is caught in the controller
 	// ReconcileNormal function
-	m.getUserDataSecretName(ctx)
+	err = m.getUserDataSecretName(ctx)
+	if err != nil {
+		return "", err
+	}
 
 	m.setHostLabel(ctx, host)
 
 	err = m.setHostConsumerRef(ctx, host)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	// If the user did not provide a DataTemplate, we can directly set the host
 	// specs, nothing to wait for.
 	if m.Metal3Machine.Spec.DataTemplate == nil {
 		if err = m.setHostSpec(ctx, host); err != nil {
-			return err
+			return "", err
 		}
-	}
-
-	err = m.setBMCSecretLabel(ctx, host)
-	if err != nil {
-		return err
 	}
 
 	err = helper.Patch(ctx, host)
@@ -414,31 +505,40 @@ func (m *MachineManager) Associate(ctx context.Context) error {
 		var aggr kerrors.Aggregate
 		if ok := errors.As(err, &aggr); ok {
 			if slices.ContainsFunc(aggr.Errors(), apierrors.IsConflict) {
-				return WithTransientError(nil, requeueAfter)
+				return "", WithTransientError(nil, requeueAfter)
 			}
 		}
-		return err
+		return "", err
+	}
+
+	err = m.setBMCSecretLabel(ctx, host)
+	if err != nil {
+		return "", err
 	}
 
 	err = m.ensureAnnotation(ctx, host)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	m.Log.Info("Finished associating machine")
-	return nil
+	return chosenHostReason, nil
 }
 
-// getUserDataSecretName gets the UserDataSecretName from the machine and exposes it as a secret
-// for the BareMetalHost through Metal3Machine. The UserDataSecretName might already be in a secret with
-// CABPK v0.3.0+, but if it is in a different namespace than the BareMetalHost,
-// then we need to create the secret.
-func (m *MachineManager) getUserDataSecretName(_ context.Context) {
+// getUserDataSecretName resolves the userData secret reference for the BareMetalHost.
+// If Metal3Machine.Spec.UserData is set, it is used directly but must reference the
+// same namespace as the Metal3Machine (cross-namespace references are rejected).
+// Otherwise, the bootstrap DataSecretName or ConfigRef from the CAPI Machine is used.
+func (m *MachineManager) getUserDataSecretName(_ context.Context) error {
 	if m.Metal3Machine.Status.UserData != nil {
-		return
+		return nil
 	}
 
 	if m.Metal3Machine.Spec.UserData != nil {
+		if m.Metal3Machine.Spec.UserData.Namespace != "" && m.Metal3Machine.Spec.UserData.Namespace != m.Metal3Machine.Namespace {
+			return fmt.Errorf("cross-namespace secret reference is not allowed for userData (namespace %q does not match %q)",
+				m.Metal3Machine.Spec.UserData.Namespace, m.Metal3Machine.Namespace)
+		}
 		m.Metal3Machine.Status.UserData = m.Metal3Machine.Spec.UserData
 	}
 
@@ -448,13 +548,14 @@ func (m *MachineManager) getUserDataSecretName(_ context.Context) {
 			Name:      *m.Machine.Spec.Bootstrap.DataSecretName,
 			Namespace: m.Machine.Namespace,
 		}
-		return
+		return nil
 	} else if m.Machine.Spec.Bootstrap.ConfigRef.IsDefined() {
 		m.Metal3Machine.Status.UserData = &corev1.SecretReference{
 			Name:      m.Machine.Spec.Bootstrap.ConfigRef.Name,
 			Namespace: m.Machine.Namespace,
 		}
 	}
+	return nil
 }
 
 // Delete deletes a metal3 machine and is invoked by the Machine Controller.
@@ -479,12 +580,6 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 		if !consumerRefMatches(host.Spec.ConsumerRef, m.Metal3Machine) {
 			m.Log.Info("host already associated with another metal3 machine",
 				LogFieldHost, host.Name)
-			// Remove the ownerreference to this machine, even if the consumer ref
-			// references another machine.
-			host.OwnerReferences, err = m.DeleteOwnerRef(host.OwnerReferences)
-			if err != nil {
-				return err
-			}
 			return nil
 		}
 
@@ -531,23 +626,30 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 		}
 
 		//	Change bmh's online status to on/off  based on AutomatedCleaningMode and Capm3FastTrack values
-		//	AutomatedCleaningMode |	Capm3FastTrack|   BMH
-		//		disabled				false 			turn off
-		//		disabled				true 			turn off
-		//		metadata				false 			turn off
-		//		metadata				true 			turn on
+		//	|Capm3FastTrack |AutomatedCleaningMode | DisablePowerOff | BMH |
+		//		false			disabled				true			turn on
+		//		true			disabled				true			turn on
+		//		false			enabled					true			turn on
+		//		true			enabled					true			turn on
+		//		false			disabled				false			turn off
+		//		true			disabled				false			turn off
+		//		false			metadata				false			turn off
+		//		true			metadata				false			turn on
 
 		onlineStatus := host.Spec.Online
 
-		if host.Spec.AutomatedCleaningMode == "disabled" {
-			host.Spec.Online = false
-		} else if Capm3FastTrack == "true" {
+		switch {
+		case host.Spec.DisablePowerOff:
 			host.Spec.Online = true
-		} else if Capm3FastTrack == "false" {
+		case Capm3FastTrack == "true" &&
+			host.Spec.AutomatedCleaningMode != "disabled":
+			host.Spec.Online = true
+		default:
 			host.Spec.Online = false
 		}
-		m.Log.Info("Set host Online field by AutomatedCleaningMode",
-			LogFieldHost, host.Name,
+		m.Log.Info("Set host Online field based on DisablePowerOff, AutomatedCleaningMode, and Capm3FastTrack",
+			"log file", LogFieldHost,
+			"host", host.Name,
 			"automatedCleaningMode", host.Spec.AutomatedCleaningMode,
 			"hostSpecOnline", host.Spec.Online)
 
@@ -591,6 +693,7 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 			m.Log.Info(msg)
 			return WithTransientError(errors.New(msg), requeueAfter)
 		}
+		host.Spec.ConsumerRef = nil
 
 		if m.Cluster != nil {
 			// If cluster has DeletionTimestamp set, skip checking if nodeReuse
@@ -601,29 +704,26 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 				// machine role is ControlPlane, set nodeReuseLabelName to ControlPlane
 				// name, otherwise to MachineDeployment name.
 				m.Log.Info("Getting Metal3MachineTemplate")
-				m3mt := &infrav1.Metal3MachineTemplate{}
 				if m.Metal3Machine == nil {
 					return errors.New("metal3Machine associated with Metal3MachineTemplate is not found")
 				}
-				if m.hasTemplateAnnotation() {
-					m3mtKey := client.ObjectKey{
-						Name:      m.Metal3Machine.ObjectMeta.GetAnnotations()[clusterv1.TemplateClonedFromNameAnnotation],
-						Namespace: m.Metal3Machine.Namespace,
-					}
-					if err = m.client.Get(ctx, m3mtKey, m3mt); err != nil {
-						// we are here, because while normal deprovisioning, Metal3MachineTemplate will be deleted first
-						// and we can't get it even though Metal3Machine has reference to it. We consider it nil and move
-						// forward with normal deprovisioning.
-						m3mt = nil
-						m.Log.Info("Metal3MachineTemplate associated with Metal3Machine is deleted")
-					} else {
-						// in case of upgrading, Metal3MachineTemplate will not be deleted and we can fetch it,
-						// in order to check for node reuse feature in the next step.
-						m.Log.Info("Found Metal3machineTemplate", "metal3machineTemplate", m3mtKey.Name)
-					}
+				var m3mt *infrav1.Metal3MachineTemplate
+				m3mt, err = m.getMetal3MachineTemplate(ctx)
+				if err != nil {
+					// we are here, because while normal deprovisioning, Metal3MachineTemplate will be deleted first
+					// and we can't get it even though Metal3Machine has reference to it. We consider it nil and move
+					// forward with normal deprovisioning.
+					m3mt = nil
+					m.Log.Info("Metal3MachineTemplate associated with Metal3Machine is deleted",
+						LogFieldHost, host.Name,
+						LogFieldError, err.Error())
+				} else {
+					// in case of upgrading, Metal3MachineTemplate will not be deleted and we can fetch it,
+					// in order to check for node reuse feature in the next step.
+					m.Log.Info("Found Metal3machineTemplate", "metal3machineTemplate", m3mt.Name)
 				}
 				if m3mt != nil {
-					if m3mt.Spec.NodeReuse {
+					if ptr.Deref(m3mt.Spec.NodeReuse, false) {
 						if host.Labels == nil {
 							host.Labels = make(map[string]string)
 						}
@@ -651,32 +751,15 @@ func (m *MachineManager) Delete(ctx context.Context) error {
 							m.Log.Info("Setting nodeReuseLabelName in host to fetched MachineDeployment", LogFieldHost, host.Name, LogFieldMachineDeployment, mdName)
 							host.Labels[nodeReuseLabelName] = mdName
 						}
+						host.Spec.ConsumerRef = &corev1.ObjectReference{
+							Name:       m.Cluster.Name,
+							Namespace:  m.Cluster.Namespace,
+							APIVersion: clusterv1.GroupVersion.String(),
+							Kind:       "Cluster",
+						}
 					}
 				}
 			}
-		}
-
-		host.Spec.ConsumerRef = nil
-
-		// Delete created secret, if data was set without DataSecretName
-		if m.Machine.Spec.Bootstrap.DataSecretName == nil {
-			m.Log.Info("Deleting User data secret for machine")
-			if m.Metal3Machine.Status.UserData != nil {
-				err = deleteSecret(ctx, m.client, m.Metal3Machine.Status.UserData.Name,
-					m.Metal3Machine.Namespace,
-				)
-				if err != nil {
-					return err
-				}
-			}
-		}
-
-		host.Spec.ConsumerRef = nil
-
-		// Remove the ownerreference to this machine.
-		host.OwnerReferences, err = m.DeleteOwnerRef(host.OwnerReferences)
-		if err != nil {
-			return err
 		}
 
 		if host.Labels != nil && host.Labels[clusterv1.ClusterNameLabel] == m.Machine.Spec.ClusterName {
@@ -793,24 +876,30 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 	if annotations == nil {
 		return nil, nil //nolint:nilnil
 	}
-	hostKey, ok := annotations[HostAnnotation]
+	hostAnnotationValue, ok := annotations[HostAnnotation]
 	if !ok {
 		return nil, nil //nolint:nilnil
 	}
-	hostNamespace, hostName, err := cache.SplitMetaNamespaceKey(hostKey)
+	// The namespace prefix is ignored; the Metal3Machine's own namespace is always used
+	// to prevent cross-namespace BareMetalHost references regardless of annotation content.
+	_, hostName, err := cache.SplitMetaNamespaceKey(hostAnnotationValue)
 	if err != nil {
-		mLog.Error(err, "Error parsing annotation value", "annotation key", hostKey)
+		mLog.Error(err, "Error parsing annotation value",
+			"annotation key", HostAnnotation,
+			"annotation value", hostAnnotationValue)
 		return nil, err
 	}
 
 	host := bmov1alpha1.BareMetalHost{}
 	key := client.ObjectKey{
 		Name:      hostName,
-		Namespace: hostNamespace,
+		Namespace: m3Machine.Namespace,
 	}
 	err = cl.Get(ctx, key, &host)
 	if apierrors.IsNotFound(err) {
-		mLog.Info("Annotated host not found", LogFieldHost, hostKey)
+		mLog.Info("Annotated host not found",
+			LogFieldHost, hostName,
+			LogFieldNamespace, m3Machine.Namespace)
 		return nil, nil //nolint:nilnil
 	} else if err != nil {
 		return nil, err
@@ -818,15 +907,28 @@ func getHost(ctx context.Context, m3Machine *infrav1.Metal3Machine, cl client.Cl
 	return &host, nil
 }
 
-// chooseHost iterates through known hosts and returns one that can be
-// associated with the metal3 machine. It searches all hosts in case one already has an
-// association with this metal3 machine.
-func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetalHost, *patch.Helper, error) {
+// chooseHost iterates through known BareMetalHosts and selects one to associate
+// with the Metal3Machine. It first checks if any host already has a ConsumerRef
+// pointing to this machine, and returns it immediately if found. Otherwise it
+// builds two candidate lists: hosts with a matching nodeReuse label, and hosts
+// without one that are in Ready/Available state. Hosts with a matching nodeReuse
+// label take priority; if any such host is not yet in Ready/Available state,
+// the function requeues rather than falling back to another host.
+//
+// Returns:
+//   - *bmov1alpha1.BareMetalHost: the chosen host, or nil if none is available yet.
+//   - *patch.Helper: a patch helper for the chosen host.
+//   - string: a v1beta2 reason string indicating how the host was selected
+//     (e.g. AssociateBareMetalHostSuccessReason or
+//     AssociateBareMetalHostViaNodeReuseSuccessReason).
+//   - error: non-nil if a transient error occurred (e.g. a nodeReuse host is not
+//     yet ready) or if building the patch helper failed.
+func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetalHost, *patch.Helper, string, error) {
 	m.Log.V(VerbosityLevelTrace).Info("Choosing BareMetalHost for Metal3Machine",
 		LogFieldMetal3Machine, m.Metal3Machine.Name)
 	labelSelector, err := hostLabelSelectorForMachine(m.Metal3Machine, m.Log)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	hosts := bmov1alpha1.BareMetalHostList{}
@@ -835,7 +937,7 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 		client.MatchingLabelsSelector{Selector: labelSelector},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 	m.Log.V(VerbosityLevelDebug).Info("Found candidate BareMetalHosts",
 		LogFieldMetal3Machine, m.Metal3Machine.Name,
@@ -849,11 +951,13 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 			var helper *patch.Helper
 			m.Log.Info("Found host with existing ConsumerRef", LogFieldHost, host.Name)
 			helper, err = patch.NewHelper(&hosts.Items[i], m.client)
-			return &hosts.Items[i], helper, err
+			return &hosts.Items[i], helper, infrav1.AssociateBareMetalHostSuccessReason, err
 		}
-		if host.Spec.ConsumerRef != nil ||
-			(m.nodeReuseLabelExists(ctx, &host) &&
-				!m.nodeReuseLabelMatches(ctx, &host)) {
+		if m.nodeReuseLabelExists(ctx, &host) {
+			if !m.nodeReuseLabelMatches(ctx, &host) {
+				continue
+			}
+		} else if host.Spec.ConsumerRef != nil {
 			continue
 		}
 		if host.GetDeletionTimestamp() != nil {
@@ -870,6 +974,10 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 				continue
 			}
 			if _, ok := annotations[infrav1.UnhealthyAnnotation]; ok {
+				continue
+			}
+			if _, ok := annotations[infrav1.UnhealthyAnnotationDeprecated]; ok {
+				m.Log.Info("WARNING: BareMetalHost has deprecated unhealthy annotation, please migrate to capm3.metal3.io/unhealthy", "host", host.Name)
 				continue
 			}
 		}
@@ -896,12 +1004,12 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 	m.Log.Info("Host count available with nodeReuseLabelName while choosing host for Metal3 machine", "hostcount", len(availableHostsWithNodeReuse))
 	m.Log.Info("Host count available while choosing host for Metal3 machine", "hostcount", len(availableHosts))
 	if len(availableHostsWithNodeReuse) == 0 && len(availableHosts) == 0 {
-		return nil, nil, nil
+		return nil, nil, "", nil
 	}
 
 	// choose a host.
 	var chosenHost *bmov1alpha1.BareMetalHost
-
+	chooseHostReason := infrav1.AssociateBareMetalHostSuccessReason
 	// If there are hosts with nodeReuseLabelName:
 	if len(availableHostsWithNodeReuse) != 0 {
 		for _, host := range availableHostsWithNodeReuse {
@@ -921,12 +1029,15 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 				chosenHost, err = m.pickHost(hostsInAvailableStateWithNodeReuse)
 				if err != nil {
 					m.Log.Error(err, "Failed to choose host, not choosing host")
-					return nil, nil, err
+					return nil, nil, "", err
+				}
+				if chosenHost != nil {
+					chooseHostReason = infrav1.AssociateBareMetalHostViaNodeReuseSuccessReason
 				}
 			} else if len(hostsInNotAvailableStateWithNodeReuse) != 0 {
 				errMessage := fmt.Sprint("Found BareMetalHost(s) with nodeReuseLabelName in not-available state, requeuing the BareMetalHost", "notAvailabeHostCount", len(hostsInNotAvailableStateWithNodeReuse), "hoststate", host.Status.Provisioning.State, "host", host.Name)
 				m.Log.Info(errMessage)
-				return nil, nil, WithTransientError(errors.New(errMessage), requeueAfter)
+				return nil, nil, "", WithTransientError(errors.New(errMessage), requeueAfter)
 			}
 		}
 	} else {
@@ -936,17 +1047,22 @@ func (m *MachineManager) chooseHost(ctx context.Context) (*bmov1alpha1.BareMetal
 		chosenHost, err = m.pickHost(availableHosts)
 		if err != nil {
 			m.Log.Error(err, "Failed to choose host, not choosing host")
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 	}
 
 	helper, err := patch.NewHelper(chosenHost, m.client)
-	return chosenHost, helper, err
+	return chosenHost, helper, chooseHostReason, err
 }
 
 // hostLabelSelectorForMachine builds a label selector from the Metal3Machine's host selector.
 func hostLabelSelectorForMachine(machine *infrav1.Metal3Machine, log logr.Logger) (labels.Selector, error) {
 	labelSelector := labels.NewSelector()
+
+	// Return empty selector if HostSelector is not defined
+	if machine.Spec.HostSelector == nil {
+		return labelSelector, nil
+	}
 
 	for labelKey, labelVal := range machine.Spec.HostSelector.MatchLabels {
 		log.Info("Adding requirement to match label",
@@ -1107,46 +1223,68 @@ func (m *MachineManager) setHostSpec(_ context.Context, host *bmov1alpha1.BareMe
 	// host, we must fully deprovision it and then provision it again.
 	// Not provisioning while we do not have the UserData.
 	if host.Spec.Image == nil && host.Spec.CustomDeploy == nil && m.Metal3Machine.Status.UserData != nil {
-		checksumType := ""
-		if m.Metal3Machine.Spec.Image.ChecksumType != nil {
-			checksumType = *m.Metal3Machine.Spec.Image.ChecksumType
+		// Ensure either Image or CustomDeploy is configured
+		imageConfigured := m.Metal3Machine.Spec.Image.URL != ""
+		customDeployConfigured := m.Metal3Machine.Spec.CustomDeploy.Method != ""
+
+		if !imageConfigured && !customDeployConfigured {
+			logger := m.Log.WithValues("Metal3Machine", m.Metal3Machine.Name)
+			logger.Error(nil, "Neither Image nor CustomDeploy is configured on Metal3Machine, unable to provision")
+			return fmt.Errorf("Metal3Machine %s has neither Image.URL nor CustomDeploy.Method configured", m.Metal3Machine.Name)
 		}
-		if m.Metal3Machine.Spec.Image.URL != "" {
+
+		checksumType := ""
+		if m.Metal3Machine.Spec.Image.ChecksumType != "" {
+			checksumType = m.Metal3Machine.Spec.Image.ChecksumType
+		}
+		if imageConfigured {
 			host.Spec.Image = &bmov1alpha1.Image{
 				URL:          m.Metal3Machine.Spec.Image.URL,
-				Checksum:     m.Metal3Machine.Spec.Image.Checksum,
+				Checksum:     ptr.Deref(m.Metal3Machine.Spec.Image.Checksum, ""),
 				ChecksumType: bmov1alpha1.ChecksumType(checksumType),
-				DiskFormat:   m.Metal3Machine.Spec.Image.DiskFormat,
+				DiskFormat:   &m.Metal3Machine.Spec.Image.DiskFormat,
 			}
 		}
-		if m.Metal3Machine.Spec.CustomDeploy != nil {
+		if customDeployConfigured {
 			host.Spec.CustomDeploy = &bmov1alpha1.CustomDeploy{
 				Method: m.Metal3Machine.Spec.CustomDeploy.Method,
 			}
 		}
 		host.Spec.UserData = m.Metal3Machine.Status.UserData
-		if host.Spec.UserData != nil && host.Spec.UserData.Namespace == "" {
-			host.Spec.UserData.Namespace = host.Namespace
+		if host.Spec.UserData != nil {
+			if host.Spec.UserData.Namespace == "" {
+				host.Spec.UserData.Namespace = host.Namespace
+			} else if host.Spec.UserData.Namespace != m.Metal3Machine.Namespace {
+				return fmt.Errorf("cross-namespace secret reference is not allowed for userData on host %s", host.Name)
+			}
 		}
 
 		// Set metadata from gathering from Spec.metadata and from the template.
 		if m.Metal3Machine.Status.MetaData != nil {
 			host.Spec.MetaData = m.Metal3Machine.Status.MetaData
 		}
-		if host.Spec.MetaData != nil && host.Spec.MetaData.Namespace == "" {
-			host.Spec.MetaData.Namespace = m.Machine.Namespace
+		if host.Spec.MetaData != nil {
+			if host.Spec.MetaData.Namespace == "" {
+				host.Spec.MetaData.Namespace = m.Machine.Namespace
+			} else if host.Spec.MetaData.Namespace != m.Metal3Machine.Namespace {
+				return fmt.Errorf("cross-namespace secret reference is not allowed for metaData on host %s", host.Name)
+			}
 		}
 		if m.Metal3Machine.Status.NetworkData != nil {
 			host.Spec.NetworkData = m.Metal3Machine.Status.NetworkData
 		}
-		if host.Spec.NetworkData != nil && host.Spec.NetworkData.Namespace == "" {
-			host.Spec.NetworkData.Namespace = m.Machine.Namespace
+		if host.Spec.NetworkData != nil {
+			if host.Spec.NetworkData.Namespace == "" {
+				host.Spec.NetworkData.Namespace = m.Machine.Namespace
+			} else if host.Spec.NetworkData.Namespace != m.Metal3Machine.Namespace {
+				return fmt.Errorf("cross-namespace secret reference is not allowed for networkData on host %s", host.Name)
+			}
 		}
 	}
 	// Set automatedCleaningMode from metal3Machine.spec.automatedCleaningMode.
-	if m.Metal3Machine.Spec.AutomatedCleaningMode != nil {
-		if host.Spec.AutomatedCleaningMode != bmov1alpha1.AutomatedCleaningMode(*m.Metal3Machine.Spec.AutomatedCleaningMode) {
-			host.Spec.AutomatedCleaningMode = bmov1alpha1.AutomatedCleaningMode(*m.Metal3Machine.Spec.AutomatedCleaningMode)
+	if m.Metal3Machine.Spec.AutomatedCleaningMode != "" {
+		if host.Spec.AutomatedCleaningMode != bmov1alpha1.AutomatedCleaningMode(m.Metal3Machine.Spec.AutomatedCleaningMode) {
+			host.Spec.AutomatedCleaningMode = bmov1alpha1.AutomatedCleaningMode(m.Metal3Machine.Spec.AutomatedCleaningMode)
 		}
 	}
 
@@ -1164,13 +1302,6 @@ func (m *MachineManager) setHostConsumerRef(_ context.Context, host *bmov1alpha1
 		Namespace:  m.Metal3Machine.Namespace,
 		APIVersion: m.Metal3Machine.APIVersion,
 	}
-
-	// Set OwnerReferences.
-	hostOwnerReferences, err := m.SetOwnerRef(host.OwnerReferences, true)
-	if err != nil {
-		return err
-	}
-	host.OwnerReferences = hostOwnerReferences
 
 	// Delete nodeReuseLabelName from host.
 	m.Log.Info("Deleting nodeReuseLabelName from host, if any")
@@ -1221,17 +1352,6 @@ func (m *MachineManager) HasAnnotation() bool {
 	return ok
 }
 
-// hasTemplateAnnotation makes sure the metal3 machine has infrastructure machine
-// annotation that stores the name of the infrastructure template resource.
-func (m *MachineManager) hasTemplateAnnotation() bool {
-	annotations := m.Metal3Machine.ObjectMeta.GetAnnotations()
-	if annotations == nil {
-		return false
-	}
-	_, ok := annotations[clusterv1.TemplateClonedFromNameAnnotation]
-	return ok
-}
-
 // SetError sets the ErrorMessage and ErrorReason fields on the machine and logs
 // the message. It assumes the reason is invalid configuration, since that is
 // currently the only relevant MachineStatusError choice.
@@ -1246,13 +1366,18 @@ func (m *MachineManager) SetError(message string, reason capierrors.MachineStatu
 	m.Metal3Machine.Status.Deprecated.V1Beta1.FailureReason = &reason
 }
 
-// SetConditionMetal3MachineToFalse sets Metal3Machine condition status to False.
-func (m *MachineManager) SetConditionMetal3MachineToFalse(t clusterv1.ConditionType, reason string, severity clusterv1.ConditionSeverity, messageFormat string, messageArgs ...any) {
+// SetV1Beta1ConditionToFalse sets Metal3Machine condition status to False.
+func (m *MachineManager) SetV1Beta1ConditionToFalse(t clusterv1.ConditionType, reason string, severity clusterv1.ConditionSeverity, messageFormat string, messageArgs ...any) {
 	deprecatedv1beta1conditions.MarkFalse(m.Metal3Machine, t, reason, severity, messageFormat, messageArgs...)
 }
 
-// SetV1beta2Condition sets v1beta2 condition in Metal3Machine status.
-func (m *MachineManager) SetV1beta2Condition(conditionType string, status metav1.ConditionStatus, reason string, message string) {
+// SetV1Beta1ConditionToTrue sets Metal3Machine condition status to True.
+func (m *MachineManager) SetV1Beta1ConditionToTrue(t clusterv1.ConditionType) {
+	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, t)
+}
+
+// SetCondition sets a condition in Metal3Machine status.
+func (m *MachineManager) SetCondition(conditionType string, status metav1.ConditionStatus, reason string, message string) {
 	conditions.Set(m.Metal3Machine, metav1.Condition{
 		Type:    conditionType,
 		Status:  status,
@@ -1261,15 +1386,7 @@ func (m *MachineManager) SetV1beta2Condition(conditionType string, status metav1
 	})
 }
 
-// SetConditionMetal3MachineToTrue sets Metal3Machine condition status to True.
-func (m *MachineManager) SetConditionMetal3MachineToTrue(t clusterv1.ConditionType) {
-	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, t)
-}
-
 func (m *MachineManager) CloudProviderEnabled() bool {
-	if m.Metal3Cluster.Spec.NoCloudProvider != nil && !*m.Metal3Cluster.Spec.NoCloudProvider {
-		return true
-	}
 	if m.Metal3Cluster.Spec.CloudProviderEnabled != nil && *m.Metal3Cluster.Spec.CloudProviderEnabled {
 		return true
 	}
@@ -1283,12 +1400,18 @@ func (m *MachineManager) updateMachineStatus(_ context.Context, host *bmov1alpha
 	metal3MachineOld := m.Metal3Machine.DeepCopy()
 
 	m.Metal3Machine.Status.Addresses = addrs
-	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, infrav1.AssociateBMHCondition)
-	conditions.Set(m.Metal3Machine, metav1.Condition{
-		Type:   infrav1.AssociateBareMetalHostV1Beta2Condition,
-		Status: metav1.ConditionTrue,
-		Reason: infrav1.AssociateBareMetalHostSuccessV1Beta2Reason,
-	})
+
+	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, infrav1.AssociateBMHV1Beta1Condition)
+
+	// Only set v1beta2 condition if it's not already true
+	existingCondition := conditions.Get(m.Metal3Machine, infrav1.AssociateBareMetalHostCondition)
+	if existingCondition == nil || existingCondition.Status != metav1.ConditionTrue {
+		conditions.Set(m.Metal3Machine, metav1.Condition{
+			Type:   infrav1.AssociateBareMetalHostCondition,
+			Status: metav1.ConditionTrue,
+			Reason: infrav1.AssociateBareMetalHostSuccessReason,
+		})
+	}
 
 	if equality.Semantic.DeepEqual(m.Metal3Machine.Status, metal3MachineOld.Status) {
 		// Status did not change
@@ -1335,27 +1458,6 @@ func (m *MachineManager) nodeAddresses(host *bmov1alpha1.BareMetalHost) []cluste
 	return addrs
 }
 
-// GetProviderIDAndBMHID returns providerID and bmhID.
-func (m *MachineManager) GetProviderIDAndBMHID() (string, *string) {
-	providerID := m.Metal3Machine.Spec.ProviderID
-	if providerID == nil {
-		return "", nil
-	}
-	bmhID := *providerID
-	if strings.Contains(bmhID, ProviderIDPrefix) {
-		bmhID = strings.TrimPrefix(bmhID, ProviderIDPrefix)
-	}
-	// If the providerID is in new format, it does not contain the BMH ID, but
-	// instead contains / to separate the names. In that case we return nil for
-	// the bmh ID to force the controller to fetch it differently.
-	if strings.Contains(bmhID, "/") {
-		m.Log.Info("ProviderID is in new format, it does not contain the BMH ID", "providerID", *providerID)
-		return *providerID, nil
-	}
-	m.Log.V(VerbosityLevelDebug).Info("ProviderID contains the BMH ID", "providerID", *providerID)
-	return *providerID, ptr.To(bmhID)
-}
-
 // ClientGetter prototype.
 type ClientGetter func(ctx context.Context, c client.Client, cluster *clusterv1.Cluster) (clientcorev1.CoreV1Interface, error)
 
@@ -1400,10 +1502,10 @@ func (m *MachineManager) getMetal3MachineHostnames() []string {
 // SetProviderID sets the metal3 provider ID on the Metal3Machine.
 func (m *MachineManager) SetProviderID(providerID string) {
 	m.Log.Info("ProviderID set on the Metal3Machine", "providerID", providerID)
-	m.Metal3Machine.Spec.ProviderID = &providerID
+	m.Metal3Machine.Spec.ProviderID = providerID
 }
 
-// SetDefaultProviderID sets the ProviderID on this Metal3Machine using the new format.
+// SetDefaultProviderID sets the ProviderID on this Metal3Machine using the proper format.
 func (m *MachineManager) SetDefaultProviderID() error {
 	namespace := m.Metal3Machine.GetNamespace()
 	m3mName := m.Metal3Machine.GetName()
@@ -1419,8 +1521,8 @@ func (m *MachineManager) SetDefaultProviderID() error {
 	return nil
 }
 
-// getPossibleProviderIDs returns the ProviderID for this Metal3Machine in the legacy and the new format.
-func (m *MachineManager) getPossibleProviderIDs(ctx context.Context) (providerIDLegacy string, providerIDNew string, err error) {
+// getProviderID returns the ProviderID for this Metal3Machine in proper format.
+func (m *MachineManager) getProviderID() (providerID string, err error) {
 	namespace := m.Metal3Machine.GetNamespace()
 	m3mName := m.Metal3Machine.GetName()
 	bmhName, err := m.getBmhNameFromM3Machine()
@@ -1430,15 +1532,7 @@ func (m *MachineManager) getPossibleProviderIDs(ctx context.Context) (providerID
 		err = fmt.Errorf("%s: %w", errMessage, err)
 		return
 	}
-	bmhUID, err := m.getBmhUIDFromM3Machine(ctx)
-	if err != nil {
-		errMessage := "unable to retrieve BMH UID from Metal3Machine"
-		m.Log.Info(errMessage)
-		err = fmt.Errorf("%s: %w", errMessage, err)
-		return
-	}
-	providerIDLegacy = "metal3://" + bmhUID
-	providerIDNew = fmt.Sprintf("metal3://%s/%s/%s", namespace, bmhName, m3mName)
+	providerID = fmt.Sprintf("metal3://%s/%s/%s", namespace, bmhName, m3mName)
 
 	return
 }
@@ -1446,12 +1540,12 @@ func (m *MachineManager) getPossibleProviderIDs(ctx context.Context) (providerID
 // SetProviderIDFromCloudProviderNode finds a Node by ProviderID and copies that ProviderID to the Metal3Machine.
 func (m *MachineManager) SetProviderIDFromCloudProviderNode(ctx context.Context, clientFactory ClientGetter) error {
 	m.Log.V(VerbosityLevelTrace).Info("Setting ProviderID from cloud provider node")
-	providerIDLegacy, providerIDNew, err := m.getPossibleProviderIDs(ctx)
+	providerID, err := m.getProviderID()
 	if err != nil {
 		return WithTransientError(err, requeueAfter)
 	}
 
-	node, err := m.getNodeByProviderID(ctx, providerIDLegacy, providerIDNew, clientFactory)
+	node, err := m.getNodeByProviderID(ctx, providerID, clientFactory)
 	if err != nil {
 		errMessage := "error retrieving node, requeuing"
 		m.Log.Info(errMessage)
@@ -1470,12 +1564,12 @@ func (m *MachineManager) NodeWithMatchingProviderIDExists(ctx context.Context, c
 		return false
 	}
 
-	providerIDLegacy, providerIDNew, err := m.getPossibleProviderIDs(ctx)
+	providerID, err := m.getProviderID()
 	if err != nil {
 		return false
 	}
 
-	node, err := m.getNodeByProviderID(ctx, providerIDLegacy, providerIDNew, clientFactory)
+	node, err := m.getNodeByProviderID(ctx, providerID, clientFactory)
 	if err != nil {
 		errMessage := "error retrieving node, requeuing"
 		m.Log.Info(errMessage)
@@ -1518,7 +1612,7 @@ func (m *MachineManager) SetProviderIDFromNodeLabel(ctx context.Context, clientF
 		return false, fmt.Errorf("found multiple target nodes with the same label: (%s): %w", nodeLabel, err)
 	}
 
-	providerIDLegacy, providerIDNew, err := m.getPossibleProviderIDs(ctx)
+	providerID, err := m.getProviderID()
 	if err != nil {
 		errMessage := fmt.Sprintf("unable to retrieve BMH name from Metal3Machine: %v", err)
 		m.Log.Info(errMessage)
@@ -1530,9 +1624,9 @@ func (m *MachineManager) SetProviderIDFromNodeLabel(ctx context.Context, clientF
 		providerIDOnNode := node.Spec.ProviderID
 		if providerIDOnNode == "" {
 			// By default we use the new format, if not set on the node.
-			m.SetProviderID(providerIDNew)
+			m.SetProviderID(providerID)
 			m.SetReadyTrue()
-			err = m.setNodeProviderID(ctx, corev1Remote, node, providerIDNew)
+			err = m.setNodeProviderID(ctx, corev1Remote, node, providerID)
 
 			if err != nil {
 				return false, err
@@ -1541,19 +1635,13 @@ func (m *MachineManager) SetProviderIDFromNodeLabel(ctx context.Context, clientF
 			return true, nil
 		}
 
-		if providerIDOnNode == providerIDNew {
-			m.SetProviderID(providerIDNew)
+		if providerIDOnNode == providerID {
+			m.SetProviderID(providerID)
 			m.SetReadyTrue()
 			return true, nil
 		}
 
-		if providerIDOnNode == providerIDLegacy {
-			m.SetProviderID(providerIDLegacy)
-			m.SetReadyTrue()
-			return true, nil
-		}
-
-		m.Log.Info("node using unsupported providerID format", "providerID", providerIDOnNode, "providerIDLegacy", providerIDLegacy, "providerIDNew", providerIDNew)
+		m.Log.Info("node using unsupported providerID format", "providerID", providerIDOnNode, "providerID", providerID)
 		return false, fmt.Errorf("node using unsupported providerID format: %w", err)
 	}
 
@@ -1561,70 +1649,22 @@ func (m *MachineManager) SetProviderIDFromNodeLabel(ctx context.Context, clientF
 }
 
 func (m *MachineManager) Metal3MachineHasProviderID() bool {
-	return m.Metal3Machine.Spec.ProviderID != nil
+	return m.Metal3Machine.Spec.ProviderID != ""
 }
 
 func (m *MachineManager) SetReadyTrue() {
-	m.Metal3Machine.Status.Ready = true
+	m.Metal3Machine.Status.Initialization.Provisioned = ptr.To(true)
 }
 
 // SetMetal3DataReadyConditionTrue marks Metal3Data Ready conditions to True
 // for both deprecated v1beta1 and v1beta2 conditions on the Metal3Machine.
 func (m *MachineManager) SetMetal3DataReadyConditionTrue(reason string) {
-	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, infrav1.Metal3DataReadyCondition)
+	deprecatedv1beta1conditions.MarkTrue(m.Metal3Machine, infrav1.Metal3DataReadyV1Beta1Condition)
 	conditions.Set(m.Metal3Machine, metav1.Condition{
-		Type:   infrav1.Metal3DataReadyV1Beta2Condition,
+		Type:   infrav1.Metal3DataReadyCondition,
 		Status: metav1.ConditionTrue,
 		Reason: reason,
 	})
-}
-
-// SetOwnerRef adds an ownerreference to this Metal3Machine.
-func (m *MachineManager) SetOwnerRef(refList []metav1.OwnerReference, controller bool) ([]metav1.OwnerReference, error) {
-	return setOwnerRefInList(refList, controller, m.Metal3Machine.TypeMeta,
-		m.Metal3Machine.ObjectMeta,
-	)
-}
-
-// DeleteOwnerRef removes the ownerreference to this Metal3Machine.
-func (m *MachineManager) DeleteOwnerRef(refList []metav1.OwnerReference) ([]metav1.OwnerReference, error) {
-	return deleteOwnerRefFromList(refList, m.Metal3Machine.TypeMeta,
-		m.Metal3Machine.ObjectMeta,
-	)
-}
-
-// DeleteOwnerRefFromList removes the ownerreference to this Metal3Machine.
-func deleteOwnerRefFromList(refList []metav1.OwnerReference,
-	objType metav1.TypeMeta, objMeta metav1.ObjectMeta,
-) ([]metav1.OwnerReference, error) {
-	if len(refList) == 0 {
-		return refList, nil
-	}
-	index, err := findOwnerRefFromList(refList, objType, objMeta)
-	if err != nil {
-		if ok := errors.As(err, &errNotFound); !ok {
-			return nil, err
-		}
-		return refList, nil
-	}
-	if len(refList) == 1 {
-		return []metav1.OwnerReference{}, nil
-	}
-	refListLen := len(refList) - 1
-	refList[index] = refList[refListLen]
-	refList, err = deleteOwnerRefFromList(refList[:refListLen], objType, objMeta)
-	if err != nil {
-		return nil, err
-	}
-	return refList, nil
-}
-
-// FindOwnerRef checks if an ownerreference to this Metal3Machine exists
-// and returns the index.
-func (m *MachineManager) FindOwnerRef(refList []metav1.OwnerReference) (int, error) {
-	return findOwnerRefFromList(refList, m.Metal3Machine.TypeMeta,
-		m.Metal3Machine.ObjectMeta,
-	)
 }
 
 // SetOwnerRef adds an ownerreference to this Metal3Machine.
@@ -1682,11 +1722,20 @@ func findOwnerRefFromList(refList []metav1.OwnerReference, objType metav1.TypeMe
 func (m *MachineManager) AssociateM3Metadata(ctx context.Context) error {
 	m.Log.V(VerbosityLevelTrace).Info("Associating M3Metadata with Metal3Machine",
 		LogFieldMetal3Machine, m.Metal3Machine.Name)
-	// If the secrets were provided by the user, use them.
+	// If the secrets were provided by the user, use them after enforcing
+	// same-namespace constraint to prevent cross-namespace secret disclosure.
 	if m.Metal3Machine.Spec.MetaData != nil {
+		if m.Metal3Machine.Spec.MetaData.Namespace != "" && m.Metal3Machine.Spec.MetaData.Namespace != m.Metal3Machine.Namespace {
+			return fmt.Errorf("cross-namespace secret reference is not allowed for metaData (namespace %q does not match %q)",
+				m.Metal3Machine.Spec.MetaData.Namespace, m.Metal3Machine.Namespace)
+		}
 		m.Metal3Machine.Status.MetaData = m.Metal3Machine.Spec.MetaData
 	}
 	if m.Metal3Machine.Spec.NetworkData != nil {
+		if m.Metal3Machine.Spec.NetworkData.Namespace != "" && m.Metal3Machine.Spec.NetworkData.Namespace != m.Metal3Machine.Namespace {
+			return fmt.Errorf("cross-namespace secret reference is not allowed for networkData (namespace %q does not match %q)",
+				m.Metal3Machine.Spec.NetworkData.Namespace, m.Metal3Machine.Namespace)
+		}
 		m.Metal3Machine.Status.NetworkData = m.Metal3Machine.Spec.NetworkData
 	}
 
@@ -1733,7 +1782,7 @@ func (m *MachineManager) AssociateM3Metadata(ctx context.Context) error {
 			Labels: m.Metal3Machine.Labels,
 		},
 		Spec: infrav1.Metal3DataClaimSpec{
-			Template: *m.Metal3Machine.Spec.DataTemplate,
+			Template: m.Metal3Machine.Spec.DataTemplate,
 		},
 	}
 
@@ -1786,11 +1835,11 @@ func (m *MachineManager) WaitForM3Metadata(ctx context.Context) error {
 	}
 
 	// If it is not ready yet, wait.
-	if !metal3Data.Status.Ready {
+	if metal3Data.Status.Ready == nil || !*metal3Data.Status.Ready {
 		errMessage := "waiting for Metal3Data to become ready"
 		m.Log.Info(errMessage)
-		m.SetConditionMetal3MachineToFalse(infrav1.Metal3DataReadyCondition, infrav1.WaitingForMetal3DataReason, clusterv1.ConditionSeverityInfo, "")
-		m.SetV1beta2Condition(infrav1.Metal3DataReadyV1Beta2Condition, metav1.ConditionFalse, infrav1.WaitingForMetal3DataV1Beta2Reason, "")
+		m.SetV1Beta1ConditionToFalse(infrav1.Metal3DataReadyV1Beta1Condition, infrav1.WaitingForMetal3DataV1Beta1Reason, clusterv1.ConditionSeverityInfo, "")
+		m.SetCondition(infrav1.Metal3DataReadyCondition, metav1.ConditionFalse, infrav1.WaitingForMetal3DataReason, "")
 
 		// Secret generation not ready
 		return WithTransientError(errors.New(errMessage), requeueAfter)
@@ -1798,8 +1847,8 @@ func (m *MachineManager) WaitForM3Metadata(ctx context.Context) error {
 
 	// At this point, Metal3Data is ready
 	m.Log.Info("Metal3data is ready")
-	m.SetConditionMetal3MachineToTrue(infrav1.Metal3DataReadyCondition)
-	m.SetV1beta2Condition(infrav1.Metal3DataReadyV1Beta2Condition, metav1.ConditionTrue, infrav1.Metal3DataSecretsReadyV1Beta2Reason, "")
+	m.SetV1Beta1ConditionToTrue(infrav1.Metal3DataReadyV1Beta1Condition)
+	m.SetCondition(infrav1.Metal3DataReadyCondition, metav1.ConditionTrue, infrav1.Metal3DataSecretsReadyReason, "")
 
 	// Get the secrets if given in Metal3Data and not already set.
 	if m.Metal3Machine.Status.MetaData == nil &&
@@ -1975,6 +2024,84 @@ func (m *MachineManager) getMachineSet(ctx context.Context) (*clusterv1.MachineS
 	return nil, errors.New(machineSetError)
 }
 
+// getMetal3MachineTemplate retrieves the Metal3MachineTemplate object from Metal3Machine
+// by traversing through the CAPI machine and its owner references.
+func (m *MachineManager) getMetal3MachineTemplate(ctx context.Context) (*infrav1.Metal3MachineTemplate, error) {
+	m.Log.Info("Fetching Metal3MachineTemplate")
+	if m.Machine == nil {
+		return nil, errors.New("could not find corresponding machine object")
+	}
+	if m.Machine.ObjectMeta.OwnerReferences == nil {
+		return nil, errors.New("machine owner reference is not populated")
+	}
+
+	// Check if this is a worker machine first.
+	if !m.isControlPlane() {
+		// This is a worker machine, get MachineSet first.
+		machineSet, err := m.getMachineSet(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get MachineSet: %w", err)
+		}
+
+		// Get Metal3MachineTemplate from MachineSet.
+		m3mt := &infrav1.Metal3MachineTemplate{}
+		m3mtKey := client.ObjectKey{
+			Name:      machineSet.Spec.Template.Spec.InfrastructureRef.Name,
+			Namespace: machineSet.Namespace,
+		}
+		if err := m.client.Get(ctx, m3mtKey, m3mt); err != nil {
+			return nil, fmt.Errorf("failed to get Metal3MachineTemplate from MachineSet: %w", err)
+		}
+		m.Log.Info("Fetched Metal3MachineTemplate from MachineSet", "metal3MachineTemplate", m3mt.Name)
+		return m3mt, nil
+	}
+
+	// This is a control plane machine. Iterate over all owner references and try to find one
+	// that exposes the infra template ref at spec.machineTemplate.spec.infrastructureRef.
+	// We use unstructured to support any control plane provider, not just KubeadmControlPlane,
+	// following the same pattern CAPI uses for all infra providers.
+	for _, mOwnerRef := range m.Machine.ObjectMeta.OwnerReferences {
+		// Fetch the owner object as unstructured to support any control plane provider.
+		cpObj := &unstructured.Unstructured{}
+		cpObj.SetAPIVersion(mOwnerRef.APIVersion)
+		cpObj.SetKind(mOwnerRef.Kind)
+		cpKey := client.ObjectKey{
+			Name:      mOwnerRef.Name,
+			Namespace: m.Machine.Namespace,
+		}
+		if err := m.client.Get(ctx, cpKey, cpObj); err != nil {
+			return nil, fmt.Errorf("failed to get owner object %s %s: %w", mOwnerRef.Kind, mOwnerRef.Name, err)
+		}
+
+		// According to CAPI contract control plane providers must expose the infra template ref at
+		// spec.machineTemplate.spec.infrastructureRef. If not present, this owner is
+		// not a control plane provider - skip it.
+		m3mtName, found, err := unstructured.NestedString(cpObj.Object, "spec", "machineTemplate", "spec", "infrastructureRef", "name")
+		if err != nil || !found || m3mtName == "" {
+			continue
+		}
+
+		m3mtNamespace, _, _ := unstructured.NestedString(cpObj.Object, "spec", "machineTemplate", "spec", "infrastructureRef", "namespace")
+		if m3mtNamespace == "" {
+			m3mtNamespace = m.Machine.Namespace
+		}
+
+		// Get Metal3MachineTemplate.
+		m3mt := &infrav1.Metal3MachineTemplate{}
+		m3mtKey := client.ObjectKey{
+			Name:      m3mtName,
+			Namespace: m3mtNamespace,
+		}
+		if err := m.client.Get(ctx, m3mtKey, m3mt); err != nil {
+			return nil, fmt.Errorf("failed to get Metal3MachineTemplate from control plane %s: %w", mOwnerRef.Kind, err)
+		}
+		m.Log.Info("Fetched Metal3MachineTemplate from control plane", "kind", mOwnerRef.Kind, "metal3MachineTemplate", m3mt.Name)
+		return m3mt, nil
+	}
+
+	return nil, errors.New("no owner reference with spec.machineTemplate.spec.infrastructureRef found in machine owner references")
+}
+
 // getBmhNameFromM3Machine retrieves bmhName from m3m annotations.
 func (m *MachineManager) getBmhNameFromM3Machine() (string, error) {
 	annotationValue := m.Metal3Machine.ObjectMeta.GetAnnotations()[HostAnnotation]
@@ -2080,7 +2207,7 @@ func (m *MachineManager) SetNodeProviderIDByHostname(ctx context.Context, client
 
 	m.Log.Info("found a node, setting provider id on it", LogFieldNode, node.Name)
 
-	err = m.setNodeProviderID(ctx, corev1Remote, node, *m.Metal3Machine.Spec.ProviderID)
+	err = m.setNodeProviderID(ctx, corev1Remote, node, m.Metal3Machine.Spec.ProviderID)
 
 	if err != nil {
 		return fmt.Errorf("unable to update the target node with providerID: %w", err)
@@ -2090,7 +2217,7 @@ func (m *MachineManager) SetNodeProviderIDByHostname(ctx context.Context, client
 	return nil
 }
 
-func (m *MachineManager) getNodeByProviderID(ctx context.Context, providerIDLegacy, providerIDNew string, clientFactory ClientGetter) (corev1.Node, error) {
+func (m *MachineManager) getNodeByProviderID(ctx context.Context, providerID string, clientFactory ClientGetter) (corev1.Node, error) {
 	corev1Remote, err := clientFactory(ctx, m.client, m.Cluster)
 	if err != nil {
 		return corev1.Node{}, fmt.Errorf("error creating a remote client: %w", err)
@@ -2110,10 +2237,8 @@ func (m *MachineManager) getNodeByProviderID(ctx context.Context, providerIDLega
 		providerIDOnNode := node.Spec.ProviderID
 		if providerIDOnNode == "" {
 			m.Log.Info("no providerID value found on node", LogFieldNode, node.GetName())
-		} else if providerIDOnNode == providerIDNew {
-			matchingNodeProviderID = providerIDNew
-		} else if providerIDOnNode == providerIDLegacy {
-			matchingNodeProviderID = providerIDLegacy
+		} else if providerIDOnNode == providerID {
+			matchingNodeProviderID = providerID
 		} else {
 			m.Log.Info("The node does not match expected providerID. Considering other nodes ", LogFieldNode, node.GetName(), LogFieldProviderID, providerIDOnNode)
 		}
@@ -2121,7 +2246,7 @@ func (m *MachineManager) getNodeByProviderID(ctx context.Context, providerIDLega
 			validNodes[providerIDOnNode] = append(validNodes[providerIDOnNode], node)
 		}
 	}
-	err = m.duplicateProviderIDsExist(validNodes, providerIDLegacy, providerIDNew)
+	err = m.duplicateProviderIDsExist(validNodes, providerID)
 	if err != nil {
 		// There are, at least, two nodes. Details are in err
 		return corev1.Node{}, err
@@ -2145,35 +2270,31 @@ func getNodeNames(nodes []corev1.Node) string {
 	return strings.Join(names, ", ")
 }
 
-// duplicateProviderIDsExist determnes if a providerID is already in use by other nodes.
-func (m *MachineManager) duplicateProviderIDsExist(validNodes map[string][]corev1.Node, providerIDLegacy, providerIDNew string) error {
+// duplicateProviderIDsExist determines if a providerID is already in use by other nodes.
+func (m *MachineManager) duplicateProviderIDsExist(validNodes map[string][]corev1.Node, providerID string) error {
 	duplicateUsageCounter := 0
 	var duplicateNodes []corev1.Node
 	// Check if any node has metal3://<namespace>/<bmh>/ as a beginning of providerID
-	newProviderIDMatch := providerIDNew[:strings.LastIndex(providerIDNew, "/")+1]
-	for providerID, nodes := range validNodes {
-		// verify if the same providerId is not consumed twice. Example:
-		// legacy provider-id: metal3://d668eb95-5df6-4c10-a01a-fc69f4299fc6
-		// new format provider-id:   metal3://metal3/node-0/test-controlplane-xyz
-		// The above two providerIDs are the same and would consume the same bmh node,
-		// the former using uuid and the latter using a name.
+	providerIDMatch := providerID[:strings.LastIndex(providerID, "/")+1]
+	for nodeProviderID, nodes := range validNodes {
+		// verify if the same providerId is not consumed twice.
 		// The check below prevents such double providerID consumptions.
-		if providerID == providerIDLegacy || strings.Contains(providerID, newProviderIDMatch) {
+		if strings.Contains(nodeProviderID, providerIDMatch) {
 			duplicateUsageCounter++
 			duplicateNodes = append(duplicateNodes, nodes...)
 		}
-		// duplicates due to the same, at least, two instances of legacy OR new OR unknown formats being used in multiple nodes.
+		// duplicates due to the same, at least, two instances proper OR unknown formats being used in multiple nodes.
 		if len(nodes) > 1 {
 			matchingNodes := getNodeNames(nodes)
-			errMessage := fmt.Sprintf("providerID %s is in use by multiple nodes: (%s)", providerID, matchingNodes)
+			errMessage := fmt.Sprintf("providerID %s is in use by multiple nodes: (%s)", nodeProviderID, matchingNodes)
 			m.Log.Info(errMessage)
 			return errors.New(errMessage)
 		}
 	}
-	// duplicates due to both the legacy AND new providerIDs being used by multiple nodes.
+	// duplicates due to providerID being used by multiple nodes.
 	if duplicateUsageCounter > 1 {
 		duplicateNodesNames := getNodeNames(duplicateNodes)
-		errMessage := fmt.Sprintf("both providerIDs (%s and %s) cannot be used at the same time by node: (%s)", providerIDLegacy, providerIDNew, duplicateNodesNames)
+		errMessage := fmt.Sprintf("providerID (%s) cannot be used at the same time by node: (%s)", providerID, duplicateNodesNames)
 		m.Log.Info(errMessage)
 		return errors.New(errMessage)
 	}

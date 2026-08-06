@@ -239,7 +239,9 @@ spec:
               providerID:
                 description: |-
                   ProviderID will be the Metal3 machine in ProviderID format
-                  (metal3://<bmh-uuid>)
+                  (metal3://<namespace>/<bmh-name>/<m3m-name>).
+                  The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                  and removed in CAPM3 v1.14.
                 type: string
               userData:
                 description: |-
@@ -569,17 +571,13 @@ spec:
       jsonPath: .spec.providerID
       name: ProviderID
       type: string
-    - description: metal3machine is Ready
-      jsonPath: .status.ready
-      name: Ready
+    - description: Metal3Machine is provisioned
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
       type: string
     - description: Cluster to which this M3Machine belongs
       jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
       name: Cluster
-      type: string
-    - description: metal3machine current phase
-      jsonPath: .status.phase
-      name: Phase
       type: string
     name: v1beta2
     schema:
@@ -604,10 +602,11 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3MachineSpec defines the desired state of Metal3Machine.
+            description: spec defines the desired state of Metal3Machine.
             properties:
               automatedCleaningMode:
                 description: |-
+                  automatedCleaningMode determines the mode of automated cleaning.
                   When set to disabled, automated cleaning of host disks will be skipped
                   during provisioning and deprovisioning.
                 enum:
@@ -615,120 +614,116 @@ spec:
                 - disabled
                 type: string
               customDeploy:
-                description: A custom deploy procedure.
+                description: |-
+                  customDeploy is a custom deploy procedure.
+                  Either image or customDeploy is required.
                 properties:
                   method:
                     description: |-
-                      Custom deploy method name.
+                      method is the name of the deploy method.
                       This name is specific to the deploy ramdisk used. If you don't have
                       a custom deploy ramdisk, you shouldn't use CustomDeploy.
+                    maxLength: 512
+                    minLength: 1
                     type: string
                 required:
                 - method
                 type: object
               dataTemplate:
                 description: |-
-                  MetadataTemplate is a reference to a Metal3DataTemplate object containing
+                  dataTemplate is a reference to a Metal3DataTemplate object containing
                   a template of metadata to be rendered. Metadata keys defined in the
                   metadataTemplate take precedence over keys defined in metadata field.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
               failureDomain:
-                description: FailureDomain is the failure domain unique identifier
-                  this Machine should be attached to, as defined in Cluster API.
+                description: failureDomain is the failure domain unique identifier
+                  this machine should be attached to, as defined in Cluster API.
+                maxLength: 256
+                minLength: 1
                 type: string
               hostSelector:
                 description: |-
-                  HostSelector specifies matching criteria for labels on BareMetalHosts.
+                  hostSelector specifies matching criteria for labels on BareMetalHosts.
                   This is used to limit the set of BareMetalHost objects considered for
                   claiming for a metal3machine.
                 properties:
                   matchExpressions:
-                    description: Label match expressions that must be true on a chosen
-                      BareMetalHost
+                    description: matchExpressions specifies match expressions that
+                      must be true on a chosen BareMetalHost
                     items:
                       properties:
                         key:
+                          description: key is the label key that the selector applies
+                            to.
+                          maxLength: 512
+                          minLength: 1
                           type: string
                         operator:
-                          description: |-
-                            Operator represents a key/field's relationship to value(s).
-                            See labels.Requirement and fields.Requirement for more details.
+                          description: operator represents a key's relationship to
+                            a set of values.
                           type: string
                         values:
+                          description: values is an array of string of required values.
                           items:
+                            maxLength: 512
+                            minLength: 1
                             type: string
+                          maxItems: 512
                           type: array
+                          x-kubernetes-list-type: set
                       required:
                       - key
                       - operator
                       - values
                       type: object
+                    maxItems: 512
+                    minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - key
+                    x-kubernetes-list-type: map
                   matchLabels:
                     additionalProperties:
                       type: string
-                    description: Key/value pairs of labels that must exist on a chosen
-                      BareMetalHost
+                    description: matchLabels specifies key/value pairs of labels that
+                      must exist on a chosen BareMetalHost
                     type: object
                 type: object
               image:
-                description: Image is the image to be provisioned.
+                description: |-
+                  image is the image to be provisioned.
+                  Either image or customDeploy is required.
                 properties:
                   checksum:
-                    description: Checksum is a md5sum, sha256sum or sha512sum value
-                      or a URL to retrieve one.
+                    description: |-
+                      checksum is a md5sum, sha256sum or sha512sum value or a URL to retrieve one.
+                      When diskFormat is live-iso, empty string is also a valid value.
+                    maxLength: 512
+                    minLength: 0
                     type: string
                   checksumType:
                     description: |-
-                      ChecksumType is the checksum algorithm for the image.
+                      checksumType is the checksum algorithm for the image.
                       e.g md5, sha256, sha512
                     enum:
                     - md5
                     - sha256
                     - sha512
                     type: string
-                  format:
-                    description: DiskFormat contains the image disk format.
+                  diskFormat:
+                    description: diskFormat contains the image disk format.
                     enum:
                     - raw
                     - qcow2
@@ -737,7 +732,10 @@ spec:
                     - live-iso
                     type: string
                   url:
-                    description: URL is a location of an image to deploy.
+                    description: url is a location of an image to deploy.
+                    format: uri
+                    maxLength: 512
+                    minLength: 1
                     type: string
                 required:
                 - checksum
@@ -745,8 +743,8 @@ spec:
                 type: object
               metaData:
                 description: |-
-                  MetaData is an object storing the reference to the secret containing the
-                  Metadata given by the user.
+                  metaData is an object storing the reference to the secret containing the
+                  metadata given by the user.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -760,7 +758,7 @@ spec:
                 x-kubernetes-map-type: atomic
               networkData:
                 description: |-
-                  NetworkData is an object storing the reference to the secret containing the
+                  networkData is an object storing the reference to the secret containing the
                   network data given by the user.
                 properties:
                   name:
@@ -775,12 +773,17 @@ spec:
                 x-kubernetes-map-type: atomic
               providerID:
                 description: |-
-                  ProviderID will be the Metal3 machine in ProviderID format
-                  (metal3://<bmh-uuid>)
+                  providerID must match the provider ID as seen on the node object corresponding to this machine.
+                  For Kubernetes Nodes running on the Metal3 provider, this value is set by the corresponding CPI component
+                  and it has the format metal3://<namespace>/<bmh-name>/<m3m-name>.
+                  The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+                  and removed in CAPM3 v1.14.
+                maxLength: 512
+                minLength: 1
                 type: string
               userData:
                 description: |-
-                  UserData references the Secret that holds user data needed by the bare metal
+                  userData references the Secret that holds user data needed by the bare metal
                   operator. The Namespace is optional; it will default to the metal3machine's
                   namespace if not specified.
                 properties:
@@ -796,12 +799,10 @@ spec:
                 x-kubernetes-map-type: atomic
             type: object
           status:
-            description: Metal3MachineStatus defines the observed state of Metal3Machine.
+            description: status defines the observed state of Metal3Machine.
             properties:
               addresses:
-                description: |-
-                  Addresses is a list of addresses assigned to the machine.
-                  This field is copied from the infrastructure provider reference.
+                description: addresses contains the associated addresses for the machine.
                 items:
                   description: MachineAddress contains information for the node's
                     address.
@@ -825,7 +826,8 @@ spec:
                   - address
                   - type
                   type: object
-                maxItems: 128
+                maxItems: 32
+                minItems: 1
                 type: array
                 x-kubernetes-list-type: atomic
               conditions:
@@ -903,12 +905,14 @@ spec:
                     properties:
                       conditions:
                         description: |-
-                          Conditions defines current service state of the Metal3Machine.
+                          conditions defines current service state of the Metal3Machine.
 
                           Deprecated: This field is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                         items:
-                          description: Condition defines an observation of a Cluster
-                            API resource operational state.
+                          description: |-
+                            Condition defines an observation of a Cluster API resource operational state.
+
+                            Deprecated: This type is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                           properties:
                             lastTransitionTime:
                               description: |-
@@ -959,7 +963,7 @@ spec:
                         type: array
                       failureMessage:
                         description: |-
-                          FailureMessage will be set in the event that there is a terminal problem
+                          failureMessage will be set in the event that there is a terminal problem
                           reconciling the metal3machine and will contain a more verbose string suitable
                           for logging and human consumption.
 
@@ -980,7 +984,7 @@ spec:
                         type: string
                       failureReason:
                         description: |-
-                          FailureReason will be set in the event that there is a terminal problem
+                          failureReason will be set in the event that there is a terminal problem
                           reconciling the metal3machine and will contain a succinct value suitable
                           for machine interpretation.
 
@@ -1001,14 +1005,26 @@ spec:
                         type: string
                     type: object
                 type: object
+              initialization:
+                description: |-
+                  initialization provides observations of the Metal3Machine initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Machine provisioning.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      provisioned is true when the infrastructure provider reports that the Machine's infrastructure is fully provisioned.
+                      NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Machine provisioning.
+                    type: boolean
+                type: object
               lastUpdated:
-                description: LastUpdated identifies when this status was last observed.
+                description: lastUpdated identifies when this status was last observed.
                 format: date-time
                 type: string
               metaData:
                 description: |-
-                  MetaData is an object storing the reference to the secret containing the
-                  Metadata used to deploy the BareMetalHost.
+                  metaData is an object storing the reference to the secret containing the
+                  metadata used to deploy the BareMetalHost.
                 properties:
                   name:
                     description: name is unique within a namespace to reference a
@@ -1022,7 +1038,7 @@ spec:
                 x-kubernetes-map-type: atomic
               networkData:
                 description: |-
-                  NetworkData is an object storing the reference to the secret containing the
+                  networkData is an object storing the reference to the secret containing the
                   network data used to deploy the BareMetalHost.
                 properties:
                   name:
@@ -1035,65 +1051,26 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              phase:
-                description: |-
-                  Phase represents the current phase of machine actuation.
-                  E.g. Pending, Running, Terminating, Failed etc.
-                type: string
-              ready:
-                description: |-
-                  Ready is the state of the metal3.
-                  mhrivnak: " it would be good to document what this means, how to interpret
-                  it, under what circumstances the value changes, etc."
-                type: boolean
               renderedData:
                 description: |-
-                  RenderedData is a reference to a rendered Metal3Data object containing
+                  renderedData is a reference to a rendered Metal3Data object containing
                   the references to metaData and networkData secrets.
                 properties:
-                  apiVersion:
-                    description: API version of the referent.
-                    type: string
-                  fieldPath:
-                    description: |-
-                      If referring to a piece of an object instead of an entire object, this string
-                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
-                      For example, if the object reference is to a container within a pod, this would take on a value like:
-                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
-                      the event) or if no container name is specified "spec.containers[2]" (container with
-                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
-                      referencing a part of an object.
-                    type: string
-                  kind:
-                    description: |-
-                      Kind of the referent.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
-                    type: string
                   name:
-                    description: |-
-                      Name of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    description: name of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   namespace:
-                    description: |-
-                      Namespace of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
-                    type: string
-                  resourceVersion:
-                    description: |-
-                      Specific resourceVersion to which this reference is made, if any.
-                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
-                    type: string
-                  uid:
-                    description: |-
-                      UID of the referent.
-                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    description: namespace of the resource.
+                    maxLength: 253
+                    minLength: 1
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
               userData:
                 description: |-
-                  UserData references the Secret that holds user data needed by the bare metal
+                  userData references the Secret that holds user data needed by the bare metal
                   operator. The Namespace is optional; it will default to the metal3machine's
                   namespace if not specified.
                 properties:

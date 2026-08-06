@@ -98,11 +98,16 @@ var _ = Describe("Metal3 manager utils", func() {
 			Namespace: namespaceName,
 		},
 		Spec: infrav1.Metal3MachineSpec{
-			ProviderID:            ptr.To("abcdef"),
-			AutomatedCleaningMode: ptr.To("metadata"),
+			AutomatedCleaningMode: "metadata",
+			Image: infrav1.Image{
+				URL:      "http://example.com/image.qcow2",
+				Checksum: ptr.To("abcd1234"),
+			},
 		},
 		Status: infrav1.Metal3MachineStatus{
-			Ready: true,
+			Initialization: infrav1.Metal3MachineInitializationStatus{
+				Provisioned: ptr.To(true),
+			},
 		},
 	}
 
@@ -112,10 +117,15 @@ var _ = Describe("Metal3 manager utils", func() {
 			Namespace: namespaceName,
 		},
 		Spec: infrav1.Metal3MachineSpec{
-			ProviderID: ptr.To("abcdefg"),
+			Image: infrav1.Image{
+				URL:      "http://example.com/image.qcow2",
+				Checksum: ptr.To("abcd1234"),
+			},
 		},
 		Status: infrav1.Metal3MachineStatus{
-			Ready: true,
+			Initialization: infrav1.Metal3MachineInitializationStatus{
+				Provisioned: ptr.To(true),
+			},
 		},
 	}
 
@@ -391,40 +401,10 @@ var _ = Describe("Metal3 manager utils", func() {
 		Entry("Object exists", true),
 	)
 
-	DescribeTable("Test deleteSecret",
-		func(secretExists bool) {
-			if secretExists {
-				err := k8sClient.Create(context.TODO(), &corev1.Secret{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:       "abc",
-						Namespace:  namespaceName,
-						Finalizers: []string{"foo.bar/foo"},
-					},
-				})
-				Expect(err).NotTo(HaveOccurred())
-			}
-
-			err := deleteSecret(context.TODO(), k8sClient, "abc", namespaceName)
-			Expect(err).NotTo(HaveOccurred())
-			savedSecret := corev1.Secret{}
-			err = k8sClient.Get(context.TODO(),
-				client.ObjectKey{
-					Name:      "abc",
-					Namespace: namespaceName,
-				},
-				&savedSecret,
-			)
-			Expect(err).To(HaveOccurred())
-			Expect(apierrors.IsNotFound(err)).To(BeTrue())
-		},
-		Entry("Object does not exist", false),
-		Entry("Object exists", true),
-	)
-
 	type testCaseFetchM3DataTemplate struct {
 		DataTemplate  *infrav1.Metal3DataTemplate
 		ClusterName   string
-		TemplateRef   *corev1.ObjectReference
+		TemplateRef   *infrav1.Metal3ObjectRef
 		ExpectError   bool
 		ExpectEmpty   bool
 		ExpectRequeue bool
@@ -461,7 +441,7 @@ var _ = Describe("Metal3 manager utils", func() {
 			}
 		},
 		Entry("Object does not exist", testCaseFetchM3DataTemplate{
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -471,7 +451,7 @@ var _ = Describe("Metal3 manager utils", func() {
 			ExpectEmpty: true,
 		}),
 		Entry("Object Ref Name empty", testCaseFetchM3DataTemplate{
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name: "",
 			},
 			ExpectError: true,
@@ -484,7 +464,7 @@ var _ = Describe("Metal3 manager utils", func() {
 				},
 			},
 			ClusterName: "def",
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -498,7 +478,7 @@ var _ = Describe("Metal3 manager utils", func() {
 				},
 			},
 			ClusterName: clusterName,
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -606,6 +586,12 @@ var _ = Describe("Metal3 manager utils", func() {
 		Entry("Object exists", testCaseGetM3Machine{
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
+				Spec: infrav1.Metal3MachineSpec{
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
+				},
 			},
 			Name:      metal3machineName,
 			Namespace: namespaceName,
@@ -615,6 +601,10 @@ var _ = Describe("Metal3 manager utils", func() {
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
 					DataTemplate: nil,
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
 				},
 			},
 			DataTemplate: &infrav1.Metal3DataTemplate{
@@ -628,9 +618,13 @@ var _ = Describe("Metal3 manager utils", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      "abcd",
 						Namespace: namespaceName,
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
@@ -645,9 +639,13 @@ var _ = Describe("Metal3 manager utils", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      metal3DataTemplateName,
 						Namespace: "defg",
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
@@ -659,9 +657,4 @@ var _ = Describe("Metal3 manager utils", func() {
 			ExpectEmpty: true,
 		}),
 	)
-
-	It("Parses the providerID properly", func() {
-		Expect(parseProviderID(ProviderIDPrefix + "abcd")).To(Equal("abcd"))
-		Expect(parseProviderID("foo://abcd")).To(Equal("foo://abcd"))
-	})
 })

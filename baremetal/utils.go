@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	// comment for go-lint.
@@ -32,7 +31,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capipamv1 "sigs.k8s.io/cluster-api/api/ipam/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -253,32 +251,9 @@ func checkSecretExists(ctx context.Context, cl client.Client, name string,
 	return tmpBootstrapSecret, err
 }
 
-func deleteSecret(ctx context.Context, cl client.Client, name string,
-	namespace string,
-) error {
-	tmpBootstrapSecret, err := checkSecretExists(ctx, cl, name, namespace)
-	if err != nil && !apierrors.IsNotFound(err) {
-		return err
-	} else if err == nil {
-		// unset the finalizers (remove all since we do not expect anything else
-		// to control that object).
-		tmpBootstrapSecret.Finalizers = []string{}
-		err = updateObject(ctx, cl, &tmpBootstrapSecret)
-		if err != nil {
-			return err
-		}
-		// Delete the secret with metadata.
-		err = cl.Delete(ctx, &tmpBootstrapSecret)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return err
-		}
-	}
-	return nil
-}
-
 // fetchM3DataTemplate returns the Metal3DataTemplate object.
 func fetchM3DataTemplate(ctx context.Context,
-	templateRef *corev1.ObjectReference, cl client.Client, mLog logr.Logger,
+	templateRef *infrav1.Metal3ObjectRef, cl client.Client, mLog logr.Logger,
 	clusterName string,
 ) (*infrav1.Metal3DataTemplate, error) {
 	// If the user did not specify a Metal3DataTemplate, just keep going.
@@ -401,38 +376,34 @@ func getM3Machine(ctx context.Context, cl client.Client, mLog logr.Logger,
 	return tmpM3Machine, nil
 }
 
-func parseProviderID(providerID string) string {
-	return strings.TrimPrefix(providerID, ProviderIDPrefix)
-}
-
 func ConvertTypedLocalObjectReferenceToIPPoolReference(
-	ref corev1.TypedLocalObjectReference,
+	ref infrav1.IPPoolReference,
 ) capipamv1.IPPoolReference {
-	if ref.APIGroup == nil || *ref.APIGroup == "" {
-		ref.APIGroup = ptr.To("ipam.metal3.io")
+	if ref.APIGroup == "" {
+		ref.APIGroup = IPPoolAPIGroup
 	}
 	if ref.Kind == "" {
 		ref.Kind = "IPPool"
 	}
 	return capipamv1.IPPoolReference{
 		Name:     ref.Name,
-		APIGroup: *ref.APIGroup,
+		APIGroup: ref.APIGroup,
 		Kind:     ref.Kind,
 	}
 }
 
 func ConvertIPPoolReferenceToTypedLocalObjectReference(
 	ref capipamv1.IPPoolReference,
-) corev1.TypedLocalObjectReference {
+) infrav1.IPPoolReference {
 	if ref.APIGroup == "" {
-		ref.APIGroup = "ipam.metal3.io"
+		ref.APIGroup = IPPoolAPIGroup
 	}
 	if ref.Kind == "" {
 		ref.Kind = "IPPool"
 	}
-	return corev1.TypedLocalObjectReference{
+	return infrav1.IPPoolReference{
 		Name:     ref.Name,
-		APIGroup: &ref.APIGroup,
+		APIGroup: ref.APIGroup,
 		Kind:     ref.Kind,
 	}
 }

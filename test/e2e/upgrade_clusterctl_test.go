@@ -20,11 +20,9 @@ import (
 )
 
 const (
-	workDir                  = "/opt/metal3-dev-env/"
-	capiContract             = "v1beta2"
-	capm3Contract            = "v1beta1"
-	releaseMarkerPrefixCAPM3 = "go://github.com/metal3-io/cluster-api-provider-metal3@v%s"
-	releaseMarkerPrefixIPAM  = "go://github.com/metal3-io/ip-address-manager@v%s"
+	workDir       = "/opt/metal3-dev-env/"
+	capiContract  = "v1beta2"
+	capm3Contract = "v1beta2"
 )
 
 var (
@@ -39,28 +37,35 @@ var (
 	managementClusterNamespace string
 )
 
-// Ironic 33.0 -> latest image tag.
-var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", Label("clusterctl-upgrade"), func() {
+// Ironic 35.0 -> latest image tag.
+var _ = Describe("When testing cluster upgrade from releases (v1.13=>current)", Label("clusterctl-upgrade"), func() {
+	minorVersion := "1.13"
+	bmoFromRelease := "0.13"
+	ironicFromRelease := "35.0"
+	bmoToRelease := "main"
+	ironicToRelease := "main"
+
+	// Use the .99 versions available in the local artifact repository (built from
+	// release branch kustomize overlays in e2e_conf.yaml). The old clusterctl binary
+	// resolves provider components from the local repo, which only has .99 versions —
+	// not the actual released patch versions. Core CAPI providers work because
+	// clusterctl has built-in GitHub URLs for them.
+	capm3InitVersion := minorVersion + ".99"
+	ipamInitVersion := minorVersion + ".99"
+	var capiStableRelease string
+
 	BeforeEach(func() {
-		k8sVersion = "v1.35.0"
+		k8sVersion = "v1.36.2"
 		validateGlobals(specName)
 		imageURL, imageChecksum := EnsureImage(k8sVersion)
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
 		os.Setenv("IMAGE_RAW_URL", imageURL)
 		clusterctlLogFolder = filepath.Join(artifactFolder, bootstrapClusterProxy.GetName())
-	})
 
-	minorVersion := "1.12"
-	bmoFromRelease := "0.12"
-	ironicFromRelease := "33.0"
-	bmoToRelease := "main"
-	ironicToRelease := "main"
-	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
-	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPM3 minor release : %s", minorVersion)
-	ipamStableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixIPAM, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for IPAM minor release : %s", minorVersion)
+		var err error
+		capiStableRelease, err = capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
+	})
 
 	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
 		return capi_e2e.ClusterctlUpgradeSpecInput{
@@ -72,8 +77,8 @@ var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", 
 			InitWithCoreProvider:            fmt.Sprintf(providerCAPIPrefix, capiStableRelease),
 			InitWithBootstrapProviders:      []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithControlPlaneProviders:   []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
-			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3StableRelease)},
-			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamStableRelease)},
+			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3InitVersion)},
+			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamInitVersion)},
 			InitWithKubernetesVersion:       k8sVersion,
 			WorkloadKubernetesVersion:       k8sVersion,
 			InitWithBinary:                  fmt.Sprintf(clusterctlDownloadURL, capiStableRelease),
@@ -97,28 +102,35 @@ var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", 
 	})
 })
 
-// Ironic 32.0 -> latest image tag.
-var _ = Describe("When testing cluster upgrade from releases (v1.11=>current)", Label("clusterctl-upgrade"), func() {
+// Ironic 33.0 -> latest image tag.
+var _ = Describe("When testing cluster upgrade from releases (v1.12=>current)", Label("clusterctl-upgrade"), func() {
+	minorVersion := "1.12"
+	bmoFromRelease := "0.12"
+	ironicFromRelease := "33.0"
+	bmoToRelease := "main"
+	ironicToRelease := "main"
+
+	// Use the .99 versions available in the local artifact repository (built from
+	// release branch kustomize overlays in e2e_conf.yaml). The old clusterctl binary
+	// resolves provider components from the local repo, which only has .99 versions —
+	// not the actual released patch versions. Core CAPI providers work because
+	// clusterctl has built-in GitHub URLs for them.
+	capm3InitVersion := minorVersion + ".99"
+	ipamInitVersion := minorVersion + ".99"
+	var capiStableRelease string
+
 	BeforeEach(func() {
-		k8sVersion = "v1.34.1"
+		k8sVersion = "v1.36.2"
 		validateGlobals(specName)
 		imageURL, imageChecksum := EnsureImage(k8sVersion)
 		os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
 		os.Setenv("IMAGE_RAW_URL", imageURL)
 		clusterctlLogFolder = filepath.Join(artifactFolder, bootstrapClusterProxy.GetName())
-	})
 
-	minorVersion := "1.11"
-	bmoFromRelease := "0.11"
-	ironicFromRelease := "32.0"
-	bmoToRelease := "main"
-	ironicToRelease := "main"
-	capiStableRelease, err := capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
-	capm3StableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixCAPM3, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPM3 minor release : %s", minorVersion)
-	ipamStableRelease, err := GetStableReleaseOfMinor(ctx, releaseMarkerPrefixIPAM, minorVersion)
-	Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for IPAM minor release : %s", minorVersion)
+		var err error
+		capiStableRelease, err = capi_e2e.GetStableReleaseOfMinor(ctx, minorVersion)
+		Expect(err).ToNot(HaveOccurred(), "Failed to get stable version for CAPI minor release : %s", minorVersion)
+	})
 
 	capi_e2e.ClusterctlUpgradeSpec(ctx, func() capi_e2e.ClusterctlUpgradeSpecInput {
 		return capi_e2e.ClusterctlUpgradeSpecInput{
@@ -130,8 +142,8 @@ var _ = Describe("When testing cluster upgrade from releases (v1.11=>current)", 
 			InitWithCoreProvider:            fmt.Sprintf(providerCAPIPrefix, capiStableRelease),
 			InitWithBootstrapProviders:      []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
 			InitWithControlPlaneProviders:   []string{fmt.Sprintf(providerKubeadmPrefix, capiStableRelease)},
-			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3StableRelease)},
-			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamStableRelease)},
+			InitWithInfrastructureProviders: []string{fmt.Sprintf(providerMetal3Prefix, capm3InitVersion)},
+			InitWithIPAMProviders:           []string{fmt.Sprintf(providerMetal3Prefix, ipamInitVersion)},
 			InitWithKubernetesVersion:       k8sVersion,
 			WorkloadKubernetesVersion:       k8sVersion,
 			InitWithBinary:                  fmt.Sprintf(clusterctlDownloadURL, capiStableRelease),
@@ -305,7 +317,11 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 	// install ironic
 	Byf("Install IRSO with ironic version %s in the target management cluster: %s", ironicRelease, clusterProxy.GetName())
 	ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicRelease)
-	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+	irsoOperatorVersion := "LATEST"
+	if ironicRelease < "32.0" {
+		irsoOperatorVersion = "0.8.0"
+	}
+	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR_" + irsoOperatorVersion)
 	irsoDeployLogFolder := filepath.Join(artifactFolder, clusterProxy.GetName(), "ironic-deploy-logs-preinit")
 	err = InstallIRSO(ctx, InstallIRSOInput{
 		E2EConfig:             e2eConfig,
@@ -340,8 +356,6 @@ func preInitFunc(clusterProxy framework.ClusterProxy, bmoRelease string, ironicR
 
 	// These exports bellow we need them after applying the management cluster template and before
 	// applying the workload. if exported before it will break creating the management because it uses v1beta1 templates and default IPs.
-	// override the provider id format
-	os.Setenv("PROVIDER_ID_FORMAT", "metal3://{{ ds.meta_data.uuid }}")
 	// override default IPs for the workload cluster
 	os.Setenv("CLUSTER_APIENDPOINT_HOST", "192.168.111.250")
 	os.Setenv("IPAM_EXTERNALV4_POOL_RANGE_START", "192.168.111.201")
@@ -368,7 +382,11 @@ func preUpgrade(clusterProxy framework.ClusterProxy, bmoUpgradeToRelease string,
 
 	Byf("Upgrade IRSO with ironic version %s in the target management cluster: %s", ironicTag, clusterProxy.GetName())
 	ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicTag)
-	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+	irsoOperatorVersion := "LATEST"
+	if ironicTag < "32.0" {
+		irsoOperatorVersion = "0.8.0"
+	}
+	irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR_" + irsoOperatorVersion)
 	irsoDeployLogFolder := filepath.Join(artifactFolder, clusterProxy.GetName(), "ironic-deploy-logs-preupgrade")
 	err = InstallIRSO(ctx, InstallIRSOInput{
 		E2EConfig:             e2eConfig,
@@ -430,7 +448,11 @@ func preCleanupManagementCluster(clusterProxy framework.ClusterProxy, ironicRele
 		} else {
 			By("Install IRSO in the bootstrap cluster")
 			ironicKustomization := e2eConfig.MustGetVariable("IRSO_IRONIC_" + ironicRelease)
-			irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR")
+			irsoOperatorVersion := "LATEST"
+			if ironicRelease < "32.0" {
+				irsoOperatorVersion = "0.8.0"
+			}
+			irsoKustomizePath := e2eConfig.MustGetVariable("IRSO_OPERATOR_" + irsoOperatorVersion)
 			irsoDeployLogFolder := filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "ironic-deploy-logs-reinstall")
 			err := InstallIRSO(ctx, InstallIRSOInput{
 				E2EConfig:             e2eConfig,

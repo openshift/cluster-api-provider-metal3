@@ -26,7 +26,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/go-github/v53/github"
+	"github.com/google/go-github/v82/github"
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 	corev1 "k8s.io/api/core/v1"
@@ -161,14 +161,14 @@ func (t *templateClient) getURLContent(ctx context.Context, templateURL string) 
 }
 
 func (t *templateClient) getLocalFileContent(rURL *url.URL) ([]byte, error) {
-	f, err := os.Stat(rURL.Path)
+	f, err := os.Stat(rURL.Path) //nolint:gosec // G703: rURL.Path comes from a parsed URL, not raw user input.
 	if err != nil {
 		return nil, errors.Errorf("failed to read file %q", rURL.Path)
 	}
 	if f.IsDir() {
 		return nil, errors.Errorf("invalid path: file %q is actually a directory", rURL.Path)
 	}
-	content, err := os.ReadFile(rURL.Path)
+	content, err := os.ReadFile(rURL.Path) //nolint:gosec // G703: rURL.Path comes from a parsed URL, not raw user input.
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to read file %q", rURL.Path)
 	}
@@ -207,7 +207,7 @@ func (t *templateClient) getGitHubFileContent(ctx context.Context, rURL *url.URL
 		return getGithubFileContentFromCode(ctx, ghClient, rURL.Path, owner, repo, path, branch)
 
 	case "releases": // get a github release asset
-		if urlSplit[3] != "download" {
+		if len(urlSplit) < 6 || urlSplit[3] != "download" {
 			break
 		}
 		tag := urlSplit[4]

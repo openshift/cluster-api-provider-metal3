@@ -16,21 +16,18 @@ package webhooks
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strconv"
 
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
 func (webhook *Metal3Data) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&infrav1.Metal3Data{}).
+	return ctrl.NewWebhookManagedBy(mgr, &infrav1.Metal3Data{}).
 		WithValidator(webhook).
 		Complete()
 }
@@ -40,31 +37,26 @@ func (webhook *Metal3Data) SetupWebhookWithManager(mgr ctrl.Manager) error {
 // Metal3Data implements a validation webhook for Metal3Data.
 type Metal3Data struct{}
 
-var _ webhook.CustomValidator = &Metal3Data{}
+var _ admission.Validator[*infrav1.Metal3Data] = &Metal3Data{}
 
 // ValidateCreate implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3Data) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	c, ok := obj.(*infrav1.Metal3Data)
-	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a Metal3Data but got a %T", obj))
-	}
-
+func (webhook *Metal3Data) ValidateCreate(_ context.Context, obj *infrav1.Metal3Data) (admission.Warnings, error) {
 	allErrs := field.ErrorList{}
-	if c.Name != c.Spec.Template.Name+"-"+strconv.Itoa(c.Spec.Index) {
+	if (obj.Spec.Index != nil && obj.Spec.Template != nil) && obj.Name != obj.Spec.Template.Name+"-"+strconv.Itoa(int(*obj.Spec.Index)) {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("name"),
-				c.Name,
+				obj.Name,
 				"should follow the convention <Metal3Template Name>-<index>",
 			),
 		)
 	}
 
-	if c.Spec.Index < 0 {
+	if obj.Spec.Index != nil && *obj.Spec.Index < int32(0) {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec", "Index"),
-				c.Spec.Index,
+				obj.Spec.Index,
 				"must be positive value",
 			),
 		)
@@ -73,24 +65,22 @@ func (webhook *Metal3Data) ValidateCreate(_ context.Context, obj runtime.Object)
 	if len(allErrs) == 0 {
 		return nil, nil
 	}
-	return nil, apierrors.NewInvalid(infrav1.GroupVersion.WithKind("Metal3Data").GroupKind(), c.Name, allErrs)
+	return nil, apierrors.NewInvalid(infrav1.GroupVersion.WithKind("Metal3Data").GroupKind(), obj.Name, allErrs)
 }
 
 // ValidateUpdate implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3Data) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
+func (webhook *Metal3Data) ValidateUpdate(_ context.Context, oldMetal3Data, newMetal3Data *infrav1.Metal3Data) (admission.Warnings, error) {
 	allErrs := field.ErrorList{}
 
-	newMetal3Data, ok := newObj.(*infrav1.Metal3Data)
-	if !ok {
-		return nil, apierrors.NewBadRequest(fmt.Sprintf("expected a Metal3Data but got a %T", newObj))
+	if oldMetal3Data == nil {
+		return nil, apierrors.NewInternalError(errors.New("expected a Metal3Data but got nil"))
 	}
 
-	oldMetal3Data, ok := oldObj.(*infrav1.Metal3Data)
-	if !ok || oldMetal3Data == nil {
-		return nil, apierrors.NewInternalError(errors.New("unable to convert existing object"))
+	if newMetal3Data == nil {
+		return nil, apierrors.NewInternalError(errors.New("expected a Metal3Data but got nil"))
 	}
 
-	if newMetal3Data.Spec.Index != oldMetal3Data.Spec.Index {
+	if ptr.Deref(newMetal3Data.Spec.Index, 0) != ptr.Deref(oldMetal3Data.Spec.Index, 0) {
 		allErrs = append(allErrs,
 			field.Invalid(
 				field.NewPath("spec", "Index"),
@@ -100,57 +90,49 @@ func (webhook *Metal3Data) ValidateUpdate(_ context.Context, oldObj, newObj runt
 		)
 	}
 
-	if newMetal3Data.Spec.Template.Name != oldMetal3Data.Spec.Template.Name {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "Template"),
-				newMetal3Data.Spec.Template,
-				"cannot be modified",
-			),
-		)
-	} else if newMetal3Data.Spec.Template.Namespace != oldMetal3Data.Spec.Template.Namespace {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "Template"),
-				newMetal3Data.Spec.Template,
-				"cannot be modified",
-			),
-		)
-	} else if newMetal3Data.Spec.Template.Kind != oldMetal3Data.Spec.Template.Kind {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "Template"),
-				newMetal3Data.Spec.Template,
-				"cannot be modified",
-			),
-		)
+	// Helper function to check if Metal3ObjectRef fields match
+	checkObjectRefChanged := func(fieldName string, newRef, oldRef *infrav1.Metal3ObjectRef) field.ErrorList {
+		var errs field.ErrorList
+		if newRef != nil || oldRef != nil {
+			var newName, oldName string
+			if newRef != nil {
+				newName = newRef.Name
+			}
+			if oldRef != nil {
+				oldName = oldRef.Name
+			}
+			if newName != oldName {
+				errs = append(errs,
+					field.Invalid(
+						field.NewPath("spec", fieldName),
+						newRef,
+						"cannot be modified",
+					),
+				)
+			} else {
+				var newNamespace, oldNamespace string
+				if newRef != nil {
+					newNamespace = newRef.Namespace
+				}
+				if oldRef != nil {
+					oldNamespace = oldRef.Namespace
+				}
+				if newNamespace != oldNamespace {
+					errs = append(errs,
+						field.Invalid(
+							field.NewPath("spec", fieldName),
+							newRef,
+							"cannot be modified",
+						),
+					)
+				}
+			}
+		}
+		return errs
 	}
 
-	if newMetal3Data.Spec.Claim.Name != oldMetal3Data.Spec.Claim.Name {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "claim"),
-				newMetal3Data.Spec.Claim,
-				"cannot be modified",
-			),
-		)
-	} else if newMetal3Data.Spec.Claim.Namespace != oldMetal3Data.Spec.Claim.Namespace {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "claim"),
-				newMetal3Data.Spec.Claim,
-				"cannot be modified",
-			),
-		)
-	} else if newMetal3Data.Spec.Claim.Kind != oldMetal3Data.Spec.Claim.Kind {
-		allErrs = append(allErrs,
-			field.Invalid(
-				field.NewPath("spec", "claim"),
-				newMetal3Data.Spec.Claim,
-				"cannot be modified",
-			),
-		)
-	}
+	allErrs = append(allErrs, checkObjectRefChanged("Template", newMetal3Data.Spec.Template, oldMetal3Data.Spec.Template)...)
+	allErrs = append(allErrs, checkObjectRefChanged("claim", newMetal3Data.Spec.Claim, oldMetal3Data.Spec.Claim)...)
 
 	if len(allErrs) == 0 {
 		return nil, nil
@@ -159,6 +141,6 @@ func (webhook *Metal3Data) ValidateUpdate(_ context.Context, oldObj, newObj runt
 }
 
 // ValidateDelete implements webhook.Validator so a webhook will be registered for the type.
-func (webhook *Metal3Data) ValidateDelete(_ context.Context, _ runtime.Object) (admission.Warnings, error) {
+func (webhook *Metal3Data) ValidateDelete(_ context.Context, _ *infrav1.Metal3Data) (admission.Warnings, error) {
 	return nil, nil
 }

@@ -18,12 +18,9 @@ if [[ "${CAPM3RELEASEBRANCH}" == release-* ]]; then
     export IPAMRELEASE="v${CAPM3_RELEASE_PREFIX}.99"
     export CAPI_RELEASE_PREFIX="v${CAPM3_RELEASE_PREFIX}."
 else
-    export CAPM3RELEASE="v1.13.99"
-    export IPAMRELEASE="v1.13.99"
-    # Commenting this out as CAPI release prefix and exporting CAPIRELEASE
-    # during pre-release phase of CAPI.
-    # We will change when minor is released.
-    export CAPI_RELEASE_PREFIX="v1.12."
+    export CAPM3RELEASE="v1.14.99"
+    export IPAMRELEASE="v1.14.99"
+    export CAPI_RELEASE_PREFIX="v1.13."
 fi
 
 # Default CAPI_CONFIG_FOLDER to $HOME/.config folder if XDG_CONFIG_HOME not set
@@ -52,7 +49,7 @@ export KUBERNETES_VERSION=${KUBERNETES_VERSION}
 export IMAGE_OS=${IMAGE_OS}
 export FORCE_REPO_UPDATE="false"
 export SKIP_NODE_IMAGE_PREPULL="true"
-export IPA_BASEURI=https://artifactory.nordix.org/artifactory/openstack-remote-cache/ironic-python-agent/dib
+export IPA_BASEURI=https://artifactory.nordix.org/artifactory/openstack-remote/ironic-python-agent/dib
 EOF
 
 # Set USE_IRSO only when IMAGE_OS is not ubuntu and not running scalability tests
@@ -91,8 +88,18 @@ case "${GINKGO_FOCUS:-}" in
     echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
     echo 'export USE_IRSO="false"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
     sed -i "s/^export NUM_NODES=.*/export NUM_NODES=30/" "${M3_DEV_ENV_PATH}/config_${USER}.sh"
-    echo 'CLUSTER_TOPOLOGY: true' >"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
+    echo 'CLUSTER_TOPOLOGY: true' >>"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
     echo 'export BOOTSTRAP_CLUSTER="minikube"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
+    # Build FKAS image from source so that the scalability test uses the latest code
+    FKAS_TAG=ci make docker-build-fkas
+  ;;
+
+  in-place-upgrade)
+    # Enable Cluster Topology and in-place updates features
+    echo 'CLUSTER_TOPOLOGY: true' >>"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
+    echo 'EXP_RUNTIME_SDK: true' >>"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
+    echo 'EXP_IN_PLACE_UPDATES: true' >>"${CAPI_CONFIG_FOLDER}/clusterctl.yaml"
+    echo 'export SKIP_APPLY_BMH="true"' >>"${M3_DEV_ENV_PATH}/config_${USER}.sh"
   ;;
 esac
 
@@ -108,6 +115,15 @@ pushd "${M3_DEV_ENV_PATH}" || exit 1
 make
 popd || exit 1
 
+# Load the locally-built FKAS image into minikube for the scalability test.
+# We use podman on CentOS, so we cannot use 'minikube image load <name>' which
+# looks in the Docker daemon. Instead, export from podman to a tar and load that.
+if [[ "${GINKGO_FOCUS:-}" == "scalability" ]]; then
+  podman save quay.io/metal3-io/metal3-fkas:ci -o /tmp/fkas-ci.tar
+  minikube image load /tmp/fkas-ci.tar
+  rm -f /tmp/fkas-ci.tar
+fi
+
 # Binaries checked below should have been installed by metal3-dev-env make.
 # Verify they are available and have correct versions.
 PATH=$PATH:/usr/local/go/bin
@@ -119,6 +135,16 @@ source "${REPO_ROOT}/hack/ensure-go.sh"
 source "${REPO_ROOT}/hack/ensure-kind.sh"
 # shellcheck source=./hack/ensure-kubectl.sh
 source "${REPO_ROOT}/hack/ensure-kubectl.sh"
+
+# If running in-place-upgrade tests, ensure extension namespace and ssh key secret exist
+if [[ "${GINKGO_FOCUS:-}" == "in-place-upgrade" ]]; then
+  EXT_NS="test-extension-system"
+  kubectl get ns "${EXT_NS}" >/dev/null 2>&1 || kubectl create ns "${EXT_NS}"
+  # Recreate the secret to ensure freshest key is used
+  kubectl -n "${EXT_NS}" delete secret ssh-key >/dev/null 2>&1 || true
+  kubectl -n "${EXT_NS}" create secret generic ssh-key \
+    --from-file=id_rsa="${HOME}/.ssh/id_rsa"
+fi
 # Ensure kustomize
 make kustomize
 
@@ -170,18 +196,20 @@ yaml_envsubst() {
 
 # Generate credentials
 BMO_OVERLAYS=(
-  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.10"
-  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.11"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.12"
+  "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-0.13"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/pr-test"
   "${REPO_ROOT}/test/e2e/data/bmo-deployment/overlays/release-main"
 )
 IRSO_IRONIC_OVERLAYS=(
-  "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/release-31.0"
-  "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/release-32.0"
   "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/release-33.0"
+  "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/release-35.0"
   "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/pr-test"
   "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/ironic/overlays/main"
+)
+IRSO_OPERATOR_OVERLAYS=(
+  "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/operator/overlays/release-0.8.0"
+  "${REPO_ROOT}/test/e2e/data/ironic-standalone-operator/operator/overlays/release-0.9.0"
 )
 
 # Update BMO and Ironic images in kustomization.yaml files to use the same image that was used before pivot in the metal3-dev-env
@@ -205,9 +233,13 @@ yaml_envsubst "${REPO_ROOT}"/test/e2e/data/bmo-deployment/overlays/pr-test
 yaml_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-standalone-operator/ironic/base/
 yaml_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-standalone-operator/ironic/components/basic-auth/
 yaml_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-standalone-operator/ironic/components/tls/
-yaml_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-standalone-operator/operator
+yaml_envsubst "${REPO_ROOT}"/test/e2e/data/ironic-standalone-operator/operator/components/configmap/
 
 for overlay in "${IRSO_IRONIC_OVERLAYS[@]}"; do
+  yaml_envsubst "${overlay}"
+done
+
+for overlay in "${IRSO_OPERATOR_OVERLAYS[@]}"; do
   yaml_envsubst "${overlay}"
 done
 
