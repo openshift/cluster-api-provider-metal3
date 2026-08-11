@@ -134,7 +134,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 1,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 			},
@@ -146,7 +145,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 0,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 			},
@@ -158,7 +156,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: -1,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 			},
@@ -168,8 +165,7 @@ var _ = Describe("Metal3Remediation manager", func() {
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{
-						Type:    "",
-						Timeout: &metav1.Duration{},
+						Type: "",
 					},
 				},
 			},
@@ -194,7 +190,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 1,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -211,7 +206,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 1,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -228,7 +222,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 0,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -369,6 +362,35 @@ var _ = Describe("Metal3Remediation manager", func() {
 			},
 			ExpectPresent: false,
 		}),
+		Entry("Should find host in own namespace when annotation contains a foreign namespace prefix", testCaseGetUnhealthyHost{
+			M3Machine: &infrav1.Metal3Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            metal3machineName,
+					Namespace:       namespaceName,
+					OwnerReferences: []metav1.OwnerReference{},
+					Annotations: map[string]string{
+						HostAnnotation: "other-namespace/" + baremetalhostName,
+					},
+				},
+			},
+			ExpectPresent: true,
+		}),
+		Entry("Should not find host in other namespace", testCaseGetUnhealthyHost{
+			// The BMH is in namespaceName for all these tests.
+			// We should not be able to find any BMH in the other-namespace,
+			// where the M3M is located in this test.
+			M3Machine: &infrav1.Metal3Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            metal3machineName,
+					Namespace:       "other-namespace",
+					OwnerReferences: []metav1.OwnerReference{},
+					Annotations: map[string]string{
+						HostAnnotation: namespaceName + "/" + baremetalhostName,
+					},
+				},
+			},
+			ExpectPresent: false,
+		}),
 	)
 
 	type testCaseSetAnnotation struct {
@@ -479,7 +501,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "Reboot",
 						RetryLimit: 0,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 			},
@@ -491,7 +512,6 @@ var _ = Describe("Metal3Remediation manager", func() {
 					Strategy: &infrav1.RemediationStrategy{
 						Type:       "",
 						RetryLimit: 0,
-						Timeout:    &metav1.Duration{},
 					},
 				},
 			},
@@ -551,7 +571,7 @@ var _ = Describe("Metal3Remediation manager", func() {
 				logr.Discard(),
 			)
 			Expect(err).NotTo(HaveOccurred())
-			okToRemediate, nextRemediation := remediationMgr.TimeToRemediate(remediationMgr.GetTimeout().Duration)
+			okToRemediate, nextRemediation := remediationMgr.TimeToRemediate(remediationMgr.GetTimeoutSeconds())
 			if tc.ExpectTrue {
 				Expect(okToRemediate).To(BeTrue())
 				Expect(nextRemediation).To(Equal(time.Duration(0)))
@@ -566,9 +586,9 @@ var _ = Describe("Metal3Remediation manager", func() {
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{
-						Type:       "",
-						RetryLimit: 1,
-						Timeout:    &metav1.Duration{Duration: 600 * time.Second},
+						Type:           "",
+						RetryLimit:     1,
+						TimeoutSeconds: int32(600),
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -583,9 +603,9 @@ var _ = Describe("Metal3Remediation manager", func() {
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{
-						Type:       "",
-						RetryLimit: 1,
-						Timeout:    &metav1.Duration{Duration: 600 * time.Second},
+						Type:           "",
+						RetryLimit:     1,
+						TimeoutSeconds: int32(600),
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -600,9 +620,9 @@ var _ = Describe("Metal3Remediation manager", func() {
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{
-						Type:       "",
-						RetryLimit: 1,
-						Timeout:    &metav1.Duration{Duration: 600 * time.Second},
+						Type:           "",
+						RetryLimit:     1,
+						TimeoutSeconds: int32(600),
 					},
 				},
 				Status: infrav1.Metal3RemediationStatus{
@@ -615,26 +635,26 @@ var _ = Describe("Metal3Remediation manager", func() {
 		}),
 	)
 
-	type testCaseGetTimeout struct {
+	type testCaseGetTimeoutSeconds struct {
 		Metal3Remediation *infrav1.Metal3Remediation
 		TimeoutSet        bool
 	}
 
-	DescribeTable("Test GetTimeout",
-		func(tc testCaseGetTimeout) {
+	DescribeTable("Test GetTimeoutSeconds",
+		func(tc testCaseGetTimeoutSeconds) {
 			remediationMgr, err := NewRemediationManager(nil, nil, tc.Metal3Remediation, nil, nil,
 				logr.Discard(),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
-			timeout := remediationMgr.GetTimeout()
+			timeoutSeconds := remediationMgr.GetTimeoutSeconds()
 			if tc.TimeoutSet {
-				Expect(timeout).NotTo(BeNil())
+				Expect(timeoutSeconds).NotTo(BeNil())
 			} else {
-				Expect(timeout).To(BeNil())
+				Expect(timeoutSeconds).To(Equal(defaultTimeout))
 			}
 		},
-		Entry("Timeout is not set", testCaseGetTimeout{
+		Entry("Timeout is not set", testCaseGetTimeoutSeconds{
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{},
@@ -642,13 +662,13 @@ var _ = Describe("Metal3Remediation manager", func() {
 			},
 			TimeoutSet: false,
 		}),
-		Entry("Timeout is set", testCaseGetTimeout{
+		Entry("Timeout is set", testCaseGetTimeoutSeconds{
 			Metal3Remediation: &infrav1.Metal3Remediation{
 				Spec: infrav1.Metal3RemediationSpec{
 					Strategy: &infrav1.RemediationStrategy{
-						Type:       "",
-						RetryLimit: 0,
-						Timeout:    &metav1.Duration{},
+						Type:           "",
+						RetryLimit:     0,
+						TimeoutSeconds: 300,
 					},
 				},
 			},

@@ -18,17 +18,21 @@ package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // Metal3MachineTemplateSpec defines the desired state of Metal3MachineTemplate.
 type Metal3MachineTemplateSpec struct {
-	Template Metal3MachineTemplateResource `json:"template"`
+	// template describes the data needed to create a Metal3Machine from a template
+	// +required
+	Template Metal3MachineTemplateResource `json:"template,omitempty,omitzero"`
 
+	// nodeReuse is a flag that can be set to True to enable node reuse during upgrade.
 	// When set to True, CAPM3 Machine controller will
 	// pick the same pool of BMHs' that were released during the upgrade operation.
 	// +kubebuilder:default=false
 	// +optional
-	NodeReuse bool `json:"nodeReuse"`
+	NodeReuse *bool `json:"nodeReuse,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -40,11 +44,12 @@ type Metal3MachineTemplateSpec struct {
 // Metal3MachineTemplate is the Schema for the metal3machinetemplates API.
 type Metal3MachineTemplate struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	// +optional
-	Spec Metal3MachineTemplateSpec `json:"spec,omitempty"`
+	// spec defines the desired state of Metal3MachineTemplate.
+	// +required
+	Spec Metal3MachineTemplateSpec `json:"spec,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -52,7 +57,6 @@ type Metal3MachineTemplate struct {
 // Metal3MachineTemplateList contains a list of Metal3MachineTemplate.
 type Metal3MachineTemplateList struct {
 	metav1.TypeMeta `json:",inline"`
-	// +optional
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Metal3MachineTemplate `json:"items"`
 }
@@ -63,6 +67,11 @@ func init() {
 
 // Metal3MachineTemplateResource describes the data needed to create a Metal3Machine from a template.
 type Metal3MachineTemplateResource struct {
-	// Spec is the specification of the desired behavior of the machine.
-	Spec Metal3MachineSpec `json:"spec"`
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	// spec is the specification of the desired behavior of the machine.
+	// +required
+	Spec Metal3MachineSpec `json:"spec,omitempty"`
 }

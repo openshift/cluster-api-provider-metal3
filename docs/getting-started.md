@@ -216,6 +216,49 @@ WORKERS_KUBEADM_EXTRA_CONFIG="
 "
 ```
 
+## Pod Placement Configuration
+
+By default, CAPM3 controller pods are configured with **tolerations** so they
+can run on control-plane nodes (which are typically tainted), but there is **no
+default node affinity**. This means pods may still be scheduled on regular
+worker nodes unless additional scheduling constraints are applied by the admin.
+
+### Default Configuration
+
+The default deployment includes:
+
+- **Tolerations**: Allow pods to run on control-plane nodes (which typically
+   have taints)
+   - `node-role.kubernetes.io/master:NoSchedule`
+   - `node-role.kubernetes.io/control-plane:NoSchedule`
+
+- **Node Affinity**: Not set by default. Pods can run on any schedulable node
+   (control-plane or worker), depending on the cluster’s taints and labels.
+
+### Customizing Pod Placement
+
+If you want to ensure that CAPM3 pods do **not** run alongside regular
+workloads, you can:
+
+- Add node affinity and/or additional tolerations via your preferred deployment
+   mechanism (CAPI Operator, `clusterctl`, or kustomize), and
+- Use dedicated infrastructure nodes if your environment provides them.
+
+For more details on how to customize provider manifests, see the upstream
+Cluster API documentation:
+
+- **CAPI Operator provider configuration**:
+   [Provider spec configuration docs](https://cluster-api-operator.sigs.k8s.io/topics/configuration/provider-spec-configuration#provider-spec)
+- **`clusterctl` config overrides**:
+   [`clusterctl` configuration overrides](https://cluster-api.sigs.k8s.io/clusterctl/configuration#overrides-layer)
+- **`clusterctl generate provider`**:
+   [`clusterctl generate provider` command reference](https://cluster-api.sigs.k8s.io/clusterctl/commands/generate-provider)
+
+For kustomize-based workflows, you can use the CAPM3 example patches in
+[`examples/provider-components/`](https://github.com/metal3-io/cluster-api-provider-metal3/tree/main/examples/provider-components)
+as a starting point. The `manager_node_affinity_patch.yaml` example shows how
+to require control-plane or infra nodes and prefer infra nodes when available.
+
 ## Pivoting or updating Ironic
 
 Before running the `move` command of Clusterctl, elements such as Ironic if
@@ -252,9 +295,12 @@ cluster upgrade:
   upgrade using clusterctl for example, or before nodes upgrades. This is to
   ensure that the cluster is in a stable condition while upgrading Ironic.
 
-**Important Note:** Currently, when target cluster is up and node appears, CAPM3
-will fetch the node and set the providerID value to BMH UUID, meaning that it is
-not advisable to directly map the K.Node <---> BMH after pivoting. However, if
-needed, we can still find the providerID value in Metal3Machine Spec. which
-enables us to do the mapping with an intermediary step, i.e K.Node <-->
-M3Machine <--> BMH.
+**Important Note:** When the workload-cluster node appears, CAPM3 locates it
+using the `metal3.io/uuid` node label and sets `spec.providerID` on both the
+`Node` and the `Metal3Machine`. The default ProviderID format is
+`metal3://<namespace>/<bmh-name>/<m3m-name>` (not the BMH UUID). It is
+therefore not advisable to directly map `K.Node <---> BMH` after pivoting.
+However, since the ProviderID is also stored in `Metal3Machine.spec.providerID`,
+the mapping can be done with an intermediary step: `K.Node <--> M3Machine <--> BMH`.
+See [ProviderID Workflow](https://book.metal3.io/capm3/providerid-workflow.html)
+for the full details.

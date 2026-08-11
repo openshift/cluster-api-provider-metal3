@@ -51,7 +51,7 @@ store state of the current remediation cycle.
   start deletion of the unhealthy Machine and the corresponding
   Metal3Remediation.
 - If RCs last `.spec.strategy.timeout` for Node to become healthy expires, it
-  annotates BareMetalHost with `capi.metal3.io/unhealthyannotation`.
+  annotates BareMetalHost with `capm3.metal3.io/unhealthy`.
 
 ---
 
@@ -118,7 +118,7 @@ spec:
       strategy:
         type: "Reboot"
         retryLimit: 2
-        timeout: 300s
+        timeoutSeconds: 300
 ```
 
 Use the following examples as a basis for creating a MachineHealthCheck and
@@ -165,5 +165,5 @@ spec:
       strategy:
         type: "Reboot"
         retryLimit: 1
-        timeout: 300s
+        timeoutSeconds: 300
 ```

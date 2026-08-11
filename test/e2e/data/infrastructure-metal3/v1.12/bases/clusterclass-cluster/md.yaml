@@ -1,4 +1,4 @@
-apiVersion: infrastructure.cluster.x-k8s.io/${CAPM3_VERSION}
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: Metal3MachineTemplate
 metadata:
   name: ${CLUSTER_NAME}-workers
@@ -14,7 +14,7 @@ spec:
         format: raw
         url: ${IMAGE_RAW_URL}
 ---
-apiVersion: infrastructure.cluster.x-k8s.io/${CAPM3_VERSION}
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: Metal3DataTemplate
 metadata:
   name: ${CLUSTER_NAME}-workers-template
@@ -25,8 +25,8 @@ spec:
     ipAddressesFromIPPool:
     - key: provisioningIP
       name: provisioning-pool
-      apiGroup: ""
-      kind: ""
+      apiGroup: "ipam.metal3.io"
+      kind: "IPPool"
     objectNames:
     - key: name
       object: machine
@@ -37,8 +37,8 @@ spec:
     prefixesFromIPPool:
     - key: provisioningCIDR
       name: provisioning-pool
-      apiGroup: ""
-      kind: ""
+      apiGroup: "ipam.metal3.io"
+      kind: "IPPool"
   networkData:
     links:
       ethernets:

@@ -41,7 +41,7 @@ import (
 )
 
 type testCaseEnsureM3Claim struct {
-	poolRef          corev1.TypedLocalObjectReference
+	poolRef          infrav1.IPPoolReference
 	ipClaim          *ipamv1.IPClaim
 	expectError      bool
 	expectFetchAgain bool
@@ -83,10 +83,10 @@ var _ = Describe("Metal3Data manager", func() {
 		)
 		Expect(err).NotTo(HaveOccurred())
 		dataMgr.setError(context.TODO(), "This is an error")
-		Expect(*data.Status.ErrorMessage).To(Equal("This is an error"))
+		Expect(data.Status.ErrorMessage).To(Equal("This is an error"))
 
 		dataMgr.clearError(context.TODO())
-		Expect(data.Status.ErrorMessage).To(BeNil())
+		Expect(data.Status.ErrorMessage).To(BeEmpty())
 	})
 
 	type testCaseReconcile struct {
@@ -124,16 +124,16 @@ var _ = Describe("Metal3Data manager", func() {
 				Expect(err).NotTo(HaveOccurred())
 			}
 			if tc.expectedErrorSet {
-				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeEmpty())
 			} else {
-				Expect(tc.m3d.Status.ErrorMessage).To(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).To(BeEmpty())
 			}
 		},
 		Entry("Clear Error", testCaseReconcile{
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{},
 				Status: infrav1.Metal3DataStatus{
-					ErrorMessage: ptr.To("Error Happened"),
+					ErrorMessage: "Error Happened",
 				},
 			},
 		}),
@@ -141,7 +141,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, m3duid),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			expectRequeue: true,
@@ -161,7 +161,7 @@ var _ = Describe("Metal3Data manager", func() {
 		expectRequeue       bool
 		expectReady         bool
 		expectedMetadata    *string
-		expectedNetworkData *string
+		expectedNetworkData string
 	}
 
 	DescribeTable("Test createSecrets",
@@ -205,9 +205,9 @@ var _ = Describe("Metal3Data manager", func() {
 			}
 			Expect(err).NotTo(HaveOccurred())
 			if tc.expectReady {
-				Expect(tc.m3d.Status.Ready).To(BeTrue())
+				Expect(tc.m3d.Status.Ready).To(HaveValue(BeTrue()))
 			} else {
-				Expect(tc.m3d.Status.Ready).To(BeFalse())
+				Expect(tc.m3d.Status.Ready).To(HaveValue(BeFalse()))
 			}
 			if tc.expectedMetadata != nil {
 				tmpSecret := corev1.Secret{}
@@ -221,7 +221,7 @@ var _ = Describe("Metal3Data manager", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(tmpSecret.Data["metaData"])).To(Equal(*tc.expectedMetadata))
 			}
-			if tc.expectedNetworkData != nil {
+			if tc.expectedNetworkData != "" {
 				tmpSecret := corev1.Secret{}
 				err = fakeClient.Get(context.TODO(),
 					client.ObjectKey{
@@ -231,7 +231,7 @@ var _ = Describe("Metal3Data manager", func() {
 					&tmpSecret,
 				)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(string(tmpSecret.Data["networkData"])).To(Equal(*tc.expectedNetworkData))
+				Expect(string(tmpSecret.Data["networkData"])).To(Equal(tc.expectedNetworkData))
 			}
 		},
 		Entry("Empty", testCaseCreateSecrets{
@@ -243,7 +243,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, m3duid),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			expectRequeue: true,
@@ -252,8 +252,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, m3duid),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -269,8 +269,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -286,8 +286,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -296,7 +296,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3m: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: testObjectReference(metal3DataTemplateName),
+					DataTemplate: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			dataClaim: &infrav1.Metal3DataClaim{
@@ -309,8 +309,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -329,8 +329,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -345,14 +345,14 @@ var _ = Describe("Metal3Data manager", func() {
 						},
 					},
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: ptr.To("12:34:56:78:9A:BC"),
+										String: "12:34:56:78:9A:BC",
 									},
 								},
 							},
@@ -363,7 +363,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3m: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: testObjectReference(metal3DataTemplateName),
+					DataTemplate: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			dataClaim: &infrav1.Metal3DataClaim{
@@ -384,14 +384,14 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectReady:         true,
 			expectedMetadata:    ptr.To("Hello"),
-			expectedNetworkData: ptr.To("Bye"),
+			expectedNetworkData: "Bye",
 		}),
 		Entry("secrets do not exist", testCaseCreateSecrets{
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -406,14 +406,14 @@ var _ = Describe("Metal3Data manager", func() {
 						},
 					},
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: ptr.To("12:34:56:78:9A:BC"),
+										String: "12:34:56:78:9A:BC",
 									},
 								},
 							},
@@ -438,7 +438,7 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: testObjectReference(metal3DataTemplateName),
+					DataTemplate: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			dataClaim: &infrav1.Metal3DataClaim{
@@ -453,14 +453,14 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectReady:         true,
 			expectedMetadata:    ptr.To(fmt.Sprintf("String-1: String-1\nproviderid: %s\n", providerid)),
-			expectedNetworkData: ptr.To("links:\n- ethernet_mac_address: 12:34:56:78:9A:BC\n  id: eth0\n  mtu: 1500\n  type: phy\nnetworks: []\nservices: []\n"),
+			expectedNetworkData: "links:\n- ethernet_mac_address: 12:34:56:78:9A:BC\n  id: eth0\n  mtu: 1500\n  type: phy\nnetworks: []\nservices: []\n",
 		}),
 		Entry("No Machine OwnerRef on M3M", testCaseCreateSecrets{
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -475,14 +475,14 @@ var _ = Describe("Metal3Data manager", func() {
 						},
 					},
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: ptr.To("12:34:56:78:9A:BC"),
+										String: "12:34:56:78:9A:BC",
 									},
 								},
 							},
@@ -493,7 +493,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3m: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: testObjectReference(metal3DataTemplateName),
+					DataTemplate: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			dataClaim: &infrav1.Metal3DataClaim{
@@ -506,8 +506,8 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
-					Claim:    *testObjectReference(metal3DataClaimName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
+					Claim:    testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -522,14 +522,14 @@ var _ = Describe("Metal3Data manager", func() {
 						},
 					},
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: ptr.To("12:34:56:78:9A:BC"),
+										String: "12:34:56:78:9A:BC",
 									},
 								},
 							},
@@ -550,7 +550,7 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: testObjectReference(metal3DataTemplateName),
+					DataTemplate: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			machine: &clusterv1.Machine{
@@ -601,7 +601,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: corev1.ObjectReference{
+					Template: &infrav1.Metal3ObjectRef{
 						Name: metal3DataTemplateName,
 					},
 				},
@@ -612,7 +612,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: corev1.ObjectReference{
+					Template: &infrav1.Metal3ObjectRef{
 						Name: metal3DataTemplateName,
 					},
 				},
@@ -662,7 +662,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d := &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 				TypeMeta: metav1.TypeMeta{
 					Kind:       "Metal3Data",
@@ -689,12 +689,12 @@ var _ = Describe("Metal3Data manager", func() {
 			} else {
 				Expect(err).NotTo(HaveOccurred())
 			}
-			expectedPoolAddress := make(map[string]addressFromPool)
+			expectedPoolAddress := make(map[string]AddressFromPool)
 			for _, poolName := range tc.m3IPClaims {
-				expectedPoolAddress[poolName] = addressFromPool{}
+				expectedPoolAddress[poolName] = AddressFromPool{}
 			}
 			for _, poolName := range tc.ipClaims {
-				expectedPoolAddress[poolName] = addressFromPool{}
+				expectedPoolAddress[poolName] = AddressFromPool{}
 			}
 			Expect(expectedPoolAddress).To(Equal(poolAddresses))
 		},
@@ -721,14 +721,14 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "abcd-4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd-5"),
+											FromIPPool: "abcd-5",
 										},
 									},
 								},
@@ -740,7 +740,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-7"),
+											FromIPPool: "abcd-7",
 										},
 									},
 								},
@@ -751,7 +751,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd-8"),
+											FromIPPool: "abcd-8",
 										},
 									},
 								},
@@ -762,7 +762,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-9"),
+											FromIPPool: "abcd-9",
 										},
 									},
 								},
@@ -773,7 +773,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-10"),
+											FromIPPool: "abcd-10",
 										},
 									},
 								},
@@ -851,14 +851,14 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "abcd-1",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd-2"),
+											FromIPPool: "abcd-2",
 										},
 									},
 								},
@@ -877,14 +877,14 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
 								IPAddressFromIPPool: "abcd-1",
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-2"),
+											FromIPPool: "abcd-2",
 										},
 									},
 								},
@@ -903,13 +903,13 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4DHCP: []infrav1.NetworkDataIPv4DHCP{
 							{
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd"),
+											FromIPPool: "abcd",
 										},
 									},
 								},
@@ -927,13 +927,13 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6DHCP: []infrav1.NetworkDataIPv6DHCP{
 							{
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd"),
+											FromIPPool: "abcd",
 										},
 									},
 								},
@@ -951,13 +951,13 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6SLAAC: []infrav1.NetworkDataIPv6DHCP{
 							{
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd"),
+											FromIPPool: "abcd",
 										},
 									},
 								},
@@ -975,21 +975,21 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolRef: &corev1.TypedLocalObjectReference{
+								FromPoolRef: infrav1.IPPoolReference{
 									Name:     "test",
-									APIGroup: ptr.To("ipam.cluster.x-k8s.io"),
+									APIGroup: "ipam.cluster.x-k8s.io",
 									Kind:     "TestPool",
 								},
 							},
 						},
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
-								FromPoolRef: &corev1.TypedLocalObjectReference{
+								FromPoolRef: infrav1.IPPoolReference{
 									Name:     "test-2",
-									APIGroup: ptr.To("ipam.cluster.x-k8s.io"),
+									APIGroup: "ipam.cluster.x-k8s.io",
 									Kind:     "TestPool",
 								},
 							},
@@ -1007,12 +1007,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:   "network-1",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/network-1",
 								},
@@ -1028,7 +1028,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:                  "network-1",
@@ -1037,9 +1037,9 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Network: "0.0.0.0",
-										Prefix:  0,
+										Prefix:  ptr.To(int32(0)),
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ippool.metal3.io/gateway",
 											},
@@ -1060,12 +1060,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
 								ID:   "network-ipv6",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/ipv6-network",
 								},
@@ -1081,7 +1081,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
 								ID:                  "network-ipv6",
@@ -1090,9 +1090,9 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Network: "::",
-										Prefix:  0,
+										Prefix:  ptr.To(int32(0)),
 										Gateway: infrav1.NetworkGatewayv6{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ippool.metal3.io/ipv6-gateway",
 											},
@@ -1113,12 +1113,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:   "network-1",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/provisioning",
 								},
@@ -1143,7 +1143,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:                  "network-1",
@@ -1152,9 +1152,9 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Network: "0.0.0.0",
-										Prefix:  0,
+										Prefix:  ptr.To(int32(0)),
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ippool.metal3.io/gateway",
 											},
@@ -1182,12 +1182,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
 								ID:   "network-ipv6",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/ipv6-network",
 								},
@@ -1212,7 +1212,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
 								ID:                  "network-ipv6",
@@ -1221,9 +1221,9 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Network: "::",
-										Prefix:  0,
+										Prefix:  ptr.To(int32(0)),
 										Gateway: infrav1.NetworkGatewayv6{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ippool.metal3.io/ipv6-gateway",
 											},
@@ -1251,21 +1251,21 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:   "network-1",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/network-1",
 								},
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Network: "0.0.0.0",
-										Prefix:  0,
+										Prefix:  ptr.To(int32(0)),
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "machine",
 												Annotation: "ippool.metal3.io/gateway-1",
 											},
@@ -1278,7 +1278,7 @@ var _ = Describe("Metal3Data manager", func() {
 							{
 								ID:   "network-2",
 								Link: "eth1",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "metal3machine",
 									Annotation: "ippool.metal3.io/network-2",
 								},
@@ -1321,12 +1321,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:   "network-1",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ippool.metal3.io/nonexistent",
 								},
@@ -1350,12 +1350,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								ID:   "network-1",
 								Link: "eth0",
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "machine",
 									Annotation: "ippool.metal3.io/empty",
 								},
@@ -1486,14 +1486,14 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "abcd-4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd-5"),
+											FromIPPool: "abcd-5",
 										},
 									},
 								},
@@ -1505,7 +1505,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-7"),
+											FromIPPool: "abcd-7",
 										},
 									},
 								},
@@ -1516,7 +1516,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("abcd-8"),
+											FromIPPool: "abcd-8",
 										},
 									},
 								},
@@ -1527,7 +1527,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-9"),
+											FromIPPool: "abcd-9",
 										},
 									},
 								},
@@ -1538,7 +1538,7 @@ var _ = Describe("Metal3Data manager", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("abcd-10"),
+											FromIPPool: "abcd-10",
 										},
 									},
 								},
@@ -1564,15 +1564,15 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dtSpec: infrav1.Metal3DataTemplateSpec{
 				MetaData: &infrav1.MetaData{},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolRef: &corev1.TypedLocalObjectReference{APIGroup: ptr.To("ipam.cluster.x-k8s.io"), Kind: "TestPool", Name: "v4"},
+								FromPoolRef: infrav1.IPPoolReference{APIGroup: "ipam.cluster.x-k8s.io", Kind: "TestPool", Name: "v4"},
 							},
 						},
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
-								FromPoolRef: &corev1.TypedLocalObjectReference{APIGroup: ptr.To("ipam.cluster.x-k8s.io"), Kind: "TestPool", Name: "v6"},
+								FromPoolRef: infrav1.IPPoolReference{APIGroup: "ipam.cluster.x-k8s.io", Kind: "TestPool", Name: "v6"},
 							},
 						},
 					},
@@ -1589,12 +1589,12 @@ var _ = Describe("Metal3Data manager", func() {
 		m3d             *infrav1.Metal3Data
 		m3dt            *infrav1.Metal3DataTemplate
 		poolName        string
-		poolRef         corev1.TypedLocalObjectReference
+		poolRef         infrav1.IPPoolReference
 		ipClaim         *ipamv1.IPClaim
 		ipAddress       *ipamv1.IPAddress
 		expectError     bool
 		expectRequeue   bool
-		expectedAddress addressFromPool
+		expectedAddress AddressFromPool
 		expectDataError bool
 		expectClaim     bool
 	}
@@ -1634,9 +1634,9 @@ var _ = Describe("Metal3Data manager", func() {
 				Expect(requeue).To(BeFalse())
 			}
 			if tc.expectDataError {
-				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeEmpty())
 			} else {
-				Expect(tc.m3d.Status.ErrorMessage).To(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).To(BeEmpty())
 			}
 			Expect(poolAddress).To(Equal(tc.expectedAddress))
 			if tc.expectClaim {
@@ -1658,12 +1658,12 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
 			},
@@ -1673,15 +1673,15 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
 				ObjectMeta: testObjectMeta(metal3DataTemplateName, namespaceName, ""),
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              metal3DataName + "-" + testPoolName,
@@ -1715,10 +1715,10 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "abc-def-ghi-jkl"),
 			},
 			poolName: testPoolName,
-			poolRef:  corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{
+			poolRef:  infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{
 				Address: ipamv1.IPAddressStr("192.168.0.10"),
-				Prefix:  26,
+				Prefix:  ptr.To(int32(26)),
 				Gateway: ipamv1.IPAddressStr("192.168.0.1"),
 				dnsServers: []ipamv1.IPAddressStr{
 					"8.8.8.8",
@@ -1763,7 +1763,7 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "abc-def-ghi-jkl"),
 			},
 			poolName: testPoolName,
-			poolRef:  corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef:  infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       metal3DataName + "-" + testPoolName,
@@ -1792,8 +1792,8 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "123-456-789"),
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       metal3DataName + "-" + testPoolName,
@@ -1818,15 +1818,15 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
 				ObjectMeta: testObjectMeta(metal3DataTemplateName, namespaceName, ""),
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
 				Status: ipamv1.IPClaimStatus{
@@ -1843,14 +1843,14 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, "123-456-789"),
 				Spec: infrav1.Metal3DataSpec{
-					Template: *testObjectReference(metal3DataTemplateName),
+					Template: testMetal3ObjectReference(metal3DataTemplateName),
 				},
 			},
 			poolName: testPoolName,
-			poolRef:  corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{
+			poolRef:  infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{
 				Address: ipamv1.IPAddressStr("192.168.0.10"),
-				Prefix:  26,
+				Prefix:  ptr.To(int32(26)),
 				Gateway: ipamv1.IPAddressStr("192.168.0.1"),
 				dnsServers: []ipamv1.IPAddressStr{
 					"8.8.8.8",
@@ -1892,7 +1892,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	type testCaseReleaseAddressFromM3Pool struct {
 		m3d             *infrav1.Metal3Data
-		poolRef         corev1.TypedLocalObjectReference
+		poolRef         infrav1.IPPoolReference
 		ipClaim         *ipamv1.IPClaim
 		expectError     bool
 		injectDeleteErr bool
@@ -1947,7 +1947,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
 			},
@@ -1956,7 +1956,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: "abc"},
+			poolRef: infrav1.IPPoolReference{Name: "abc"},
 		}),
 		Entry("Deletion error and finalizer removal", testCaseReleaseAddressFromM3Pool{
 			m3d: &infrav1.Metal3Data{
@@ -1966,7 +1966,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       metal3DataName + "-" + testPoolName,
@@ -1981,7 +1981,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	type testCaseMultiReleaseAddressFromM3Pool struct {
 		m3d      *infrav1.Metal3Data
-		poolRef  corev1.TypedLocalObjectReference
+		poolRef  infrav1.IPPoolReference
 		ipClaims []ipamv1.IPClaim
 	}
 
@@ -2032,7 +2032,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaims: []ipamv1.IPClaim{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "host-0-" + testPoolName,
@@ -2052,7 +2052,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: "first-pool"},
+			poolRef: infrav1.IPPoolReference{Name: "first-pool"},
 			ipClaims: []ipamv1.IPClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2084,7 +2084,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaims: []ipamv1.IPClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2116,7 +2116,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaims: []ipamv1.IPClaim{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -2158,7 +2158,7 @@ var _ = Describe("Metal3Data manager", func() {
 				},
 			},
 			Spec: infrav1.Metal3MachineSpec{
-				DataTemplate: &corev1.ObjectReference{
+				DataTemplate: &infrav1.Metal3ObjectRef{
 					Name:      metal3DataTemplateName,
 					Namespace: namespaceName,
 				},
@@ -2193,11 +2193,11 @@ var _ = Describe("Metal3Data manager", func() {
 				Namespace: namespaceName,
 			},
 			Spec: infrav1.Metal3DataSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name:      m3dt.Name,
 					Namespace: m3dt.Namespace,
 				},
-				Claim: corev1.ObjectReference{
+				Claim: &infrav1.Metal3ObjectRef{
 					Namespace: namespaceName,
 					Name:      metal3DataClaimName,
 				},
@@ -2239,14 +2239,14 @@ var _ = Describe("Metal3Data manager", func() {
 		}
 	},
 		Entry("should create claim if missing", testCaseEnsureM3Claim{
-			poolRef:          corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef:          infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim:          nil,
 			expectError:      false,
 			expectFetchAgain: true,
 			expectClaim:      true,
 		}),
 		Entry("should do nothing when claim exists", testCaseEnsureM3Claim{
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      metal3DataName + "-" + testPoolName,
@@ -2267,7 +2267,7 @@ var _ = Describe("Metal3Data manager", func() {
 	)
 
 	type testCaseEnsureClaim struct {
-		poolRef          corev1.TypedLocalObjectReference
+		poolRef          infrav1.IPPoolReference
 		ipClaim          *capipamv1.IPAddressClaim
 		expectError      bool
 		expectFetchAgain bool
@@ -2308,14 +2308,14 @@ var _ = Describe("Metal3Data manager", func() {
 		}
 	},
 		Entry("no claim exists", testCaseEnsureClaim{
-			poolRef:          corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef:          infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim:          nil,
 			expectError:      false,
 			expectFetchAgain: true,
 			expectClaim:      true,
 		}),
 		Entry("claim exists", testCaseEnsureClaim{
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &capipamv1.IPAddressClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      metal3DataName + "-" + testPoolName,
@@ -2337,12 +2337,12 @@ var _ = Describe("Metal3Data manager", func() {
 	type testCaseAddressFromClaim struct {
 		m3d             *infrav1.Metal3Data
 		poolName        string
-		poolRef         corev1.TypedLocalObjectReference
+		poolRef         infrav1.IPPoolReference
 		ipClaim         *capipamv1.IPAddressClaim
 		ipAddress       *capipamv1.IPAddress
 		expectError     bool
 		expectRequeue   bool
-		expectedAddress addressFromPool
+		expectedAddress AddressFromPool
 		expectDataError bool
 		expectClaim     bool
 	}
@@ -2375,9 +2375,9 @@ var _ = Describe("Metal3Data manager", func() {
 				Expect(requeue).To(BeFalse())
 			}
 			if tc.expectDataError {
-				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).NotTo(BeEmpty())
 			} else {
-				Expect(tc.m3d.Status.ErrorMessage).To(BeNil())
+				Expect(tc.m3d.Status.ErrorMessage).To(BeEmpty())
 			}
 			Expect(poolAddress).To(Equal(tc.expectedAddress))
 			if tc.expectClaim {
@@ -2399,8 +2399,8 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &capipamv1.IPAddressClaim{
 				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
 			},
@@ -2411,7 +2411,7 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
 			poolName:        testPoolName,
-			expectedAddress: addressFromPool{},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &capipamv1.IPAddressClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              metal3DataName + "-" + testPoolName,
@@ -2440,8 +2440,8 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
 			poolName:        testPoolName,
-			poolRef:         corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{},
+			poolRef:         infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{},
 			ipClaim: &capipamv1.IPAddressClaim{
 				ObjectMeta: testObjectMeta("abc-abc", namespaceName, ""),
 				Status: capipamv1.IPAddressClaimStatus{
@@ -2457,10 +2457,10 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
 			poolName: testPoolName,
-			poolRef:  corev1.TypedLocalObjectReference{Name: testPoolName},
-			expectedAddress: addressFromPool{
+			poolRef:  infrav1.IPPoolReference{Name: testPoolName},
+			expectedAddress: AddressFromPool{
 				Address:    ipamv1.IPAddressStr("192.168.0.10"),
-				Prefix:     26,
+				Prefix:     ptr.To(int32(26)),
 				Gateway:    ipamv1.IPAddressStr("192.168.0.1"),
 				dnsServers: []ipamv1.IPAddressStr{},
 			},
@@ -2485,7 +2485,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	type testCaseReleaseAddressFromPool struct {
 		m3d         *infrav1.Metal3Data
-		poolRef     corev1.TypedLocalObjectReference
+		poolRef     infrav1.IPPoolReference
 		ipClaim     *capipamv1.IPAddressClaim
 		expectError bool
 	}
@@ -2528,7 +2528,7 @@ var _ = Describe("Metal3Data manager", func() {
 					APIVersion: infrav1.GroupVersion.String(),
 				},
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &capipamv1.IPAddressClaim{
 				ObjectMeta: testObjectMeta(metal3DataName+"-"+testPoolName, namespaceName, ""),
 			},
@@ -2537,7 +2537,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta(metal3DataName, namespaceName, ""),
 			},
-			poolRef: corev1.TypedLocalObjectReference{Name: "abc"},
+			poolRef: infrav1.IPPoolReference{Name: "abc"},
 		}),
 	)
 
@@ -2546,7 +2546,7 @@ var _ = Describe("Metal3Data manager", func() {
 		m3m            *infrav1.Metal3Machine
 		machine        *clusterv1.Machine
 		bmh            *bmov1alpha1.BareMetalHost
-		poolAddresses  map[string]addressFromPool
+		poolAddresses  map[string]AddressFromPool
 		expectError    bool
 		expectedOutput map[string][]any
 	}
@@ -2568,19 +2568,19 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dt: &infrav1.Metal3DataTemplate{
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										String: ptr.To("12:34:56:78:9A:BC"),
+										String: "12:34:56:78:9A:BC",
 									},
 								},
 							},
 						},
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv4: []infrav1.NetworkDataIPv4{
 								{
 									ID:                  "abc",
@@ -2589,11 +2589,11 @@ var _ = Describe("Metal3Data manager", func() {
 									Routes: []infrav1.NetworkDataRoutev4{
 										{
 											Network: "10.0.0.0",
-											Prefix:  16,
+											Prefix:  ptr.To(int32(16)),
 											Gateway: infrav1.NetworkGatewayv4{
 												String: (*ipamv1.IPAddressv4Str)(ptr.To("192.168.1.1")),
 											},
-											Services: infrav1.NetworkDataServicev4{
+											Services: &infrav1.NetworkDataServicev4{
 												DNS: []ipamv1.IPAddressv4Str{
 													ipamv1.IPAddressv4Str("8.8.8.8"),
 												},
@@ -2603,7 +2603,7 @@ var _ = Describe("Metal3Data manager", func() {
 								},
 							},
 						},
-						Services: infrav1.NetworkDataService{
+						Services: &infrav1.NetworkDataService{
 							DNS: []ipamv1.IPAddressStr{
 								ipamv1.IPAddressStr("8.8.8.8"),
 								ipamv1.IPAddressStr("2001::8888"),
@@ -2612,10 +2612,10 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 			},
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"abc": {
 					Address: "192.168.0.14",
-					Prefix:  24,
+					Prefix:  ptr.To(int32(24)),
 				},
 			},
 			expectedOutput: map[string][]any{
@@ -2665,14 +2665,14 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dt: &infrav1.Metal3DataTemplate{
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Links: infrav1.NetworkDataLink{
+						Links: &infrav1.NetworkDataLink{
 							Ethernets: []infrav1.NetworkDataLinkEthernet{
 								{
 									Type: "phy",
 									Id:   "eth0",
 									MTU:  1500,
 									MACAddress: &infrav1.NetworkLinkEthernetMac{
-										FromHostInterface: ptr.To("eth0"),
+										FromHostInterface: "eth0",
 									},
 								},
 							},
@@ -2686,7 +2686,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3dt: &infrav1.Metal3DataTemplate{
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv4: []infrav1.NetworkDataIPv4{
 								{
 									ID:                  "abc",
@@ -2712,7 +2712,7 @@ var _ = Describe("Metal3Data manager", func() {
 
 	type testRenderNetworkServices struct {
 		services       infrav1.NetworkDataService
-		poolAddresses  map[string]addressFromPool
+		poolAddresses  map[string]AddressFromPool
 		expectedOutput []any
 		expectError    bool
 	}
@@ -2733,9 +2733,9 @@ var _ = Describe("Metal3Data manager", func() {
 					(ipamv1.IPAddressStr)("8.8.8.8"),
 					(ipamv1.IPAddressStr)("2001::8888"),
 				},
-				DNSFromIPPool: ptr.To("pool1"),
+				DNSFromIPPool: "pool1",
 			},
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"pool1": {
 					dnsServers: []ipamv1.IPAddressStr{
 						ipamv1.IPAddressStr("8.8.4.4"),
@@ -2764,9 +2764,9 @@ var _ = Describe("Metal3Data manager", func() {
 					(ipamv1.IPAddressStr)("8.8.8.8"),
 					(ipamv1.IPAddressStr)("2001::8888"),
 				},
-				DNSFromIPPool: ptr.To("pool1"),
+				DNSFromIPPool: "pool1",
 			},
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"pool2": {
 					dnsServers: []ipamv1.IPAddressStr{
 						ipamv1.IPAddressStr("8.8.4.4"),
@@ -2803,7 +2803,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:   "eth0",
 						MTU:  1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("12:34:56:78:9A:BC"),
+							String: "12:34:56:78:9A:BC",
 						},
 					},
 				},
@@ -2812,7 +2812,7 @@ var _ = Describe("Metal3Data manager", func() {
 				map[string]any{
 					"type":                 "phy",
 					"id":                   "eth0",
-					"mtu":                  1500,
+					"mtu":                  int32(1500),
 					"ethernet_mac_address": "12:34:56:78:9A:BC",
 				},
 			},
@@ -2825,7 +2825,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:   "eth0",
 						MTU:  1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							FromHostInterface: ptr.To("eth2"),
+							FromHostInterface: "eth2",
 						},
 					},
 				},
@@ -2845,7 +2845,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:                 "bond0",
 						MTU:                1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("12:34:56:78:9A:BC"),
+							String: "12:34:56:78:9A:BC",
 						},
 						BondLinks: []string{"eth0"},
 					},
@@ -2855,7 +2855,7 @@ var _ = Describe("Metal3Data manager", func() {
 				map[string]any{
 					"type":                  "bond",
 					"id":                    "bond0",
-					"mtu":                   1500,
+					"mtu":                   int32(1500),
 					"ethernet_mac_address":  "12:34:56:78:9A:BC",
 					"bond_mode":             "802.3ad",
 					"bond_xmit_hash_policy": "layer3+4",
@@ -2871,7 +2871,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Id:       "bond0",
 						MTU:      1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							FromHostInterface: ptr.To("eth2"),
+							FromHostInterface: "eth2",
 						},
 						BondLinks: []string{"eth0"},
 					},
@@ -2887,11 +2887,11 @@ var _ = Describe("Metal3Data manager", func() {
 			links: infrav1.NetworkDataLink{
 				Vlans: []infrav1.NetworkDataLinkVlan{
 					{
-						VlanID: 2222,
+						VlanID: ptr.To(int32(2222)),
 						Id:     "bond0",
 						MTU:    1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("12:34:56:78:9A:BC"),
+							String: "12:34:56:78:9A:BC",
 						},
 						VlanLink: "eth0",
 					},
@@ -2900,11 +2900,11 @@ var _ = Describe("Metal3Data manager", func() {
 			expectedOutput: []any{
 				map[string]any{
 					"vlan_mac_address": "12:34:56:78:9A:BC",
-					"vlan_id":          2222,
+					"vlan_id":          int32(2222),
 					"vlan_link":        "eth0",
 					"type":             "vlan",
 					"id":               "bond0",
-					"mtu":              1500,
+					"mtu":              int32(1500),
 				},
 			},
 		}),
@@ -2912,11 +2912,11 @@ var _ = Describe("Metal3Data manager", func() {
 			links: infrav1.NetworkDataLink{
 				Vlans: []infrav1.NetworkDataLinkVlan{
 					{
-						VlanID: 2222,
+						VlanID: ptr.To(int32(2222)),
 						Id:     "bond0",
 						MTU:    1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							FromHostInterface: ptr.To("eth2"),
+							FromHostInterface: "eth2",
 						},
 						VlanLink: "eth0",
 					},
@@ -2945,7 +2945,7 @@ var _ = Describe("Metal3Data manager", func() {
 				map[string]any{
 					"type": "phy",
 					"id":   "eth0",
-					"mtu":  1500,
+					"mtu":  int32(1500),
 					// no ethernet_mac_address field, no name field
 				},
 			},
@@ -2966,7 +2966,7 @@ var _ = Describe("Metal3Data manager", func() {
 				map[string]any{
 					"type":                  "bond",
 					"id":                    "bond0",
-					"mtu":                   1500,
+					"mtu":                   int32(1500),
 					"bond_mode":             "802.3ad",
 					"bond_xmit_hash_policy": "",
 					"bond_links":            []string{"eth0"},
@@ -2978,7 +2978,7 @@ var _ = Describe("Metal3Data manager", func() {
 			links: infrav1.NetworkDataLink{
 				Vlans: []infrav1.NetworkDataLinkVlan{
 					{
-						VlanID:     100,
+						VlanID:     ptr.To(int32(100)),
 						Id:         "vlan100", // use existing kernel interface name
 						MTU:        1500,
 						MACAddress: nil, // no MAC
@@ -2990,8 +2990,8 @@ var _ = Describe("Metal3Data manager", func() {
 				map[string]any{
 					"type":      "vlan",
 					"id":        "vlan100",
-					"mtu":       1500,
-					"vlan_id":   100,
+					"mtu":       int32(1500),
+					"vlan_id":   int32(100),
 					"vlan_link": "eth0",
 					// no vlan_mac_address field, no name field
 				},
@@ -3008,7 +3008,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Name: "enp1s0", // desired interface name for cloud-init rename
 						MTU:  1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:FF"),
+							String: "AA:BB:CC:DD:EE:FF",
 						},
 					},
 				},
@@ -3018,7 +3018,7 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":                 "phy",
 					"id":                   "eth0",
 					"name":                 "enp1s0", // name field set from explicit Name
-					"mtu":                  1500,
+					"mtu":                  int32(1500),
 					"ethernet_mac_address": "AA:BB:CC:DD:EE:FF",
 				},
 			},
@@ -3033,7 +3033,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Name:               "bond-mgmt", // custom bond name for cloud-init rename
 						MTU:                9000,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("11:22:33:44:55:66"),
+							String: "11:22:33:44:55:66",
 						},
 						BondLinks: []string{"eth0", "eth1"},
 					},
@@ -3044,7 +3044,7 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":                  "bond",
 					"id":                    "bond0",
 					"name":                  "bond-mgmt", // name field set from explicit Name
-					"mtu":                   9000,
+					"mtu":                   int32(9000),
 					"ethernet_mac_address":  "11:22:33:44:55:66",
 					"bond_mode":             "active-backup",
 					"bond_xmit_hash_policy": "layer2",
@@ -3056,13 +3056,13 @@ var _ = Describe("Metal3Data manager", func() {
 			links: infrav1.NetworkDataLink{
 				Vlans: []infrav1.NetworkDataLinkVlan{
 					{
-						VlanID:   100,
+						VlanID:   ptr.To(int32(100)),
 						Id:       "vlan100",
 						Name:     "vlan-storage", // custom vlan name for cloud-init rename
 						MTU:      9000,
 						VlanLink: "bond0",
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:00"),
+							String: "AA:BB:CC:DD:EE:00",
 						},
 					},
 				},
@@ -3072,9 +3072,9 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":             "vlan",
 					"id":               "vlan100",
 					"name":             "vlan-storage", // name field set from explicit Name
-					"mtu":              9000,
+					"mtu":              int32(9000),
 					"vlan_mac_address": "AA:BB:CC:DD:EE:00",
-					"vlan_id":          100,
+					"vlan_id":          int32(100),
 					"vlan_link":        "bond0",
 				},
 			},
@@ -3088,7 +3088,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Name: "mgmt0", // custom name different from id
 						MTU:  1500,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:01"),
+							String: "AA:BB:CC:DD:EE:01",
 						},
 					},
 					{
@@ -3097,7 +3097,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Name: "storage0", // custom name different from id
 						MTU:  9000,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:02"),
+							String: "AA:BB:CC:DD:EE:02",
 						},
 					},
 				},
@@ -3108,20 +3108,20 @@ var _ = Describe("Metal3Data manager", func() {
 						Name:     "bond-data", // custom name different from id
 						MTU:      9000,
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:03"),
+							String: "AA:BB:CC:DD:EE:03",
 						},
 						BondLinks: []string{"mgmt0", "storage0"},
 					},
 				},
 				Vlans: []infrav1.NetworkDataLinkVlan{
 					{
-						VlanID:   200,
+						VlanID:   ptr.To(int32(200)),
 						Id:       "vlan200",
 						Name:     "tenant-net", // custom name different from id
 						MTU:      1500,
 						VlanLink: "bond-data",
 						MACAddress: &infrav1.NetworkLinkEthernetMac{
-							String: ptr.To("AA:BB:CC:DD:EE:04"),
+							String: "AA:BB:CC:DD:EE:04",
 						},
 					},
 				},
@@ -3131,7 +3131,7 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":                  "bond",
 					"id":                    "bond0",
 					"name":                  "bond-data",
-					"mtu":                   9000,
+					"mtu":                   int32(9000),
 					"ethernet_mac_address":  "AA:BB:CC:DD:EE:03",
 					"bond_mode":             "802.3ad",
 					"bond_xmit_hash_policy": "",
@@ -3141,23 +3141,23 @@ var _ = Describe("Metal3Data manager", func() {
 					"type":                 "phy",
 					"id":                   "eth0",
 					"name":                 "mgmt0",
-					"mtu":                  1500,
+					"mtu":                  int32(1500),
 					"ethernet_mac_address": "AA:BB:CC:DD:EE:01",
 				},
 				map[string]any{
 					"type":                 "phy",
 					"id":                   "eth1",
 					"name":                 "storage0",
-					"mtu":                  9000,
+					"mtu":                  int32(9000),
 					"ethernet_mac_address": "AA:BB:CC:DD:EE:02",
 				},
 				map[string]any{
 					"type":             "vlan",
 					"id":               "vlan200",
 					"name":             "tenant-net",
-					"mtu":              1500,
+					"mtu":              int32(1500),
 					"vlan_mac_address": "AA:BB:CC:DD:EE:04",
-					"vlan_id":          200,
+					"vlan_id":          int32(200),
 					"vlan_link":        "bond-data",
 				},
 			},
@@ -3167,7 +3167,7 @@ var _ = Describe("Metal3Data manager", func() {
 	type testCaseRenderNetworkNetworks struct {
 		networks       infrav1.NetworkDataNetwork
 		m3d            *infrav1.Metal3Data
-		poolAddresses  map[string]addressFromPool
+		poolAddresses  map[string]AddressFromPool
 		bmh            *bmov1alpha1.BareMetalHost
 		m3m            *infrav1.Metal3Machine
 		machine        *clusterv1.Machine
@@ -3186,10 +3186,10 @@ var _ = Describe("Metal3Data manager", func() {
 			Expect(result).To(Equal(tc.expectedOutput))
 		},
 		Entry("IPv4 network", testCaseRenderNetworkNetworks{
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"abc": {
 					Address: ipamv1.IPAddressStr("192.168.0.14"),
-					Prefix:  24,
+					Prefix:  ptr.To(int32(24)),
 					Gateway: ipamv1.IPAddressStr("192.168.1.1"),
 				},
 			},
@@ -3202,11 +3202,11 @@ var _ = Describe("Metal3Data manager", func() {
 						Routes: []infrav1.NetworkDataRoutev4{
 							{
 								Network: "10.0.0.0",
-								Prefix:  16,
+								Prefix:  ptr.To(int32(16)),
 								Gateway: infrav1.NetworkGatewayv4{
-									FromIPPool: ptr.To("abc"),
+									FromIPPool: "abc",
 								},
-								Services: infrav1.NetworkDataServicev4{
+								Services: &infrav1.NetworkDataServicev4{
 									DNS: []ipamv1.IPAddressv4Str{
 										ipamv1.IPAddressv4Str("8.8.8.8"),
 									},
@@ -3218,7 +3218,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3245,10 +3245,10 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 		}),
 		Entry("IPv4 network CAPI IPAM", testCaseRenderNetworkNetworks{
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"abc": {
 					Address: ipamv1.IPAddressStr("192.168.0.14"),
-					Prefix:  24,
+					Prefix:  ptr.To(int32(24)),
 					Gateway: ipamv1.IPAddressStr("192.168.1.1"),
 				},
 			},
@@ -3257,23 +3257,23 @@ var _ = Describe("Metal3Data manager", func() {
 					{
 						ID:   "abc",
 						Link: "def",
-						FromPoolRef: &corev1.TypedLocalObjectReference{
+						FromPoolRef: infrav1.IPPoolReference{
 							Name:     "abc",
 							Kind:     "InClusterIPPool",
-							APIGroup: ptr.To("ipam.metal3.io"),
+							APIGroup: IPPoolAPIGroup,
 						},
 						Routes: []infrav1.NetworkDataRoutev4{
 							{
 								Network: "10.0.0.0",
-								Prefix:  16,
+								Prefix:  ptr.To(int32(16)),
 								Gateway: infrav1.NetworkGatewayv4{
-									FromPoolRef: &corev1.TypedLocalObjectReference{
+									FromPoolRef: infrav1.IPPoolReference{
 										Name:     "abc",
 										Kind:     "InClusterIPPool",
-										APIGroup: ptr.To("ipam.metal3.io"),
+										APIGroup: IPPoolAPIGroup,
 									},
 								},
-								Services: infrav1.NetworkDataServicev4{
+								Services: &infrav1.NetworkDataServicev4{
 									DNS: []ipamv1.IPAddressv4Str{
 										ipamv1.IPAddressv4Str("8.8.8.8"),
 									},
@@ -3285,7 +3285,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3321,16 +3321,16 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 1000,
+					Index: ptr.To(int32(1000)),
 				},
 			},
 			expectError: true,
 		}),
 		Entry("IPv6 network", testCaseRenderNetworkNetworks{
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"abc": {
 					Address: ipamv1.IPAddressStr("fe80::2001:38"),
-					Prefix:  96,
+					Prefix:  ptr.To(int32(96)),
 					Gateway: ipamv1.IPAddressStr("fe80::2001:1"),
 				},
 			},
@@ -3343,11 +3343,11 @@ var _ = Describe("Metal3Data manager", func() {
 						Routes: []infrav1.NetworkDataRoutev6{
 							{
 								Network: "2001::",
-								Prefix:  64,
+								Prefix:  ptr.To(int32(64)),
 								Gateway: infrav1.NetworkGatewayv6{
-									FromIPPool: ptr.To("abc"),
+									FromIPPool: "abc",
 								},
-								Services: infrav1.NetworkDataServicev6{
+								Services: &infrav1.NetworkDataServicev6{
 									DNS: []ipamv1.IPAddressv6Str{
 										ipamv1.IPAddressv6Str("2001::8888"),
 									},
@@ -3359,7 +3359,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3395,7 +3395,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 10000,
+					Index: ptr.To(int32(10000)),
 				},
 			},
 			expectError: true,
@@ -3409,11 +3409,11 @@ var _ = Describe("Metal3Data manager", func() {
 						Routes: []infrav1.NetworkDataRoutev4{
 							{
 								Network: "10.0.0.0",
-								Prefix:  16,
+								Prefix:  ptr.To(int32(16)),
 								Gateway: infrav1.NetworkGatewayv4{
 									String: (*ipamv1.IPAddressv4Str)(ptr.To("192.168.1.1")),
 								},
-								Services: infrav1.NetworkDataServicev4{
+								Services: &infrav1.NetworkDataServicev4{
 									DNS: []ipamv1.IPAddressv4Str{
 										ipamv1.IPAddressv4Str("8.8.8.8"),
 									},
@@ -3425,7 +3425,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3458,11 +3458,11 @@ var _ = Describe("Metal3Data manager", func() {
 						Routes: []infrav1.NetworkDataRoutev6{
 							{
 								Network: "2001::",
-								Prefix:  64,
+								Prefix:  ptr.To(int32(64)),
 								Gateway: infrav1.NetworkGatewayv6{
 									String: (*ipamv1.IPAddressv6Str)(ptr.To("fe80::2001:1")),
 								},
-								Services: infrav1.NetworkDataServicev6{
+								Services: &infrav1.NetworkDataServicev6{
 									DNS: []ipamv1.IPAddressv6Str{
 										ipamv1.IPAddressv6Str("2001::8888"),
 									},
@@ -3474,7 +3474,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3507,11 +3507,11 @@ var _ = Describe("Metal3Data manager", func() {
 						Routes: []infrav1.NetworkDataRoutev6{
 							{
 								Network: "2001::",
-								Prefix:  64,
+								Prefix:  ptr.To(int32(64)),
 								Gateway: infrav1.NetworkGatewayv6{
 									String: (*ipamv1.IPAddressv6Str)(ptr.To("fe80::2001:1")),
 								},
-								Services: infrav1.NetworkDataServicev6{
+								Services: &infrav1.NetworkDataServicev6{
 									DNS: []ipamv1.IPAddressv6Str{
 										ipamv1.IPAddressv6Str("2001::8888"),
 									},
@@ -3523,7 +3523,7 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			m3d: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			expectedOutput: []any{
@@ -3548,10 +3548,10 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 		}),
 		Entry("IPv4 network with FromPoolAnnotation", testCaseRenderNetworkNetworks{
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"test-pool": {
 					Address: ipamv1.IPAddressStr("192.168.10.20"),
-					Prefix:  24,
+					Prefix:  ptr.To(int32(24)),
 					Gateway: ipamv1.IPAddressStr("192.168.10.1"),
 				},
 			},
@@ -3569,7 +3569,7 @@ var _ = Describe("Metal3Data manager", func() {
 					{
 						ID:   "net1",
 						Link: "eth0",
-						FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+						FromPoolAnnotation: infrav1.FromPoolAnnotation{
 							Object:     "baremetalhost",
 							Annotation: "ippool.metal3.io/test-network",
 						},
@@ -3589,10 +3589,10 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 		}),
 		Entry("IPv6 network with FromPoolAnnotation", testCaseRenderNetworkNetworks{
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"test-pool-v6": {
 					Address: ipamv1.IPAddressStr("2001:db8::100"),
-					Prefix:  64,
+					Prefix:  ptr.To(int32(64)),
 					Gateway: ipamv1.IPAddressStr("2001:db8::1"),
 				},
 			},
@@ -3610,7 +3610,7 @@ var _ = Describe("Metal3Data manager", func() {
 					{
 						ID:   "net1",
 						Link: "eth0",
-						FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+						FromPoolAnnotation: infrav1.FromPoolAnnotation{
 							Object:     "machine",
 							Annotation: "ippool.metal3.io/test-network-v6",
 						},
@@ -3635,34 +3635,34 @@ var _ = Describe("Metal3Data manager", func() {
 		netRoutes := []infrav1.NetworkDataRoutev4{
 			{
 				Network: "192.168.0.0",
-				Prefix:  24,
+				Prefix:  ptr.To(int32(24)),
 				Gateway: infrav1.NetworkGatewayv4{
 					String: (*ipamv1.IPAddressv4Str)(ptr.To("192.168.1.1")),
 				},
 			},
 			{
 				Network: "10.0.0.0",
-				Prefix:  16,
+				Prefix:  ptr.To(int32(16)),
 				Gateway: infrav1.NetworkGatewayv4{
-					FromIPPool: ptr.To("abc"),
+					FromIPPool: "abc",
 				},
-				Services: infrav1.NetworkDataServicev4{
+				Services: &infrav1.NetworkDataServicev4{
 					DNS: []ipamv1.IPAddressv4Str{
 						ipamv1.IPAddressv4Str("8.8.8.8"),
 						ipamv1.IPAddressv4Str("8.8.4.4"),
 					},
-					DNSFromIPPool: ptr.To("abc"),
+					DNSFromIPPool: "abc",
 				},
 			},
 			{
 				Gateway: infrav1.NetworkGatewayv4{
-					FromPoolRef: &corev1.TypedLocalObjectReference{
+					FromPoolRef: infrav1.IPPoolReference{
 						Name: "abc",
 					},
 				},
 			},
 		}
-		poolAddresses := map[string]addressFromPool{
+		poolAddresses := map[string]AddressFromPool{
 			"abc": {
 				Gateway: "192.168.2.1",
 				dnsServers: []ipamv1.IPAddressStr{
@@ -3706,7 +3706,7 @@ var _ = Describe("Metal3Data manager", func() {
 		output, err := getRoutesv4(netRoutes, poolAddresses, nil, nil, nil)
 		Expect(output).To(Equal(ExpectedOutput))
 		Expect(err).NotTo(HaveOccurred())
-		_, err = getRoutesv4(netRoutes, map[string]addressFromPool{}, nil, nil, nil)
+		_, err = getRoutesv4(netRoutes, map[string]AddressFromPool{}, nil, nil, nil)
 		Expect(err).To(HaveOccurred())
 	})
 
@@ -3714,34 +3714,34 @@ var _ = Describe("Metal3Data manager", func() {
 		netRoutes := []infrav1.NetworkDataRoutev6{
 			{
 				Network: "2001::0",
-				Prefix:  96,
+				Prefix:  ptr.To(int32(96)),
 				Gateway: infrav1.NetworkGatewayv6{
 					String: (*ipamv1.IPAddressv6Str)(ptr.To("2001::1")),
 				},
 			},
 			{
 				Network: "fe80::0",
-				Prefix:  64,
+				Prefix:  ptr.To(int32(64)),
 				Gateway: infrav1.NetworkGatewayv6{
-					FromIPPool: ptr.To("abc"),
+					FromIPPool: "abc",
 				},
-				Services: infrav1.NetworkDataServicev6{
+				Services: &infrav1.NetworkDataServicev6{
 					DNS: []ipamv1.IPAddressv6Str{
 						ipamv1.IPAddressv6Str("fe80:2001::8888"),
 						ipamv1.IPAddressv6Str("fe80:2001::8844"),
 					},
-					DNSFromIPPool: ptr.To("abc"),
+					DNSFromIPPool: "abc",
 				},
 			},
 			{
 				Gateway: infrav1.NetworkGatewayv6{
-					FromPoolRef: &corev1.TypedLocalObjectReference{
+					FromPoolRef: infrav1.IPPoolReference{
 						Name: "abc",
 					},
 				},
 			},
 		}
-		poolAddresses := map[string]addressFromPool{
+		poolAddresses := map[string]AddressFromPool{
 			"abc": {
 				Gateway: "fe80::1",
 				dnsServers: []ipamv1.IPAddressStr{
@@ -3785,12 +3785,12 @@ var _ = Describe("Metal3Data manager", func() {
 		output, err := getRoutesv6(netRoutes, poolAddresses, nil, nil, nil)
 		Expect(output).To(Equal(ExpectedOutput))
 		Expect(err).NotTo(HaveOccurred())
-		_, err = getRoutesv6(netRoutes, map[string]addressFromPool{}, nil, nil, nil)
+		_, err = getRoutesv6(netRoutes, map[string]AddressFromPool{}, nil, nil, nil)
 		Expect(err).To(HaveOccurred())
 	})
 
 	type testCaseTranslateMask struct {
-		mask         int
+		mask         *int32
 		ipv4         bool
 		expectedMask any
 	}
@@ -3800,21 +3800,21 @@ var _ = Describe("Metal3Data manager", func() {
 			Expect(translateMask(tc.mask, tc.ipv4)).To(Equal(tc.expectedMask))
 		},
 		Entry("IPv4 mask 24", testCaseTranslateMask{
-			mask:         24,
+			mask:         ptr.To(int32(24)),
 			ipv4:         true,
 			expectedMask: ipamv1.IPAddressv4Str("255.255.255.0"),
 		}),
 		Entry("IPv4 mask 16", testCaseTranslateMask{
-			mask:         16,
+			mask:         ptr.To(int32(16)),
 			ipv4:         true,
 			expectedMask: ipamv1.IPAddressv4Str("255.255.0.0"),
 		}),
 		Entry("IPv6 mask 64", testCaseTranslateMask{
-			mask:         64,
+			mask:         ptr.To(int32(64)),
 			expectedMask: ipamv1.IPAddressv6Str("ffff:ffff:ffff:ffff::"),
 		}),
 		Entry("IPv6 mask 96", testCaseTranslateMask{
-			mask:         96,
+			mask:         ptr.To(int32(96)),
 			expectedMask: ipamv1.IPAddressv6Str("ffff:ffff:ffff:ffff:ffff:ffff::"),
 		}),
 	)
@@ -3840,13 +3840,13 @@ var _ = Describe("Metal3Data manager", func() {
 		},
 		Entry("string", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				String: ptr.To("12:34:56:78:9A:BC"),
+				String: "12:34:56:78:9A:BC",
 			},
 			expectedMAC: "12:34:56:78:9A:BC",
 		}),
 		Entry("from host interface", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromHostInterface: ptr.To("eth1"),
+				FromHostInterface: "eth1",
 			},
 			bmh: &bmov1alpha1.BareMetalHost{
 				ObjectMeta: testObjectMeta(baremetalhostName, namespaceName, ""),
@@ -3871,7 +3871,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from host interface not found", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromHostInterface: ptr.To("eth2"),
+				FromHostInterface: "eth2",
 			},
 			bmh: &bmov1alpha1.BareMetalHost{
 				ObjectMeta: testObjectMeta(baremetalhostName, namespaceName, ""),
@@ -3896,7 +3896,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from machine annotation", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "machine",
 					Annotation: "mac-address",
 				},
@@ -3913,7 +3913,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from metal3machine annotation", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "metal3machine",
 					Annotation: "mac-address",
 				},
@@ -3932,7 +3932,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from baremetalhost annotation", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "baremetalhost",
 					Annotation: "mac-address",
 				},
@@ -3951,7 +3951,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from annotation on unknown object", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "wrflbrmpfd",
 					Annotation: "mac-address",
 				},
@@ -3960,7 +3960,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("from unknown annotation", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "machine",
 					Annotation: "wrflbrmpfd",
 				},
@@ -3977,7 +3977,7 @@ var _ = Describe("Metal3Data manager", func() {
 		}),
 		Entry("ill-formed MAC address", testCaseGetLinkMacAddress{
 			mac: &infrav1.NetworkLinkEthernetMac{
-				FromAnnotation: &infrav1.NetworkLinkEthernetMacFromAnnotation{
+				FromAnnotation: infrav1.NetworkLinkEthernetMacFromAnnotation{
 					Object:     "machine",
 					Annotation: "mac-address",
 				},
@@ -4000,7 +4000,7 @@ var _ = Describe("Metal3Data manager", func() {
 		m3m              *infrav1.Metal3Machine
 		machine          *clusterv1.Machine
 		bmh              *bmov1alpha1.BareMetalHost
-		poolAddresses    map[string]addressFromPool
+		poolAddresses    map[string]AddressFromPool
 		expectedMetaData map[string]string
 		expectError      bool
 	}
@@ -4030,7 +4030,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta("data-abc", namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -4068,7 +4068,7 @@ var _ = Describe("Metal3Data manager", func() {
 						Indexes: []infrav1.MetaDataIndex{
 							{
 								Key:    "Index-1",
-								Offset: 10,
+								Offset: ptr.To(int32(10)),
 								Step:   2,
 								Prefix: "abc",
 								Suffix: "def",
@@ -4237,15 +4237,15 @@ var _ = Describe("Metal3Data manager", func() {
 					},
 				},
 			},
-			poolAddresses: map[string]addressFromPool{
+			poolAddresses: map[string]AddressFromPool{
 				"abcd": {
 					Address: "192.168.0.14",
-					Prefix:  25,
+					Prefix:  ptr.To(int32(25)),
 					Gateway: "192.168.0.1",
 				},
 				"bcde": {
 					Address: "192.168.1.14",
-					Prefix:  26,
+					Prefix:  ptr.To(int32(26)),
 					Gateway: "192.168.1.1",
 				},
 			},
@@ -4315,11 +4315,65 @@ var _ = Describe("Metal3Data manager", func() {
 			},
 			expectError: true,
 		}),
+		Entry("FromBootMAC success", testCaseRenderMetaData{
+			m3m: &infrav1.Metal3Machine{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      metal3machineName,
+					Namespace: namespaceName,
+					UID:       m3muid,
+				},
+			},
+			m3dt: &infrav1.Metal3DataTemplate{
+				ObjectMeta: testObjectMeta(metal3DataTemplateName+"-abc", "", ""),
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "boot-mac",
+								FromBootMAC: ptr.To(true),
+							},
+						},
+					},
+				},
+			},
+			bmh: &bmov1alpha1.BareMetalHost{
+				ObjectMeta: testObjectMeta(baremetalhostName, namespaceName, ""),
+				Spec: bmov1alpha1.BareMetalHostSpec{
+					BootMACAddress: "aa:bb:cc:dd:ee:ff",
+				},
+			},
+			expectedMetaData: map[string]string{
+				"boot-mac":   "aa:bb:cc:dd:ee:ff",
+				"providerid": fmt.Sprintf("%s/%s/%s", namespaceName, baremetalhostName, metal3machineName),
+			},
+		}),
+		Entry("FromBootMAC empty", testCaseRenderMetaData{
+			m3dt: &infrav1.Metal3DataTemplate{
+				ObjectMeta: testObjectMeta(metal3DataTemplateName+"-abc", "", ""),
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "boot-mac",
+								FromBootMAC: ptr.To(true),
+							},
+						},
+					},
+				},
+			},
+			bmh: &bmov1alpha1.BareMetalHost{
+				ObjectMeta: testObjectMeta(baremetalhostName, namespaceName, ""),
+				Spec: bmov1alpha1.BareMetalHostSpec{
+					BootMACAddress: "",
+				},
+			},
+			expectError: true,
+		}),
 		Entry("IP missing", testCaseRenderMetaData{
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta("data-abc", namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -4341,7 +4395,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta("data-abc", namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -4363,7 +4417,7 @@ var _ = Describe("Metal3Data manager", func() {
 			m3d: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMeta("data-abc", namespaceName, ""),
 				Spec: infrav1.Metal3DataSpec{
-					Index: 2,
+					Index: ptr.To(int32(2)),
 				},
 			},
 			m3dt: &infrav1.Metal3DataTemplate{
@@ -4594,7 +4648,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4610,7 +4664,7 @@ var _ = Describe("Metal3Data manager", func() {
 		Entry("Data Spec name unset", testCaseGetM3Machine{
 			Data: &infrav1.Metal3Data{
 				Spec: infrav1.Metal3DataSpec{
-					Claim: corev1.ObjectReference{},
+					Claim: &infrav1.Metal3ObjectRef{},
 				},
 			},
 			ExpectError: true,
@@ -4619,7 +4673,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4632,7 +4686,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4644,11 +4698,17 @@ var _ = Describe("Metal3Data manager", func() {
 		Entry("Object exists", testCaseGetM3Machine{
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
+				Spec: infrav1.Metal3MachineSpec{
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
+				},
 			},
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4661,6 +4721,10 @@ var _ = Describe("Metal3Data manager", func() {
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
 					DataTemplate: nil,
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
 				},
 			},
 			DataTemplate: &infrav1.Metal3DataTemplate{
@@ -4669,7 +4733,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4682,9 +4746,13 @@ var _ = Describe("Metal3Data manager", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      "abcd",
 						Namespace: namespaceName,
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
@@ -4694,7 +4762,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4707,9 +4775,13 @@ var _ = Describe("Metal3Data manager", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, m3muid),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      "abc",
 						Namespace: "defg",
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
@@ -4719,7 +4791,7 @@ var _ = Describe("Metal3Data manager", func() {
 			Data: &infrav1.Metal3Data{
 				ObjectMeta: testObjectMetaWithOR(metal3DataName, metal3machineName),
 				Spec: infrav1.Metal3DataSpec{
-					Claim: *testObjectReference(metal3DataClaimName),
+					Claim: testMetal3ObjectReference(metal3DataClaimName),
 				},
 			},
 			DataClaim: &infrav1.Metal3DataClaim{
@@ -4747,21 +4819,21 @@ var _ = Describe("poolRefs map", func() {
 	When("the map is empty", func() {
 		It("defaults refs to metal3 ipam if not specified", func() {
 			refs := poolRefs{}
-			Expect(refs.addRef(corev1.TypedLocalObjectReference{Name: "foo"})).To(Succeed())
-			Expect(refs["foo"]).To(Equal(corev1.TypedLocalObjectReference{
+			Expect(refs.addRef(infrav1.IPPoolReference{Name: "foo"})).To(Succeed())
+			Expect(refs["foo"]).To(Equal(infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}))
 		})
 
 		It("defaults refs to metal3 that are added using addName()", func() {
 			refs := poolRefs{}
 			Expect(refs.addName("foo")).To(Succeed())
-			Expect(refs["foo"]).To(Equal(corev1.TypedLocalObjectReference{
+			Expect(refs["foo"]).To(Equal(infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}))
 		})
 
@@ -4770,23 +4842,23 @@ var _ = Describe("poolRefs map", func() {
 			Expect(refs.addFromPool(infrav1.FromPool{
 				Name: "foo",
 			})).To(Succeed())
-			Expect(refs["foo"]).To(Equal(corev1.TypedLocalObjectReference{
+			Expect(refs["foo"]).To(Equal(infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}))
 		})
 	})
 
 	When("the map already contains a ref with a non-default kind", func() {
 		var refs poolRefs
-		var existing corev1.TypedLocalObjectReference
+		var existing infrav1.IPPoolReference
 
 		BeforeEach(func() {
-			existing = corev1.TypedLocalObjectReference{
+			existing = infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "InClusterIPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}
 			refs = poolRefs{
 				"foo": existing,
@@ -4799,19 +4871,19 @@ var _ = Describe("poolRefs map", func() {
 		})
 
 		It("rejects adding a ref with the same name but different kind", func() {
-			Expect(refs.addRef(corev1.TypedLocalObjectReference{
+			Expect(refs.addRef(infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			})).NotTo(Succeed())
 			Expect(refs["foo"]).To(Equal(existing))
 		})
 
 		It("rejects adding a ref with the same name but different API group", func() {
-			Expect(refs.addRef(corev1.TypedLocalObjectReference{
+			Expect(refs.addRef(infrav1.IPPoolReference{
 				Name:     "foo",
 				Kind:     "InClusterIPPool",
-				APIGroup: ptr.To("ipam.cluster.x-k8s.io"),
+				APIGroup: "ipam.cluster.x-k8s.io",
 			})).NotTo(Succeed())
 			Expect(refs["foo"]).To(Equal(existing))
 		})
@@ -4828,7 +4900,7 @@ var _ = Describe("poolRefs map", func() {
 		It("rejects adding a ref with the same name but default kind added using addFromPool()", func() {
 			Expect(refs.addFromPool(infrav1.FromPool{
 				Name:     "foo",
-				APIGroup: "ipam.metal3.io",
+				APIGroup: IPPoolAPIGroup,
 			})).NotTo(Succeed())
 			Expect(refs["foo"]).To(Equal(existing))
 		})
@@ -4846,13 +4918,13 @@ var _ = Describe("poolRefs map", func() {
 			machine := &clusterv1.Machine{}
 			bmh := &bmov1alpha1.BareMetalHost{}
 
-			Expect(refs.addFromAnnotation(nil, m3m, machine, bmh)).To(Succeed())
+			Expect(refs.addFromAnnotation(infrav1.FromPoolAnnotation{}, m3m, machine, bmh)).To(Succeed())
 			Expect(refs).To(BeEmpty())
 		})
 
 		It("returns nil when all objects are nil (during release)", func() {
 			refs := poolRefs{}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "test-annotation",
 			}
@@ -4870,16 +4942,16 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "ippool-annotation",
 			}
 
 			Expect(refs.addFromAnnotation(annotation, nil, nil, bmh)).To(Succeed())
-			Expect(refs["test-pool"]).To(Equal(corev1.TypedLocalObjectReference{
+			Expect(refs["test-pool"]).To(Equal(infrav1.IPPoolReference{
 				Name:     "test-pool",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}))
 		})
 
@@ -4892,7 +4964,7 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "missing-annotation",
 			}
@@ -4911,7 +4983,7 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "empty-annotation",
 			}
@@ -4930,26 +5002,26 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "ippool-annotation",
 			}
 
 			Expect(refs.addFromAnnotation(annotation, nil, nil, bmh)).To(Succeed())
 			Expect(refs.addFromAnnotation(annotation, nil, nil, bmh)).To(Succeed())
-			Expect(refs["duplicate-pool"]).To(Equal(corev1.TypedLocalObjectReference{
+			Expect(refs["duplicate-pool"]).To(Equal(infrav1.IPPoolReference{
 				Name:     "duplicate-pool",
 				Kind:     "IPPool",
-				APIGroup: ptr.To("ipam.metal3.io"),
+				APIGroup: IPPoolAPIGroup,
 			}))
 		})
 
 		It("rejects adding conflicting pool with different kind from annotation", func() {
 			refs := poolRefs{
-				"conflict-pool": corev1.TypedLocalObjectReference{
+				"conflict-pool": infrav1.IPPoolReference{
 					Name:     "conflict-pool",
 					Kind:     "InClusterIPPool",
-					APIGroup: ptr.To("ipam.metal3.io"),
+					APIGroup: IPPoolAPIGroup,
 				},
 			}
 			bmh := &bmov1alpha1.BareMetalHost{
@@ -4959,7 +5031,7 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "ippool-annotation",
 			}
@@ -4978,7 +5050,7 @@ var _ = Describe("poolRefs map", func() {
 					},
 				},
 			}
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "unknownobject",
 				Annotation: "test-annotation",
 			}
@@ -5012,7 +5084,7 @@ var _ = Describe("poolRefs map", func() {
 				},
 			}
 
-			annotation := &infrav1.FromPoolAnnotation{
+			annotation := infrav1.FromPoolAnnotation{
 				Object:     "metal3machine",
 				Annotation: "test-annotation",
 			}
@@ -5020,7 +5092,7 @@ var _ = Describe("poolRefs map", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("is nil but referenced"))
 
-			annotation = &infrav1.FromPoolAnnotation{
+			annotation = infrav1.FromPoolAnnotation{
 				Object:     "machine",
 				Annotation: "test-annotation",
 			}
@@ -5028,7 +5100,7 @@ var _ = Describe("poolRefs map", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("is nil but referenced"))
 
-			annotation = &infrav1.FromPoolAnnotation{
+			annotation = infrav1.FromPoolAnnotation{
 				Object:     "baremetalhost",
 				Annotation: "test-annotation",
 			}
@@ -5062,10 +5134,10 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ipv4-network-pool",
 								},
@@ -5073,7 +5145,7 @@ var _ = Describe("getReferencedPools", func() {
 						},
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "ipv6-network-pool",
 								},
@@ -5087,15 +5159,15 @@ var _ = Describe("getReferencedPools", func() {
 		pools, err := getReferencedPools(m3dt, nil, nil, bmh)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pools).To(HaveLen(2))
-		Expect(pools["ipv4-pool"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["ipv4-pool"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "ipv4-pool",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["ipv6-pool"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["ipv6-pool"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "ipv6-pool",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
 	})
 
@@ -5111,14 +5183,14 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "network-pool-v4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ipv4-gateway-pool",
 											},
@@ -5133,7 +5205,7 @@ var _ = Describe("getReferencedPools", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "ipv6-gateway-pool",
 											},
@@ -5150,25 +5222,25 @@ var _ = Describe("getReferencedPools", func() {
 		pools, err := getReferencedPools(m3dt, nil, nil, bmh)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pools).To(HaveLen(4))
-		Expect(pools["gateway-pool-v4"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["gateway-pool-v4"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "gateway-pool-v4",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["gateway-pool-v6"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["gateway-pool-v6"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "gateway-pool-v6",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["network-pool-v4"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["network-pool-v4"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "network-pool-v4",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["network-pool-v6"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["network-pool-v6"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "network-pool-v6",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
 	})
 
@@ -5183,16 +5255,16 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "annotation-pool",
 								},
 							},
 							{
-								FromPoolRef: &corev1.TypedLocalObjectReference{
+								FromPoolRef: infrav1.IPPoolReference{
 									Name: "pool-from-ref",
 								},
 							},
@@ -5205,15 +5277,15 @@ var _ = Describe("getReferencedPools", func() {
 		pools, err := getReferencedPools(m3dt, nil, nil, bmh)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pools).To(HaveLen(2))
-		Expect(pools["pool-from-annotation"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["pool-from-annotation"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "pool-from-annotation",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["pool-from-ref"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["pool-from-ref"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "pool-from-ref",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
 	})
 
@@ -5232,15 +5304,15 @@ var _ = Describe("getReferencedPools", func() {
 		pools, err := getReferencedPools(m3dt, nil, nil, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pools).To(HaveLen(2))
-		Expect(pools["metadata-pool-1"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["metadata-pool-1"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "metadata-pool-1",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
-		Expect(pools["metadata-pool-2"]).To(Equal(corev1.TypedLocalObjectReference{
+		Expect(pools["metadata-pool-2"]).To(Equal(infrav1.IPPoolReference{
 			Name:     "metadata-pool-2",
 			Kind:     "IPPool",
-			APIGroup: ptr.To("ipam.metal3.io"),
+			APIGroup: IPPoolAPIGroup,
 		}))
 	})
 
@@ -5248,10 +5320,10 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "pool-annotation",
 								},
@@ -5299,17 +5371,17 @@ var _ = Describe("getReferencedPools", func() {
 					},
 				},
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "baremetalhost",
 									Annotation: "bmh-pool",
 								},
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+											FromPoolAnnotation: infrav1.FromPoolAnnotation{
 												Object:     "baremetalhost",
 												Annotation: "gateway-pool",
 											},
@@ -5320,13 +5392,13 @@ var _ = Describe("getReferencedPools", func() {
 						},
 						IPv6: []infrav1.NetworkDataIPv6{
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "metal3machine",
 									Annotation: "m3m-pool",
 								},
 							},
 							{
-								FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+								FromPoolAnnotation: infrav1.FromPoolAnnotation{
 									Object:     "machine",
 									Annotation: "machine-pool",
 								},
@@ -5404,8 +5476,8 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Services: infrav1.NetworkDataService{
-						DNSFromIPPool: ptr.To("global-dns-pool"),
+					Services: &infrav1.NetworkDataService{
+						DNSFromIPPool: "global-dns-pool",
 					},
 				},
 			},
@@ -5421,14 +5493,14 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "network-pool-v4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromPoolRef: &corev1.TypedLocalObjectReference{
+											FromPoolRef: infrav1.IPPoolReference{
 												Name: "gateway-ref-pool-v4",
 											},
 										},
@@ -5442,7 +5514,7 @@ var _ = Describe("getReferencedPools", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromPoolRef: &corev1.TypedLocalObjectReference{
+											FromPoolRef: infrav1.IPPoolReference{
 												Name: "gateway-ref-pool-v6",
 											},
 										},
@@ -5468,14 +5540,14 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "network-pool-v4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
 										Gateway: infrav1.NetworkGatewayv4{
-											FromIPPool: ptr.To("gateway-ippool-v4"),
+											FromIPPool: "gateway-ippool-v4",
 										},
 									},
 								},
@@ -5487,7 +5559,7 @@ var _ = Describe("getReferencedPools", func() {
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
 										Gateway: infrav1.NetworkGatewayv6{
-											FromIPPool: ptr.To("gateway-ippool-v6"),
+											FromIPPool: "gateway-ippool-v6",
 										},
 									},
 								},
@@ -5511,14 +5583,14 @@ var _ = Describe("getReferencedPools", func() {
 		m3dt := infrav1.Metal3DataTemplate{
 			Spec: infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4: []infrav1.NetworkDataIPv4{
 							{
 								IPAddressFromIPPool: "network-pool-v4",
 								Routes: []infrav1.NetworkDataRoutev4{
 									{
-										Services: infrav1.NetworkDataServicev4{
-											DNSFromIPPool: ptr.To("dns-route-pool-v4"),
+										Services: &infrav1.NetworkDataServicev4{
+											DNSFromIPPool: "dns-route-pool-v4",
 										},
 									},
 								},
@@ -5529,8 +5601,8 @@ var _ = Describe("getReferencedPools", func() {
 								IPAddressFromIPPool: "network-pool-v6",
 								Routes: []infrav1.NetworkDataRoutev6{
 									{
-										Services: infrav1.NetworkDataServicev6{
-											DNSFromIPPool: ptr.To("dns-route-pool-v6"),
+										Services: &infrav1.NetworkDataServicev6{
+											DNSFromIPPool: "dns-route-pool-v6",
 										},
 									},
 								},
@@ -5578,7 +5650,7 @@ var _ = Describe("When using BMH name based pre-allocation", func() {
 				},
 			},
 			Spec: infrav1.Metal3MachineSpec{
-				DataTemplate: &corev1.ObjectReference{
+				DataTemplate: &infrav1.Metal3ObjectRef{
 					Name:      metal3DataTemplateName,
 					Namespace: namespaceName,
 				},
@@ -5613,11 +5685,11 @@ var _ = Describe("When using BMH name based pre-allocation", func() {
 				Namespace: namespaceName,
 			},
 			Spec: infrav1.Metal3DataSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name:      m3dt.Name,
 					Namespace: m3dt.Namespace,
 				},
-				Claim: corev1.ObjectReference{
+				Claim: &infrav1.Metal3ObjectRef{
 					Namespace: namespaceName,
 					Name:      metal3DataClaimName,
 				},
@@ -5659,14 +5731,14 @@ var _ = Describe("When using BMH name based pre-allocation", func() {
 		}
 	},
 		Entry("should create claim if missing", testCaseEnsureM3Claim{
-			poolRef:          corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef:          infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim:          nil,
 			expectError:      false,
 			expectFetchAgain: true,
 			expectClaim:      true,
 		}),
 		Entry("should do nothing when claim exists", testCaseEnsureM3Claim{
-			poolRef: corev1.TypedLocalObjectReference{Name: testPoolName},
+			poolRef: infrav1.IPPoolReference{Name: testPoolName},
 			ipClaim: &ipamv1.IPClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      bmhName + "-" + testPoolName,

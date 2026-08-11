@@ -25,66 +25,122 @@ import (
 )
 
 const (
-	// UnhealthyAnnotation is the annotation that sets unhealthy status of BMH.
-	UnhealthyAnnotation = "capi.metal3.io/unhealthy"
+	// UnhealthyAnnotationDeprecated is deprecated in favor of UnhealthyAnnotation and kept for migration period.
+	UnhealthyAnnotationDeprecated = "capi.metal3.io/unhealthy"
 
+	// UnhealthyAnnotation is the annotation that sets unhealthy status of BMH.
+	UnhealthyAnnotation = "capm3.metal3.io/unhealthy"
+
+	// liveISODiskFormat is the disk format for live-iso images.
 	LiveISODiskFormat = "live-iso"
 )
 
 // APIEndpoint represents a reachable Kubernetes API endpoint.
+// +kubebuilder:validation:MinProperties=1
 type APIEndpoint struct {
-	// Host is the hostname on which the API server is serving.
-	Host string `json:"host"`
+	// host is the hostname on which the API server is serving.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Host string `json:"host,omitempty"`
 
-	// Port is the port on which the API server is serving.
-	Port int `json:"port"`
+	// port is the port on which the API server is serving.
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port,omitempty"`
 }
 
 // HostSelector specifies matching criteria for labels on BareMetalHosts.
 // This is used to limit the set of BareMetalHost objects considered for
 // claiming for a Machine.
 type HostSelector struct {
-	// Key/value pairs of labels that must exist on a chosen BareMetalHost
+	// matchLabels specifies key/value pairs of labels that must exist on a chosen BareMetalHost
 	// +optional
 	MatchLabels map[string]string `json:"matchLabels,omitempty"`
 
-	// Label match expressions that must be true on a chosen BareMetalHost
+	// matchExpressions specifies match expressions that must be true on a chosen BareMetalHost
 	// +optional
+	// +listType=map
+	// +listMapKey=key
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=512
 	MatchExpressions []HostSelectorRequirement `json:"matchExpressions,omitempty"`
 }
 
 type HostSelectorRequirement struct {
-	Key      string             `json:"key"`
-	Operator selection.Operator `json:"operator"`
-	Values   []string           `json:"values"`
+	// key is the label key that the selector applies to.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Key string `json:"key,omitempty"`
+
+	// operator represents a key's relationship to a set of values.
+	// +required
+	Operator selection.Operator `json:"operator,omitempty"`
+
+	// values is an array of string of required values.
+	// +required
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=512
+	// +kubebuilder:validation:items:MinLength=1
+	// +kubebuilder:validation:items:MaxLength=512
+	Values []string `json:"values,omitempty"`
 }
 
 // Image holds the details of an image to use during provisioning.
 type Image struct {
-	// URL is a location of an image to deploy.
-	URL string `json:"url"`
+	// url is a location of an image to deploy.
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	// +kubebuilder:validation:Format=uri
+	URL string `json:"url,omitempty"`
 
-	// Checksum is a md5sum, sha256sum or sha512sum value or a URL to retrieve one.
-	Checksum string `json:"checksum"`
+	// checksum is a md5sum, sha256sum or sha512sum value or a URL to retrieve one.
+	// When diskFormat is live-iso, empty string is also a valid value.
+	// +required
+	// +kubebuilder:validation:MinLength=0
+	// +kubebuilder:validation:MaxLength=512
+	Checksum *string `json:"checksum,omitempty"`
 
-	// ChecksumType is the checksum algorithm for the image.
+	// checksumType is the checksum algorithm for the image.
 	// e.g md5, sha256, sha512
 	// +kubebuilder:validation:Enum=md5;sha256;sha512
 	// +optional
-	ChecksumType *string `json:"checksumType,omitempty"`
+	ChecksumType string `json:"checksumType,omitempty"`
 
-	// DiskFormat contains the image disk format.
+	// diskFormat contains the image disk format.
 	// +kubebuilder:validation:Enum=raw;qcow2;vdi;vmdk;live-iso
 	// +optional
-	DiskFormat *string `json:"format,omitempty"`
+	DiskFormat string `json:"diskFormat,omitempty"`
 }
 
 // Custom deploy is a description of a customized deploy process.
 type CustomDeploy struct {
-	// Custom deploy method name.
+	// method is the name of the deploy method.
 	// This name is specific to the deploy ramdisk used. If you don't have
 	// a custom deploy ramdisk, you shouldn't use CustomDeploy.
-	Method string `json:"method"`
+	// +required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	Method string `json:"method,omitempty"`
+}
+
+// Metal3ObjectRef is a reference to a Metal3 resource by name and namespace.
+// +structType=atomic
+type Metal3ObjectRef struct {
+	// name of the resource.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Name string `json:"name,omitempty"`
+
+	// namespace of the resource.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // Validate performs validation on [Image], returning a list of field errors using the provided base path.
@@ -92,7 +148,7 @@ type CustomDeploy struct {
 func (i *Image) Validate(base field.Path) field.ErrorList {
 	var errors field.ErrorList
 
-	if i == nil {
+	if i.URL == "" && i.Checksum == nil {
 		errors = append(errors, field.Required(&base, "either image or customDeploy is required"))
 		return errors // not possible to validate further
 	}
@@ -106,15 +162,13 @@ func (i *Image) Validate(base field.Path) field.ErrorList {
 		}
 	}
 	// Checksum is not required for live-iso.
-	if i.DiskFormat == nil || *i.DiskFormat != LiveISODiskFormat {
-		if i.Checksum == "" {
+	if i.DiskFormat != LiveISODiskFormat {
+		if i.Checksum == nil || *i.Checksum == "" {
 			errors = append(errors, field.Required(base.Child("Checksum"), "cannot be empty"))
-		}
-
-		if strings.HasPrefix(i.Checksum, "http://") || strings.HasPrefix(i.Checksum, "https://") {
-			_, err := url.ParseRequestURI(i.Checksum)
+		} else if strings.HasPrefix(*i.Checksum, "http://") || strings.HasPrefix(*i.Checksum, "https://") {
+			_, err := url.ParseRequestURI(*i.Checksum)
 			if err != nil {
-				errors = append(errors, field.Invalid(base.Child("Checksum"), i.Checksum, "not a valid URL"))
+				errors = append(errors, field.Invalid(base.Child("Checksum"), *i.Checksum, "not a valid URL"))
 			}
 		}
 	}

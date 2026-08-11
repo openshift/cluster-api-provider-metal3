@@ -373,29 +373,46 @@ func GetUpgradePlanFromClusterClassVersions(clusterClassVersions []string) func(
 			return nil, nil, nil
 		}
 
-		// Pick all the known kubernetes versions starting from control plane version (excluded) to desired version.
+		// Pick all the candidate kubernetes versions starting from control plane version (excluded) to desired version.
 		upgradePlan := []string{}
-		start := false
-		end := false
 		for _, v := range clusterClassVersions {
 			semV, err := semver.ParseTolerant(v)
 			if err != nil {
 				return nil, nil, errors.Wrapf(err, "failed to parse version %s", v)
 			}
-			if (start && !end) || (!start && semV.Minor > currentControlPlaneSemVer.Minor) {
-				upgradePlan = append(upgradePlan, v)
+			// Ignore all candidate version older or equal to the current control plane version;
+			// also ignoring same versions but with different build tags, because those version will never
+			// end up in the computed upgrade plan (it starts from the next minor).
+			if version.Compare(semV, currentControlPlaneSemVer) <= 0 {
+				continue
 			}
-			if semV.String() == currentControlPlaneSemVer.String() || version.Compare(currentControlPlaneSemVer, semV, version.WithBuildTags()) < 0 {
-				start = true
+			// Safeguard to stop collecting candidate version when we are past desired version.
+			// Note This should never happen because web hook enforcing that the desired version is in the list of versions.
+			if version.Compare(semV, desiredSemVer, version.WithBuildTags()) == 1 {
+				break
 			}
-			if semV.String() == desiredSemVer.String() || version.Compare(desiredSemVer, semV, version.WithBuildTags()) < 0 {
-				end = true
+
+			upgradePlan = append(upgradePlan, v)
+
+			// Stop collecting candidate version when we arrive at the desired version.
+			if semV.String() == desiredSemVer.String() {
+				break
 			}
+		}
+
+		if len(upgradePlan) == 0 {
+			return upgradePlan, nil, nil
 		}
 
 		// In case there is more than one version for one minor, drop all the versions for one minor except the last.
 		simplifiedUpgradePlan := []string{}
 		currentMinor := currentControlPlaneSemVer.Minor
+
+		// Note: Add the current minor version if the upgradePlan only upgrades patch versions.
+		// In this case the `semV.Minor > currentMinor` check below would not add the minor.
+		if currentMinor == desiredSemVer.Minor {
+			simplifiedUpgradePlan = append(simplifiedUpgradePlan, upgradePlan[0])
+		}
 		for _, v := range upgradePlan {
 			semV, err := semver.ParseTolerant(v)
 			if err != nil {
@@ -437,7 +454,7 @@ func GetUpgradePlanFromExtension(runtimeClient runtimeclient.Client, getUpgradeP
 
 		// Prepare the request.
 		req := &runtimehooksv1.GenerateUpgradePlanRequest{
-			Cluster:                           *cleanupCluster(cluster.DeepCopy()),
+			Cluster:                           *cleanupCluster(cluster),
 			FromControlPlaneKubernetesVersion: currentControlPlaneVersion,
 			FromWorkersKubernetesVersion:      currentMinWorkersVersion,
 			ToKubernetesVersion:               desiredVersion,

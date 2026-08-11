@@ -98,11 +98,17 @@ var _ = Describe("Metal3 manager utils", func() {
 			Namespace: namespaceName,
 		},
 		Spec: infrav1.Metal3MachineSpec{
-			ProviderID:            ptr.To("abcdef"),
-			AutomatedCleaningMode: ptr.To("metadata"),
+			ProviderID:            "abcdef",
+			AutomatedCleaningMode: "metadata",
+			Image: infrav1.Image{
+				URL:      "http://example.com/image.qcow2",
+				Checksum: ptr.To("abcd1234"),
+			},
 		},
 		Status: infrav1.Metal3MachineStatus{
-			Ready: true,
+			Initialization: infrav1.Metal3MachineInitializationStatus{
+				Provisioned: ptr.To(true),
+			},
 		},
 	}
 
@@ -112,10 +118,16 @@ var _ = Describe("Metal3 manager utils", func() {
 			Namespace: namespaceName,
 		},
 		Spec: infrav1.Metal3MachineSpec{
-			ProviderID: ptr.To("abcdefg"),
+			ProviderID: "abcdefg",
+			Image: infrav1.Image{
+				URL:      "http://example.com/image.qcow2",
+				Checksum: ptr.To("abcd1234"),
+			},
 		},
 		Status: infrav1.Metal3MachineStatus{
-			Ready: true,
+			Initialization: infrav1.Metal3MachineInitializationStatus{
+				Provisioned: ptr.To(true),
+			},
 		},
 	}
 
@@ -424,7 +436,7 @@ var _ = Describe("Metal3 manager utils", func() {
 	type testCaseFetchM3DataTemplate struct {
 		DataTemplate  *infrav1.Metal3DataTemplate
 		ClusterName   string
-		TemplateRef   *corev1.ObjectReference
+		TemplateRef   *infrav1.Metal3ObjectRef
 		ExpectError   bool
 		ExpectEmpty   bool
 		ExpectRequeue bool
@@ -461,7 +473,7 @@ var _ = Describe("Metal3 manager utils", func() {
 			}
 		},
 		Entry("Object does not exist", testCaseFetchM3DataTemplate{
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -471,7 +483,7 @@ var _ = Describe("Metal3 manager utils", func() {
 			ExpectEmpty: true,
 		}),
 		Entry("Object Ref Name empty", testCaseFetchM3DataTemplate{
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name: "",
 			},
 			ExpectError: true,
@@ -484,7 +496,7 @@ var _ = Describe("Metal3 manager utils", func() {
 				},
 			},
 			ClusterName: "def",
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -498,7 +510,7 @@ var _ = Describe("Metal3 manager utils", func() {
 				},
 			},
 			ClusterName: clusterName,
-			TemplateRef: &corev1.ObjectReference{
+			TemplateRef: &infrav1.Metal3ObjectRef{
 				Name:      metal3DataTemplateName,
 				Namespace: namespaceName,
 			},
@@ -606,6 +618,12 @@ var _ = Describe("Metal3 manager utils", func() {
 		Entry("Object exists", testCaseGetM3Machine{
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
+				Spec: infrav1.Metal3MachineSpec{
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
+				},
 			},
 			Name:      metal3machineName,
 			Namespace: namespaceName,
@@ -615,6 +633,10 @@ var _ = Describe("Metal3 manager utils", func() {
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
 					DataTemplate: nil,
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
+					},
 				},
 			},
 			DataTemplate: &infrav1.Metal3DataTemplate{
@@ -628,9 +650,13 @@ var _ = Describe("Metal3 manager utils", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      "abcd",
 						Namespace: namespaceName,
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
@@ -645,9 +671,13 @@ var _ = Describe("Metal3 manager utils", func() {
 			Machine: &infrav1.Metal3Machine{
 				ObjectMeta: testObjectMeta(metal3machineName, namespaceName, ""),
 				Spec: infrav1.Metal3MachineSpec{
-					DataTemplate: &corev1.ObjectReference{
+					DataTemplate: &infrav1.Metal3ObjectRef{
 						Name:      metal3DataTemplateName,
 						Namespace: "defg",
+					},
+					Image: infrav1.Image{
+						URL:      "http://example.com/image.qcow2",
+						Checksum: ptr.To("abcd1234"),
 					},
 				},
 			},
