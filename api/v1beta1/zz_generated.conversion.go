@@ -42,16 +42,6 @@ func init() {
 // RegisterConversions adds conversion functions to the given scheme.
 // Public to allow building arbitrary schemes.
 func RegisterConversions(s *runtime.Scheme) error {
-	if err := s.AddGeneratedConversionFunc((*APIEndpoint)(nil), (*v1beta2.APIEndpoint)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(a.(*APIEndpoint), b.(*v1beta2.APIEndpoint), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.APIEndpoint)(nil), (*APIEndpoint)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(a.(*v1beta2.APIEndpoint), b.(*APIEndpoint), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*CustomDeploy)(nil), (*v1beta2.CustomDeploy)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_CustomDeploy_To_v1beta2_CustomDeploy(a.(*CustomDeploy), b.(*v1beta2.CustomDeploy), scope)
 	}); err != nil {
@@ -102,16 +92,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*Image)(nil), (*v1beta2.Image)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Image_To_v1beta2_Image(a.(*Image), b.(*v1beta2.Image), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Image)(nil), (*Image)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Image_To_v1beta1_Image(a.(*v1beta2.Image), b.(*Image), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*MetaData)(nil), (*v1beta2.MetaData)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_MetaData_To_v1beta2_MetaData(a.(*MetaData), b.(*v1beta2.MetaData), scope)
 	}); err != nil {
@@ -159,16 +139,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.MetaDataIPAddress)(nil), (*MetaDataIPAddress)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_MetaDataIPAddress_To_v1beta1_MetaDataIPAddress(a.(*v1beta2.MetaDataIPAddress), b.(*MetaDataIPAddress), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*MetaDataIndex)(nil), (*v1beta2.MetaDataIndex)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(a.(*MetaDataIndex), b.(*v1beta2.MetaDataIndex), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.MetaDataIndex)(nil), (*MetaDataIndex)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(a.(*v1beta2.MetaDataIndex), b.(*MetaDataIndex), scope)
 	}); err != nil {
 		return err
 	}
@@ -287,26 +257,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*Metal3DataClaimSpec)(nil), (*v1beta2.Metal3DataClaimSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec(a.(*Metal3DataClaimSpec), b.(*v1beta2.Metal3DataClaimSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataClaimSpec)(nil), (*Metal3DataClaimSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec(a.(*v1beta2.Metal3DataClaimSpec), b.(*Metal3DataClaimSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*Metal3DataClaimStatus)(nil), (*v1beta2.Metal3DataClaimStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus(a.(*Metal3DataClaimStatus), b.(*v1beta2.Metal3DataClaimStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataClaimStatus)(nil), (*Metal3DataClaimStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus(a.(*v1beta2.Metal3DataClaimStatus), b.(*Metal3DataClaimStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*Metal3DataList)(nil), (*v1beta2.Metal3DataList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Metal3DataList_To_v1beta2_Metal3DataList(a.(*Metal3DataList), b.(*v1beta2.Metal3DataList), scope)
 	}); err != nil {
@@ -314,16 +264,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataList)(nil), (*Metal3DataList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_Metal3DataList_To_v1beta1_Metal3DataList(a.(*v1beta2.Metal3DataList), b.(*Metal3DataList), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*Metal3DataSpec)(nil), (*v1beta2.Metal3DataSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec(a.(*Metal3DataSpec), b.(*v1beta2.Metal3DataSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataSpec)(nil), (*Metal3DataSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec(a.(*v1beta2.Metal3DataSpec), b.(*Metal3DataSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -357,26 +297,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*Metal3DataTemplateSpec)(nil), (*v1beta2.Metal3DataTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec(a.(*Metal3DataTemplateSpec), b.(*v1beta2.Metal3DataTemplateSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataTemplateSpec)(nil), (*Metal3DataTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec(a.(*v1beta2.Metal3DataTemplateSpec), b.(*Metal3DataTemplateSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*Metal3DataTemplateStatus)(nil), (*v1beta2.Metal3DataTemplateStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus(a.(*Metal3DataTemplateStatus), b.(*v1beta2.Metal3DataTemplateStatus), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3DataTemplateStatus)(nil), (*Metal3DataTemplateStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus(a.(*v1beta2.Metal3DataTemplateStatus), b.(*Metal3DataTemplateStatus), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*Metal3Machine)(nil), (*v1beta2.Metal3Machine)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Metal3Machine_To_v1beta2_Metal3Machine(a.(*Metal3Machine), b.(*v1beta2.Metal3Machine), scope)
 	}); err != nil {
@@ -394,16 +314,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3MachineList)(nil), (*Metal3MachineList)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_Metal3MachineList_To_v1beta1_Metal3MachineList(a.(*v1beta2.Metal3MachineList), b.(*Metal3MachineList), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*Metal3MachineSpec)(nil), (*v1beta2.Metal3MachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(a.(*Metal3MachineSpec), b.(*v1beta2.Metal3MachineSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3MachineSpec)(nil), (*Metal3MachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(a.(*v1beta2.Metal3MachineSpec), b.(*Metal3MachineSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -429,21 +339,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*Metal3MachineTemplateResource)(nil), (*v1beta2.Metal3MachineTemplateResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Metal3MachineTemplateResource_To_v1beta2_Metal3MachineTemplateResource(a.(*Metal3MachineTemplateResource), b.(*v1beta2.Metal3MachineTemplateResource), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3MachineTemplateResource)(nil), (*Metal3MachineTemplateResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(a.(*v1beta2.Metal3MachineTemplateResource), b.(*Metal3MachineTemplateResource), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*Metal3MachineTemplateSpec)(nil), (*v1beta2.Metal3MachineTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec(a.(*Metal3MachineTemplateSpec), b.(*v1beta2.Metal3MachineTemplateSpec), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.Metal3MachineTemplateSpec)(nil), (*Metal3MachineTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec(a.(*v1beta2.Metal3MachineTemplateSpec), b.(*Metal3MachineTemplateSpec), scope)
 	}); err != nil {
 		return err
 	}
@@ -537,26 +432,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*NetworkData)(nil), (*v1beta2.NetworkData)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkData_To_v1beta2_NetworkData(a.(*NetworkData), b.(*v1beta2.NetworkData), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkData)(nil), (*NetworkData)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkData_To_v1beta1_NetworkData(a.(*v1beta2.NetworkData), b.(*NetworkData), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataIPv4)(nil), (*v1beta2.NetworkDataIPv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(a.(*NetworkDataIPv4), b.(*v1beta2.NetworkDataIPv4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataIPv4)(nil), (*NetworkDataIPv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(a.(*v1beta2.NetworkDataIPv4), b.(*NetworkDataIPv4), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*NetworkDataIPv4DHCP)(nil), (*v1beta2.NetworkDataIPv4DHCP)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_NetworkDataIPv4DHCP_To_v1beta2_NetworkDataIPv4DHCP(a.(*NetworkDataIPv4DHCP), b.(*v1beta2.NetworkDataIPv4DHCP), scope)
 	}); err != nil {
@@ -564,16 +439,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataIPv4DHCP)(nil), (*NetworkDataIPv4DHCP)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_NetworkDataIPv4DHCP_To_v1beta1_NetworkDataIPv4DHCP(a.(*v1beta2.NetworkDataIPv4DHCP), b.(*NetworkDataIPv4DHCP), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataIPv6)(nil), (*v1beta2.NetworkDataIPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(a.(*NetworkDataIPv6), b.(*v1beta2.NetworkDataIPv6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataIPv6)(nil), (*NetworkDataIPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(a.(*v1beta2.NetworkDataIPv6), b.(*NetworkDataIPv6), scope)
 	}); err != nil {
 		return err
 	}
@@ -597,16 +462,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataLinkBond)(nil), (*v1beta2.NetworkDataLinkBond)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(a.(*NetworkDataLinkBond), b.(*v1beta2.NetworkDataLinkBond), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataLinkBond)(nil), (*NetworkDataLinkBond)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(a.(*v1beta2.NetworkDataLinkBond), b.(*NetworkDataLinkBond), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*NetworkDataLinkEthernet)(nil), (*v1beta2.NetworkDataLinkEthernet)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_NetworkDataLinkEthernet_To_v1beta2_NetworkDataLinkEthernet(a.(*NetworkDataLinkEthernet), b.(*v1beta2.NetworkDataLinkEthernet), scope)
 	}); err != nil {
@@ -614,16 +469,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}
 	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataLinkEthernet)(nil), (*NetworkDataLinkEthernet)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_NetworkDataLinkEthernet_To_v1beta1_NetworkDataLinkEthernet(a.(*v1beta2.NetworkDataLinkEthernet), b.(*NetworkDataLinkEthernet), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataLinkVlan)(nil), (*v1beta2.NetworkDataLinkVlan)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(a.(*NetworkDataLinkVlan), b.(*v1beta2.NetworkDataLinkVlan), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataLinkVlan)(nil), (*NetworkDataLinkVlan)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(a.(*v1beta2.NetworkDataLinkVlan), b.(*NetworkDataLinkVlan), scope)
 	}); err != nil {
 		return err
 	}
@@ -637,86 +482,6 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataRoutev4)(nil), (*v1beta2.NetworkDataRoutev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(a.(*NetworkDataRoutev4), b.(*v1beta2.NetworkDataRoutev4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataRoutev4)(nil), (*NetworkDataRoutev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(a.(*v1beta2.NetworkDataRoutev4), b.(*NetworkDataRoutev4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataRoutev6)(nil), (*v1beta2.NetworkDataRoutev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(a.(*NetworkDataRoutev6), b.(*v1beta2.NetworkDataRoutev6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataRoutev6)(nil), (*NetworkDataRoutev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(a.(*v1beta2.NetworkDataRoutev6), b.(*NetworkDataRoutev6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataService)(nil), (*v1beta2.NetworkDataService)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(a.(*NetworkDataService), b.(*v1beta2.NetworkDataService), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataService)(nil), (*NetworkDataService)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(a.(*v1beta2.NetworkDataService), b.(*NetworkDataService), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataServicev4)(nil), (*v1beta2.NetworkDataServicev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(a.(*NetworkDataServicev4), b.(*v1beta2.NetworkDataServicev4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataServicev4)(nil), (*NetworkDataServicev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(a.(*v1beta2.NetworkDataServicev4), b.(*NetworkDataServicev4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkDataServicev6)(nil), (*v1beta2.NetworkDataServicev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(a.(*NetworkDataServicev6), b.(*v1beta2.NetworkDataServicev6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkDataServicev6)(nil), (*NetworkDataServicev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(a.(*v1beta2.NetworkDataServicev6), b.(*NetworkDataServicev6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkGatewayv4)(nil), (*v1beta2.NetworkGatewayv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(a.(*NetworkGatewayv4), b.(*v1beta2.NetworkGatewayv4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkGatewayv4)(nil), (*NetworkGatewayv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(a.(*v1beta2.NetworkGatewayv4), b.(*NetworkGatewayv4), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkGatewayv6)(nil), (*v1beta2.NetworkGatewayv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(a.(*NetworkGatewayv6), b.(*v1beta2.NetworkGatewayv6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkGatewayv6)(nil), (*NetworkGatewayv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(a.(*v1beta2.NetworkGatewayv6), b.(*NetworkGatewayv6), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*NetworkLinkEthernetMac)(nil), (*v1beta2.NetworkLinkEthernetMac)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(a.(*NetworkLinkEthernetMac), b.(*v1beta2.NetworkLinkEthernetMac), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.NetworkLinkEthernetMac)(nil), (*NetworkLinkEthernetMac)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(a.(*v1beta2.NetworkLinkEthernetMac), b.(*NetworkLinkEthernetMac), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddGeneratedConversionFunc((*NetworkLinkEthernetMacFromAnnotation)(nil), (*v1beta2.NetworkLinkEthernetMacFromAnnotation)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_NetworkLinkEthernetMacFromAnnotation_To_v1beta2_NetworkLinkEthernetMacFromAnnotation(a.(*NetworkLinkEthernetMacFromAnnotation), b.(*v1beta2.NetworkLinkEthernetMacFromAnnotation), scope)
 	}); err != nil {
@@ -727,23 +492,43 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
-	if err := s.AddGeneratedConversionFunc((*RemediationStrategy)(nil), (*v1beta2.RemediationStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(a.(*RemediationStrategy), b.(*v1beta2.RemediationStrategy), scope)
-	}); err != nil {
-		return err
-	}
-	if err := s.AddGeneratedConversionFunc((*v1beta2.RemediationStrategy)(nil), (*RemediationStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
-		return Convert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(a.(*v1beta2.RemediationStrategy), b.(*RemediationStrategy), scope)
-	}); err != nil {
-		return err
-	}
 	if err := s.AddConversionFunc((*v1.Condition)(nil), (*corev1beta1.Condition)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1_Condition_To_v1beta1_Condition(a.(*v1.Condition), b.(*corev1beta1.Condition), scope)
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*corev1.ObjectReference)(nil), (*v1beta2.Metal3ObjectRef)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1_ObjectReference_To_v1beta2_Metal3ObjectRef(a.(*corev1.ObjectReference), b.(*v1beta2.Metal3ObjectRef), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*corev1.TypedLocalObjectReference)(nil), (*v1beta2.IPPoolReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1_TypedLocalObjectReference_To_v1beta2_IPPoolReference(a.(*corev1.TypedLocalObjectReference), b.(*v1beta2.IPPoolReference), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*APIEndpoint)(nil), (*v1beta2.APIEndpoint)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(a.(*APIEndpoint), b.(*v1beta2.APIEndpoint), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*corev1beta1.Condition)(nil), (*v1.Condition)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Condition_To_v1_Condition(a.(*corev1beta1.Condition), b.(*v1.Condition), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Image)(nil), (*v1beta2.Image)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Image_To_v1beta2_Image(a.(*Image), b.(*v1beta2.Image), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*corev1beta1.MachineAddress)(nil), (*corev1beta2.MachineAddress)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MachineAddress_To_v1beta2_MachineAddress(a.(*corev1beta1.MachineAddress), b.(*corev1beta2.MachineAddress), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*MetaDataIndex)(nil), (*v1beta2.MetaDataIndex)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(a.(*MetaDataIndex), b.(*v1beta2.MetaDataIndex), scope)
 	}); err != nil {
 		return err
 	}
@@ -757,8 +542,143 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*Metal3DataClaimSpec)(nil), (*v1beta2.Metal3DataClaimSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec(a.(*Metal3DataClaimSpec), b.(*v1beta2.Metal3DataClaimSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3DataClaimStatus)(nil), (*v1beta2.Metal3DataClaimStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus(a.(*Metal3DataClaimStatus), b.(*v1beta2.Metal3DataClaimStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3DataSpec)(nil), (*v1beta2.Metal3DataSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec(a.(*Metal3DataSpec), b.(*v1beta2.Metal3DataSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3DataTemplateSpec)(nil), (*v1beta2.Metal3DataTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec(a.(*Metal3DataTemplateSpec), b.(*v1beta2.Metal3DataTemplateSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3DataTemplateStatus)(nil), (*v1beta2.Metal3DataTemplateStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus(a.(*Metal3DataTemplateStatus), b.(*v1beta2.Metal3DataTemplateStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3MachineSpec)(nil), (*v1beta2.Metal3MachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(a.(*Metal3MachineSpec), b.(*v1beta2.Metal3MachineSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*Metal3MachineStatus)(nil), (*v1beta2.Metal3MachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta1_Metal3MachineStatus_To_v1beta2_Metal3MachineStatus(a.(*Metal3MachineStatus), b.(*v1beta2.Metal3MachineStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*Metal3MachineTemplateSpec)(nil), (*v1beta2.Metal3MachineTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec(a.(*Metal3MachineTemplateSpec), b.(*v1beta2.Metal3MachineTemplateSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataIPv4)(nil), (*v1beta2.NetworkDataIPv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(a.(*NetworkDataIPv4), b.(*v1beta2.NetworkDataIPv4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataIPv6)(nil), (*v1beta2.NetworkDataIPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(a.(*NetworkDataIPv6), b.(*v1beta2.NetworkDataIPv6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataLinkBond)(nil), (*v1beta2.NetworkDataLinkBond)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(a.(*NetworkDataLinkBond), b.(*v1beta2.NetworkDataLinkBond), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataLinkVlan)(nil), (*v1beta2.NetworkDataLinkVlan)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(a.(*NetworkDataLinkVlan), b.(*v1beta2.NetworkDataLinkVlan), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataRoutev4)(nil), (*v1beta2.NetworkDataRoutev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(a.(*NetworkDataRoutev4), b.(*v1beta2.NetworkDataRoutev4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataRoutev6)(nil), (*v1beta2.NetworkDataRoutev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(a.(*NetworkDataRoutev6), b.(*v1beta2.NetworkDataRoutev6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataService)(nil), (*v1beta2.NetworkDataService)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(a.(*NetworkDataService), b.(*v1beta2.NetworkDataService), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataServicev4)(nil), (*v1beta2.NetworkDataServicev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(a.(*NetworkDataServicev4), b.(*v1beta2.NetworkDataServicev4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkDataServicev6)(nil), (*v1beta2.NetworkDataServicev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(a.(*NetworkDataServicev6), b.(*v1beta2.NetworkDataServicev6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkData)(nil), (*v1beta2.NetworkData)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkData_To_v1beta2_NetworkData(a.(*NetworkData), b.(*v1beta2.NetworkData), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkGatewayv4)(nil), (*v1beta2.NetworkGatewayv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(a.(*NetworkGatewayv4), b.(*v1beta2.NetworkGatewayv4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkGatewayv6)(nil), (*v1beta2.NetworkGatewayv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(a.(*NetworkGatewayv6), b.(*v1beta2.NetworkGatewayv6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*NetworkLinkEthernetMac)(nil), (*v1beta2.NetworkLinkEthernetMac)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(a.(*NetworkLinkEthernetMac), b.(*v1beta2.NetworkLinkEthernetMac), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*corev1beta1.ObjectMeta)(nil), (*corev1beta2.ObjectMeta)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_ObjectMeta_To_v1beta2_ObjectMeta(a.(*corev1beta1.ObjectMeta), b.(*corev1beta2.ObjectMeta), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*RemediationStrategy)(nil), (*v1beta2.RemediationStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(a.(*RemediationStrategy), b.(*v1beta2.RemediationStrategy), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.APIEndpoint)(nil), (*APIEndpoint)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(a.(*v1beta2.APIEndpoint), b.(*APIEndpoint), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.IPPoolReference)(nil), (*corev1.TypedLocalObjectReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_IPPoolReference_To_v1_TypedLocalObjectReference(a.(*v1beta2.IPPoolReference), b.(*corev1.TypedLocalObjectReference), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Image)(nil), (*Image)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Image_To_v1beta1_Image(a.(*v1beta2.Image), b.(*Image), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*corev1beta2.MachineAddress)(nil), (*corev1beta1.MachineAddress)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_MachineAddress_To_v1beta1_MachineAddress(a.(*corev1beta2.MachineAddress), b.(*corev1beta1.MachineAddress), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.MetaDataIndex)(nil), (*MetaDataIndex)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(a.(*v1beta2.MetaDataIndex), b.(*MetaDataIndex), scope)
 	}); err != nil {
 		return err
 	}
@@ -777,8 +697,128 @@ func RegisterConversions(s *runtime.Scheme) error {
 	}); err != nil {
 		return err
 	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3DataClaimSpec)(nil), (*Metal3DataClaimSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec(a.(*v1beta2.Metal3DataClaimSpec), b.(*Metal3DataClaimSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3DataClaimStatus)(nil), (*Metal3DataClaimStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus(a.(*v1beta2.Metal3DataClaimStatus), b.(*Metal3DataClaimStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3DataSpec)(nil), (*Metal3DataSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec(a.(*v1beta2.Metal3DataSpec), b.(*Metal3DataSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3DataTemplateSpec)(nil), (*Metal3DataTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec(a.(*v1beta2.Metal3DataTemplateSpec), b.(*Metal3DataTemplateSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3DataTemplateStatus)(nil), (*Metal3DataTemplateStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus(a.(*v1beta2.Metal3DataTemplateStatus), b.(*Metal3DataTemplateStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3MachineSpec)(nil), (*Metal3MachineSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(a.(*v1beta2.Metal3MachineSpec), b.(*Metal3MachineSpec), scope)
+	}); err != nil {
+		return err
+	}
 	if err := s.AddConversionFunc((*v1beta2.Metal3MachineStatus)(nil), (*Metal3MachineStatus)(nil), func(a, b interface{}, scope conversion.Scope) error {
 		return Convert_v1beta2_Metal3MachineStatus_To_v1beta1_Metal3MachineStatus(a.(*v1beta2.Metal3MachineStatus), b.(*Metal3MachineStatus), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3MachineTemplateResource)(nil), (*Metal3MachineTemplateResource)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(a.(*v1beta2.Metal3MachineTemplateResource), b.(*Metal3MachineTemplateResource), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3MachineTemplateSpec)(nil), (*Metal3MachineTemplateSpec)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec(a.(*v1beta2.Metal3MachineTemplateSpec), b.(*Metal3MachineTemplateSpec), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.Metal3ObjectRef)(nil), (*corev1.ObjectReference)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_Metal3ObjectRef_To_v1_ObjectReference(a.(*v1beta2.Metal3ObjectRef), b.(*corev1.ObjectReference), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataIPv4)(nil), (*NetworkDataIPv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(a.(*v1beta2.NetworkDataIPv4), b.(*NetworkDataIPv4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataIPv6)(nil), (*NetworkDataIPv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(a.(*v1beta2.NetworkDataIPv6), b.(*NetworkDataIPv6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataLinkBond)(nil), (*NetworkDataLinkBond)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(a.(*v1beta2.NetworkDataLinkBond), b.(*NetworkDataLinkBond), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataLinkVlan)(nil), (*NetworkDataLinkVlan)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(a.(*v1beta2.NetworkDataLinkVlan), b.(*NetworkDataLinkVlan), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataRoutev4)(nil), (*NetworkDataRoutev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(a.(*v1beta2.NetworkDataRoutev4), b.(*NetworkDataRoutev4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataRoutev6)(nil), (*NetworkDataRoutev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(a.(*v1beta2.NetworkDataRoutev6), b.(*NetworkDataRoutev6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataService)(nil), (*NetworkDataService)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(a.(*v1beta2.NetworkDataService), b.(*NetworkDataService), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataServicev4)(nil), (*NetworkDataServicev4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(a.(*v1beta2.NetworkDataServicev4), b.(*NetworkDataServicev4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkDataServicev6)(nil), (*NetworkDataServicev6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(a.(*v1beta2.NetworkDataServicev6), b.(*NetworkDataServicev6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkData)(nil), (*NetworkData)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkData_To_v1beta1_NetworkData(a.(*v1beta2.NetworkData), b.(*NetworkData), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkGatewayv4)(nil), (*NetworkGatewayv4)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(a.(*v1beta2.NetworkGatewayv4), b.(*NetworkGatewayv4), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkGatewayv6)(nil), (*NetworkGatewayv6)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(a.(*v1beta2.NetworkGatewayv6), b.(*NetworkGatewayv6), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.NetworkLinkEthernetMac)(nil), (*NetworkLinkEthernetMac)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(a.(*v1beta2.NetworkLinkEthernetMac), b.(*NetworkLinkEthernetMac), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*corev1beta2.ObjectMeta)(nil), (*corev1beta1.ObjectMeta)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_ObjectMeta_To_v1beta1_ObjectMeta(a.(*corev1beta2.ObjectMeta), b.(*corev1beta1.ObjectMeta), scope)
+	}); err != nil {
+		return err
+	}
+	if err := s.AddConversionFunc((*v1beta2.RemediationStrategy)(nil), (*RemediationStrategy)(nil), func(a, b interface{}, scope conversion.Scope) error {
+		return Convert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(a.(*v1beta2.RemediationStrategy), b.(*RemediationStrategy), scope)
 	}); err != nil {
 		return err
 	}
@@ -787,24 +827,14 @@ func RegisterConversions(s *runtime.Scheme) error {
 
 func autoConvert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(in *APIEndpoint, out *v1beta2.APIEndpoint, s conversion.Scope) error {
 	out.Host = in.Host
-	out.Port = in.Port
+	out.Port = int32(in.Port)
 	return nil
-}
-
-// Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint is an autogenerated conversion function.
-func Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(in *APIEndpoint, out *v1beta2.APIEndpoint, s conversion.Scope) error {
-	return autoConvert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(in, out, s)
 }
 
 func autoConvert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(in *v1beta2.APIEndpoint, out *APIEndpoint, s conversion.Scope) error {
 	out.Host = in.Host
-	out.Port = in.Port
+	out.Port = int(in.Port)
 	return nil
-}
-
-// Convert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint is an autogenerated conversion function.
-func Convert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(in *v1beta2.APIEndpoint, out *APIEndpoint, s conversion.Scope) error {
-	return autoConvert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(in, out, s)
 }
 
 func autoConvert_v1beta1_CustomDeploy_To_v1beta2_CustomDeploy(in *CustomDeploy, out *v1beta2.CustomDeploy, s conversion.Scope) error {
@@ -923,40 +953,62 @@ func Convert_v1beta2_HostSelectorRequirement_To_v1beta1_HostSelectorRequirement(
 
 func autoConvert_v1beta1_Image_To_v1beta2_Image(in *Image, out *v1beta2.Image, s conversion.Scope) error {
 	out.URL = in.URL
-	out.Checksum = in.Checksum
-	out.ChecksumType = (*string)(unsafe.Pointer(in.ChecksumType))
-	out.DiskFormat = (*string)(unsafe.Pointer(in.DiskFormat))
+	if err := v1.Convert_string_To_Pointer_string(&in.Checksum, &out.Checksum, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.ChecksumType, &out.ChecksumType, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.DiskFormat, &out.DiskFormat, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_Image_To_v1beta2_Image is an autogenerated conversion function.
-func Convert_v1beta1_Image_To_v1beta2_Image(in *Image, out *v1beta2.Image, s conversion.Scope) error {
-	return autoConvert_v1beta1_Image_To_v1beta2_Image(in, out, s)
 }
 
 func autoConvert_v1beta2_Image_To_v1beta1_Image(in *v1beta2.Image, out *Image, s conversion.Scope) error {
 	out.URL = in.URL
-	out.Checksum = in.Checksum
-	out.ChecksumType = (*string)(unsafe.Pointer(in.ChecksumType))
-	out.DiskFormat = (*string)(unsafe.Pointer(in.DiskFormat))
+	if err := v1.Convert_Pointer_string_To_string(&in.Checksum, &out.Checksum, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.ChecksumType, &out.ChecksumType, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.DiskFormat, &out.DiskFormat, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_Image_To_v1beta1_Image is an autogenerated conversion function.
-func Convert_v1beta2_Image_To_v1beta1_Image(in *v1beta2.Image, out *Image, s conversion.Scope) error {
-	return autoConvert_v1beta2_Image_To_v1beta1_Image(in, out, s)
 }
 
 func autoConvert_v1beta1_MetaData_To_v1beta2_MetaData(in *MetaData, out *v1beta2.MetaData, s conversion.Scope) error {
 	out.Strings = *(*[]v1beta2.MetaDataString)(unsafe.Pointer(&in.Strings))
 	out.ObjectNames = *(*[]v1beta2.MetaDataObjectName)(unsafe.Pointer(&in.ObjectNames))
-	out.Indexes = *(*[]v1beta2.MetaDataIndex)(unsafe.Pointer(&in.Indexes))
+	if in.Indexes != nil {
+		in, out := &in.Indexes, &out.Indexes
+		*out = make([]v1beta2.MetaDataIndex, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Indexes = nil
+	}
 	out.Namespaces = *(*[]v1beta2.MetaDataNamespace)(unsafe.Pointer(&in.Namespaces))
 	out.IPAddressesFromPool = *(*[]v1beta2.FromPool)(unsafe.Pointer(&in.IPAddressesFromPool))
 	out.PrefixesFromPool = *(*[]v1beta2.FromPool)(unsafe.Pointer(&in.PrefixesFromPool))
 	out.GatewaysFromPool = *(*[]v1beta2.FromPool)(unsafe.Pointer(&in.GatewaysFromPool))
 	out.DNSServersFromPool = *(*[]v1beta2.FromPool)(unsafe.Pointer(&in.DNSServersFromPool))
-	out.FromHostInterfaces = *(*[]v1beta2.MetaDataHostInterface)(unsafe.Pointer(&in.FromHostInterfaces))
+	if in.FromHostInterfaces != nil {
+		in, out := &in.FromHostInterfaces, &out.FromHostInterfaces
+		*out = make([]v1beta2.MetaDataHostInterface, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_MetaDataHostInterface_To_v1beta2_MetaDataHostInterface(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.FromHostInterfaces = nil
+	}
 	out.FromLabels = *(*[]v1beta2.MetaDataFromLabel)(unsafe.Pointer(&in.FromLabels))
 	out.FromAnnotations = *(*[]v1beta2.MetaDataFromAnnotation)(unsafe.Pointer(&in.FromAnnotations))
 	return nil
@@ -970,13 +1022,33 @@ func Convert_v1beta1_MetaData_To_v1beta2_MetaData(in *MetaData, out *v1beta2.Met
 func autoConvert_v1beta2_MetaData_To_v1beta1_MetaData(in *v1beta2.MetaData, out *MetaData, s conversion.Scope) error {
 	out.Strings = *(*[]MetaDataString)(unsafe.Pointer(&in.Strings))
 	out.ObjectNames = *(*[]MetaDataObjectName)(unsafe.Pointer(&in.ObjectNames))
-	out.Indexes = *(*[]MetaDataIndex)(unsafe.Pointer(&in.Indexes))
+	if in.Indexes != nil {
+		in, out := &in.Indexes, &out.Indexes
+		*out = make([]MetaDataIndex, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Indexes = nil
+	}
 	out.Namespaces = *(*[]MetaDataNamespace)(unsafe.Pointer(&in.Namespaces))
 	out.IPAddressesFromPool = *(*[]FromPool)(unsafe.Pointer(&in.IPAddressesFromPool))
 	out.PrefixesFromPool = *(*[]FromPool)(unsafe.Pointer(&in.PrefixesFromPool))
 	out.GatewaysFromPool = *(*[]FromPool)(unsafe.Pointer(&in.GatewaysFromPool))
 	out.DNSServersFromPool = *(*[]FromPool)(unsafe.Pointer(&in.DNSServersFromPool))
-	out.FromHostInterfaces = *(*[]MetaDataHostInterface)(unsafe.Pointer(&in.FromHostInterfaces))
+	if in.FromHostInterfaces != nil {
+		in, out := &in.FromHostInterfaces, &out.FromHostInterfaces
+		*out = make([]MetaDataHostInterface, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_MetaDataHostInterface_To_v1beta1_MetaDataHostInterface(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.FromHostInterfaces = nil
+	}
 	out.FromLabels = *(*[]MetaDataFromLabel)(unsafe.Pointer(&in.FromLabels))
 	out.FromAnnotations = *(*[]MetaDataFromAnnotation)(unsafe.Pointer(&in.FromAnnotations))
 	return nil
@@ -1038,6 +1110,9 @@ func Convert_v1beta2_MetaDataFromLabel_To_v1beta1_MetaDataFromLabel(in *v1beta2.
 func autoConvert_v1beta1_MetaDataHostInterface_To_v1beta2_MetaDataHostInterface(in *MetaDataHostInterface, out *v1beta2.MetaDataHostInterface, s conversion.Scope) error {
 	out.Key = in.Key
 	out.Interface = in.Interface
+	if err := v1.Convert_bool_To_Pointer_bool(&in.FromBootMAC, &out.FromBootMAC, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1049,6 +1124,9 @@ func Convert_v1beta1_MetaDataHostInterface_To_v1beta2_MetaDataHostInterface(in *
 func autoConvert_v1beta2_MetaDataHostInterface_To_v1beta1_MetaDataHostInterface(in *v1beta2.MetaDataHostInterface, out *MetaDataHostInterface, s conversion.Scope) error {
 	out.Key = in.Key
 	out.Interface = in.Interface
+	if err := v1.Convert_Pointer_bool_To_bool(&in.FromBootMAC, &out.FromBootMAC, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1062,7 +1140,7 @@ func autoConvert_v1beta1_MetaDataIPAddress_To_v1beta2_MetaDataIPAddress(in *Meta
 	out.Start = (*v1alpha1.IPAddressStr)(unsafe.Pointer(in.Start))
 	out.End = (*v1alpha1.IPAddressStr)(unsafe.Pointer(in.End))
 	out.Subnet = (*v1alpha1.IPSubnetStr)(unsafe.Pointer(in.Subnet))
-	out.Step = in.Step
+	out.Step = int32(in.Step)
 	return nil
 }
 
@@ -1076,7 +1154,7 @@ func autoConvert_v1beta2_MetaDataIPAddress_To_v1beta1_MetaDataIPAddress(in *v1be
 	out.Start = (*v1alpha1.IPAddressStr)(unsafe.Pointer(in.Start))
 	out.End = (*v1alpha1.IPAddressStr)(unsafe.Pointer(in.End))
 	out.Subnet = (*v1alpha1.IPSubnetStr)(unsafe.Pointer(in.Subnet))
-	out.Step = in.Step
+	out.Step = int(in.Step)
 	return nil
 }
 
@@ -1087,30 +1165,20 @@ func Convert_v1beta2_MetaDataIPAddress_To_v1beta1_MetaDataIPAddress(in *v1beta2.
 
 func autoConvert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(in *MetaDataIndex, out *v1beta2.MetaDataIndex, s conversion.Scope) error {
 	out.Key = in.Key
-	out.Offset = in.Offset
-	out.Step = in.Step
+	// WARNING: in.Offset requires manual conversion: inconvertible types (int vs *int32)
+	out.Step = int32(in.Step)
 	out.Prefix = in.Prefix
 	out.Suffix = in.Suffix
 	return nil
-}
-
-// Convert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex is an autogenerated conversion function.
-func Convert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(in *MetaDataIndex, out *v1beta2.MetaDataIndex, s conversion.Scope) error {
-	return autoConvert_v1beta1_MetaDataIndex_To_v1beta2_MetaDataIndex(in, out, s)
 }
 
 func autoConvert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(in *v1beta2.MetaDataIndex, out *MetaDataIndex, s conversion.Scope) error {
 	out.Key = in.Key
-	out.Offset = in.Offset
-	out.Step = in.Step
+	// WARNING: in.Offset requires manual conversion: inconvertible types (*int32 vs int)
+	out.Step = int(in.Step)
 	out.Prefix = in.Prefix
 	out.Suffix = in.Suffix
 	return nil
-}
-
-// Convert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex is an autogenerated conversion function.
-func Convert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(in *v1beta2.MetaDataIndex, out *MetaDataIndex, s conversion.Scope) error {
-	return autoConvert_v1beta2_MetaDataIndex_To_v1beta1_MetaDataIndex(in, out, s)
 }
 
 func autoConvert_v1beta1_MetaDataNamespace_To_v1beta2_MetaDataNamespace(in *MetaDataNamespace, out *v1beta2.MetaDataNamespace, s conversion.Scope) error {
@@ -1255,7 +1323,7 @@ func autoConvert_v1beta1_Metal3ClusterSpec_To_v1beta2_Metal3ClusterSpec(in *Meta
 	if err := Convert_v1beta1_APIEndpoint_To_v1beta2_APIEndpoint(&in.ControlPlaneEndpoint, &out.ControlPlaneEndpoint, s); err != nil {
 		return err
 	}
-	out.NoCloudProvider = (*bool)(unsafe.Pointer(in.NoCloudProvider))
+	// WARNING: in.NoCloudProvider requires manual conversion: does not exist in peer-type
 	out.CloudProviderEnabled = (*bool)(unsafe.Pointer(in.CloudProviderEnabled))
 	// WARNING: in.FailureDomains requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FailureDomains vs []sigs.k8s.io/cluster-api/api/core/v1beta2.FailureDomain)
 	return nil
@@ -1265,7 +1333,6 @@ func autoConvert_v1beta2_Metal3ClusterSpec_To_v1beta1_Metal3ClusterSpec(in *v1be
 	if err := Convert_v1beta2_APIEndpoint_To_v1beta1_APIEndpoint(&in.ControlPlaneEndpoint, &out.ControlPlaneEndpoint, s); err != nil {
 		return err
 	}
-	out.NoCloudProvider = (*bool)(unsafe.Pointer(in.NoCloudProvider))
 	out.CloudProviderEnabled = (*bool)(unsafe.Pointer(in.CloudProviderEnabled))
 	// WARNING: in.FailureDomains requires manual conversion: inconvertible types ([]sigs.k8s.io/cluster-api/api/core/v1beta2.FailureDomain vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FailureDomains)
 	return nil
@@ -1275,7 +1342,7 @@ func autoConvert_v1beta1_Metal3ClusterStatus_To_v1beta2_Metal3ClusterStatus(in *
 	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
 	// WARNING: in.FailureReason requires manual conversion: does not exist in peer-type
 	// WARNING: in.FailureMessage requires manual conversion: does not exist in peer-type
-	out.Ready = in.Ready
+	// WARNING: in.Ready requires manual conversion: does not exist in peer-type
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]v1.Condition, len(*in))
@@ -1293,8 +1360,6 @@ func autoConvert_v1beta1_Metal3ClusterStatus_To_v1beta2_Metal3ClusterStatus(in *
 }
 
 func autoConvert_v1beta2_Metal3ClusterStatus_To_v1beta1_Metal3ClusterStatus(in *v1beta2.Metal3ClusterStatus, out *Metal3ClusterStatus, s conversion.Scope) error {
-	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
-	out.Ready = in.Ready
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make(corev1beta1.Conditions, len(*in))
@@ -1306,6 +1371,8 @@ func autoConvert_v1beta2_Metal3ClusterStatus_To_v1beta1_Metal3ClusterStatus(in *
 	} else {
 		out.Conditions = nil
 	}
+	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
+	// WARNING: in.Initialization requires manual conversion: does not exist in peer-type
 	// WARNING: in.Deprecated requires manual conversion: does not exist in peer-type
 	// WARNING: in.FailureDomains requires manual conversion: inconvertible types ([]sigs.k8s.io/cluster-api/api/core/v1beta2.FailureDomain vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FailureDomains)
 	return nil
@@ -1392,6 +1459,7 @@ func Convert_v1beta1_Metal3ClusterTemplateResource_To_v1beta2_Metal3ClusterTempl
 }
 
 func autoConvert_v1beta2_Metal3ClusterTemplateResource_To_v1beta1_Metal3ClusterTemplateResource(in *v1beta2.Metal3ClusterTemplateResource, out *Metal3ClusterTemplateResource, s conversion.Scope) error {
+	// WARNING: in.ObjectMeta requires manual conversion: does not exist in peer-type
 	if err := Convert_v1beta2_Metal3ClusterSpec_To_v1beta1_Metal3ClusterSpec(&in.Spec, &out.Spec, s); err != nil {
 		return err
 	}
@@ -1488,7 +1556,17 @@ func Convert_v1beta2_Metal3DataClaim_To_v1beta1_Metal3DataClaim(in *v1beta2.Meta
 
 func autoConvert_v1beta1_Metal3DataClaimList_To_v1beta2_Metal3DataClaimList(in *Metal3DataClaimList, out *v1beta2.Metal3DataClaimList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3DataClaim)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3DataClaim, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3DataClaim_To_v1beta2_Metal3DataClaim(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1499,7 +1577,17 @@ func Convert_v1beta1_Metal3DataClaimList_To_v1beta2_Metal3DataClaimList(in *Meta
 
 func autoConvert_v1beta2_Metal3DataClaimList_To_v1beta1_Metal3DataClaimList(in *v1beta2.Metal3DataClaimList, out *Metal3DataClaimList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3DataClaim)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3DataClaim, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3DataClaim_To_v1beta1_Metal3DataClaim(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1509,50 +1597,60 @@ func Convert_v1beta2_Metal3DataClaimList_To_v1beta1_Metal3DataClaimList(in *v1be
 }
 
 func autoConvert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec(in *Metal3DataClaimSpec, out *v1beta2.Metal3DataClaimSpec, s conversion.Scope) error {
-	out.Template = in.Template
+	// WARNING: in.Template requires manual conversion: inconvertible types (k8s.io/api/core/v1.ObjectReference vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef)
 	return nil
-}
-
-// Convert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec is an autogenerated conversion function.
-func Convert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec(in *Metal3DataClaimSpec, out *v1beta2.Metal3DataClaimSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3DataClaimSpec_To_v1beta2_Metal3DataClaimSpec(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec(in *v1beta2.Metal3DataClaimSpec, out *Metal3DataClaimSpec, s conversion.Scope) error {
-	out.Template = in.Template
+	// WARNING: in.Template requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef vs k8s.io/api/core/v1.ObjectReference)
 	return nil
-}
-
-// Convert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec is an autogenerated conversion function.
-func Convert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec(in *v1beta2.Metal3DataClaimSpec, out *Metal3DataClaimSpec, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3DataClaimSpec_To_v1beta1_Metal3DataClaimSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus(in *Metal3DataClaimStatus, out *v1beta2.Metal3DataClaimStatus, s conversion.Scope) error {
-	out.RenderedData = (*corev1.ObjectReference)(unsafe.Pointer(in.RenderedData))
-	out.ErrorMessage = (*string)(unsafe.Pointer(in.ErrorMessage))
+	if in.RenderedData != nil {
+		in, out := &in.RenderedData, &out.RenderedData
+		*out = new(v1beta2.Metal3ObjectRef)
+		if err := Convert_v1_ObjectReference_To_v1beta2_Metal3ObjectRef(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.RenderedData = nil
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.ErrorMessage, &out.ErrorMessage, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus is an autogenerated conversion function.
-func Convert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus(in *Metal3DataClaimStatus, out *v1beta2.Metal3DataClaimStatus, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3DataClaimStatus_To_v1beta2_Metal3DataClaimStatus(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus(in *v1beta2.Metal3DataClaimStatus, out *Metal3DataClaimStatus, s conversion.Scope) error {
-	out.RenderedData = (*corev1.ObjectReference)(unsafe.Pointer(in.RenderedData))
-	out.ErrorMessage = (*string)(unsafe.Pointer(in.ErrorMessage))
+	if in.RenderedData != nil {
+		in, out := &in.RenderedData, &out.RenderedData
+		*out = new(corev1.ObjectReference)
+		if err := Convert_v1beta2_Metal3ObjectRef_To_v1_ObjectReference(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.RenderedData = nil
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.ErrorMessage, &out.ErrorMessage, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus is an autogenerated conversion function.
-func Convert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus(in *v1beta2.Metal3DataClaimStatus, out *Metal3DataClaimStatus, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3DataClaimStatus_To_v1beta1_Metal3DataClaimStatus(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3DataList_To_v1beta2_Metal3DataList(in *Metal3DataList, out *v1beta2.Metal3DataList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3Data)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3Data, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3Data_To_v1beta2_Metal3Data(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1563,7 +1661,17 @@ func Convert_v1beta1_Metal3DataList_To_v1beta2_Metal3DataList(in *Metal3DataList
 
 func autoConvert_v1beta2_Metal3DataList_To_v1beta1_Metal3DataList(in *v1beta2.Metal3DataList, out *Metal3DataList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3Data)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3Data, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3Data_To_v1beta1_Metal3Data(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1573,38 +1681,31 @@ func Convert_v1beta2_Metal3DataList_To_v1beta1_Metal3DataList(in *v1beta2.Metal3
 }
 
 func autoConvert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec(in *Metal3DataSpec, out *v1beta2.Metal3DataSpec, s conversion.Scope) error {
-	out.Index = in.Index
-	out.TemplateReference = in.TemplateReference
+	// WARNING: in.Index requires manual conversion: inconvertible types (int vs *int32)
+	// WARNING: in.TemplateReference requires manual conversion: does not exist in peer-type
 	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
 	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
-	out.Claim = in.Claim
-	out.Template = in.Template
+	// WARNING: in.Claim requires manual conversion: inconvertible types (k8s.io/api/core/v1.ObjectReference vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef)
+	// WARNING: in.Template requires manual conversion: inconvertible types (k8s.io/api/core/v1.ObjectReference vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef)
 	return nil
-}
-
-// Convert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec is an autogenerated conversion function.
-func Convert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec(in *Metal3DataSpec, out *v1beta2.Metal3DataSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3DataSpec_To_v1beta2_Metal3DataSpec(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec(in *v1beta2.Metal3DataSpec, out *Metal3DataSpec, s conversion.Scope) error {
-	out.Index = in.Index
-	out.TemplateReference = in.TemplateReference
+	// WARNING: in.Index requires manual conversion: inconvertible types (*int32 vs int)
 	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
 	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
-	out.Claim = in.Claim
-	out.Template = in.Template
+	// WARNING: in.Claim requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef vs k8s.io/api/core/v1.ObjectReference)
+	// WARNING: in.Template requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.Metal3ObjectRef vs k8s.io/api/core/v1.ObjectReference)
 	return nil
 }
 
-// Convert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec is an autogenerated conversion function.
-func Convert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec(in *v1beta2.Metal3DataSpec, out *Metal3DataSpec, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3DataSpec_To_v1beta1_Metal3DataSpec(in, out, s)
-}
-
 func autoConvert_v1beta1_Metal3DataStatus_To_v1beta2_Metal3DataStatus(in *Metal3DataStatus, out *v1beta2.Metal3DataStatus, s conversion.Scope) error {
-	out.Ready = in.Ready
-	out.ErrorMessage = (*string)(unsafe.Pointer(in.ErrorMessage))
+	if err := v1.Convert_bool_To_Pointer_bool(&in.Ready, &out.Ready, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.ErrorMessage, &out.ErrorMessage, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1614,8 +1715,12 @@ func Convert_v1beta1_Metal3DataStatus_To_v1beta2_Metal3DataStatus(in *Metal3Data
 }
 
 func autoConvert_v1beta2_Metal3DataStatus_To_v1beta1_Metal3DataStatus(in *v1beta2.Metal3DataStatus, out *Metal3DataStatus, s conversion.Scope) error {
-	out.Ready = in.Ready
-	out.ErrorMessage = (*string)(unsafe.Pointer(in.ErrorMessage))
+	if err := v1.Convert_Pointer_bool_To_bool(&in.Ready, &out.Ready, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.ErrorMessage, &out.ErrorMessage, s); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1658,7 +1763,17 @@ func Convert_v1beta2_Metal3DataTemplate_To_v1beta1_Metal3DataTemplate(in *v1beta
 
 func autoConvert_v1beta1_Metal3DataTemplateList_To_v1beta2_Metal3DataTemplateList(in *Metal3DataTemplateList, out *v1beta2.Metal3DataTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3DataTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3DataTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3DataTemplate_To_v1beta2_Metal3DataTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1669,7 +1784,17 @@ func Convert_v1beta1_Metal3DataTemplateList_To_v1beta2_Metal3DataTemplateList(in
 
 func autoConvert_v1beta2_Metal3DataTemplateList_To_v1beta1_Metal3DataTemplateList(in *v1beta2.Metal3DataTemplateList, out *Metal3DataTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3DataTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3DataTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3DataTemplate_To_v1beta1_Metal3DataTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1680,50 +1805,61 @@ func Convert_v1beta2_Metal3DataTemplateList_To_v1beta1_Metal3DataTemplateList(in
 
 func autoConvert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec(in *Metal3DataTemplateSpec, out *v1beta2.Metal3DataTemplateSpec, s conversion.Scope) error {
 	out.ClusterName = in.ClusterName
-	out.TemplateReference = in.TemplateReference
-	out.MetaData = (*v1beta2.MetaData)(unsafe.Pointer(in.MetaData))
-	out.NetworkData = (*v1beta2.NetworkData)(unsafe.Pointer(in.NetworkData))
+	// WARNING: in.TemplateReference requires manual conversion: does not exist in peer-type
+	if in.MetaData != nil {
+		in, out := &in.MetaData, &out.MetaData
+		*out = new(v1beta2.MetaData)
+		if err := Convert_v1beta1_MetaData_To_v1beta2_MetaData(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MetaData = nil
+	}
+	if in.NetworkData != nil {
+		in, out := &in.NetworkData, &out.NetworkData
+		*out = new(v1beta2.NetworkData)
+		if err := Convert_v1beta1_NetworkData_To_v1beta2_NetworkData(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.NetworkData = nil
+	}
 	return nil
-}
-
-// Convert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec is an autogenerated conversion function.
-func Convert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec(in *Metal3DataTemplateSpec, out *v1beta2.Metal3DataTemplateSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3DataTemplateSpec_To_v1beta2_Metal3DataTemplateSpec(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec(in *v1beta2.Metal3DataTemplateSpec, out *Metal3DataTemplateSpec, s conversion.Scope) error {
 	out.ClusterName = in.ClusterName
-	out.TemplateReference = in.TemplateReference
-	out.MetaData = (*MetaData)(unsafe.Pointer(in.MetaData))
-	out.NetworkData = (*NetworkData)(unsafe.Pointer(in.NetworkData))
+	if in.MetaData != nil {
+		in, out := &in.MetaData, &out.MetaData
+		*out = new(MetaData)
+		if err := Convert_v1beta2_MetaData_To_v1beta1_MetaData(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MetaData = nil
+	}
+	if in.NetworkData != nil {
+		in, out := &in.NetworkData, &out.NetworkData
+		*out = new(NetworkData)
+		if err := Convert_v1beta2_NetworkData_To_v1beta1_NetworkData(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.NetworkData = nil
+	}
 	return nil
-}
-
-// Convert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec is an autogenerated conversion function.
-func Convert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec(in *v1beta2.Metal3DataTemplateSpec, out *Metal3DataTemplateSpec, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3DataTemplateSpec_To_v1beta1_Metal3DataTemplateSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus(in *Metal3DataTemplateStatus, out *v1beta2.Metal3DataTemplateStatus, s conversion.Scope) error {
 	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
-	out.Indexes = *(*map[string]int)(unsafe.Pointer(&in.Indexes))
+	// WARNING: in.Indexes requires manual conversion: inconvertible types (map[string]int vs []github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IndexEntry)
 	return nil
-}
-
-// Convert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus is an autogenerated conversion function.
-func Convert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus(in *Metal3DataTemplateStatus, out *v1beta2.Metal3DataTemplateStatus, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3DataTemplateStatus_To_v1beta2_Metal3DataTemplateStatus(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus(in *v1beta2.Metal3DataTemplateStatus, out *Metal3DataTemplateStatus, s conversion.Scope) error {
 	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
-	out.Indexes = *(*map[string]int)(unsafe.Pointer(&in.Indexes))
+	// WARNING: in.Indexes requires manual conversion: inconvertible types ([]github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IndexEntry vs map[string]int)
 	return nil
-}
-
-// Convert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus is an autogenerated conversion function.
-func Convert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus(in *v1beta2.Metal3DataTemplateStatus, out *Metal3DataTemplateStatus, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3DataTemplateStatus_To_v1beta1_Metal3DataTemplateStatus(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3Machine_To_v1beta2_Metal3Machine(in *Metal3Machine, out *v1beta2.Metal3Machine, s conversion.Scope) error {
@@ -1801,60 +1937,88 @@ func Convert_v1beta2_Metal3MachineList_To_v1beta1_Metal3MachineList(in *v1beta2.
 }
 
 func autoConvert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(in *Metal3MachineSpec, out *v1beta2.Metal3MachineSpec, s conversion.Scope) error {
-	out.ProviderID = (*string)(unsafe.Pointer(in.ProviderID))
+	if err := v1.Convert_Pointer_string_To_string(&in.ProviderID, &out.ProviderID, s); err != nil {
+		return err
+	}
 	if err := Convert_v1beta1_Image_To_v1beta2_Image(&in.Image, &out.Image, s); err != nil {
 		return err
 	}
-	out.CustomDeploy = (*v1beta2.CustomDeploy)(unsafe.Pointer(in.CustomDeploy))
+	// WARNING: in.CustomDeploy requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.CustomDeploy vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.CustomDeploy)
 	out.UserData = (*corev1.SecretReference)(unsafe.Pointer(in.UserData))
-	if err := Convert_v1beta1_HostSelector_To_v1beta2_HostSelector(&in.HostSelector, &out.HostSelector, s); err != nil {
-		return err
+	// WARNING: in.HostSelector requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.HostSelector vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.HostSelector)
+	if in.DataTemplate != nil {
+		in, out := &in.DataTemplate, &out.DataTemplate
+		*out = new(v1beta2.Metal3ObjectRef)
+		if err := Convert_v1_ObjectReference_To_v1beta2_Metal3ObjectRef(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DataTemplate = nil
 	}
-	out.DataTemplate = (*corev1.ObjectReference)(unsafe.Pointer(in.DataTemplate))
 	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
 	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
-	out.AutomatedCleaningMode = (*string)(unsafe.Pointer(in.AutomatedCleaningMode))
+	if err := v1.Convert_Pointer_string_To_string(&in.AutomatedCleaningMode, &out.AutomatedCleaningMode, s); err != nil {
+		return err
+	}
 	out.FailureDomain = in.FailureDomain
 	return nil
-}
-
-// Convert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec is an autogenerated conversion function.
-func Convert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(in *Metal3MachineSpec, out *v1beta2.Metal3MachineSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(in *v1beta2.Metal3MachineSpec, out *Metal3MachineSpec, s conversion.Scope) error {
-	out.ProviderID = (*string)(unsafe.Pointer(in.ProviderID))
+	if err := v1.Convert_string_To_Pointer_string(&in.ProviderID, &out.ProviderID, s); err != nil {
+		return err
+	}
 	if err := Convert_v1beta2_Image_To_v1beta1_Image(&in.Image, &out.Image, s); err != nil {
 		return err
 	}
-	out.CustomDeploy = (*CustomDeploy)(unsafe.Pointer(in.CustomDeploy))
+	// WARNING: in.CustomDeploy requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.CustomDeploy vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.CustomDeploy)
 	out.UserData = (*corev1.SecretReference)(unsafe.Pointer(in.UserData))
-	if err := Convert_v1beta2_HostSelector_To_v1beta1_HostSelector(&in.HostSelector, &out.HostSelector, s); err != nil {
-		return err
+	// WARNING: in.HostSelector requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.HostSelector vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.HostSelector)
+	if in.DataTemplate != nil {
+		in, out := &in.DataTemplate, &out.DataTemplate
+		*out = new(corev1.ObjectReference)
+		if err := Convert_v1beta2_Metal3ObjectRef_To_v1_ObjectReference(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.DataTemplate = nil
 	}
-	out.DataTemplate = (*corev1.ObjectReference)(unsafe.Pointer(in.DataTemplate))
 	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
 	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
-	out.AutomatedCleaningMode = (*string)(unsafe.Pointer(in.AutomatedCleaningMode))
+	if err := v1.Convert_string_To_Pointer_string(&in.AutomatedCleaningMode, &out.AutomatedCleaningMode, s); err != nil {
+		return err
+	}
 	out.FailureDomain = in.FailureDomain
 	return nil
-}
-
-// Convert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec is an autogenerated conversion function.
-func Convert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(in *v1beta2.Metal3MachineSpec, out *Metal3MachineSpec, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3MachineStatus_To_v1beta2_Metal3MachineStatus(in *Metal3MachineStatus, out *v1beta2.Metal3MachineStatus, s conversion.Scope) error {
 	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
 	// WARNING: in.FailureReason requires manual conversion: does not exist in peer-type
 	// WARNING: in.FailureMessage requires manual conversion: does not exist in peer-type
-	out.Addresses = *(*corev1beta2.MachineAddresses)(unsafe.Pointer(&in.Addresses))
-	out.Phase = in.Phase
-	out.Ready = in.Ready
+	if in.Addresses != nil {
+		in, out := &in.Addresses, &out.Addresses
+		*out = make([]corev1beta2.MachineAddress, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_MachineAddress_To_v1beta2_MachineAddress(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Addresses = nil
+	}
+	// WARNING: in.Phase requires manual conversion: does not exist in peer-type
+	// WARNING: in.Ready requires manual conversion: does not exist in peer-type
 	out.UserData = (*corev1.SecretReference)(unsafe.Pointer(in.UserData))
-	out.RenderedData = (*corev1.ObjectReference)(unsafe.Pointer(in.RenderedData))
+	if in.RenderedData != nil {
+		in, out := &in.RenderedData, &out.RenderedData
+		*out = new(v1beta2.Metal3ObjectRef)
+		if err := Convert_v1_ObjectReference_To_v1beta2_Metal3ObjectRef(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.RenderedData = nil
+	}
 	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
 	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
 	if in.Conditions != nil {
@@ -1873,14 +2037,6 @@ func autoConvert_v1beta1_Metal3MachineStatus_To_v1beta2_Metal3MachineStatus(in *
 }
 
 func autoConvert_v1beta2_Metal3MachineStatus_To_v1beta1_Metal3MachineStatus(in *v1beta2.Metal3MachineStatus, out *Metal3MachineStatus, s conversion.Scope) error {
-	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
-	out.Addresses = *(*corev1beta1.MachineAddresses)(unsafe.Pointer(&in.Addresses))
-	out.Phase = in.Phase
-	out.Ready = in.Ready
-	out.UserData = (*corev1.SecretReference)(unsafe.Pointer(in.UserData))
-	out.RenderedData = (*corev1.ObjectReference)(unsafe.Pointer(in.RenderedData))
-	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
-	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make(corev1beta1.Conditions, len(*in))
@@ -1892,6 +2048,31 @@ func autoConvert_v1beta2_Metal3MachineStatus_To_v1beta1_Metal3MachineStatus(in *
 	} else {
 		out.Conditions = nil
 	}
+	out.LastUpdated = (*v1.Time)(unsafe.Pointer(in.LastUpdated))
+	if in.Addresses != nil {
+		in, out := &in.Addresses, &out.Addresses
+		*out = make(corev1beta1.MachineAddresses, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_MachineAddress_To_v1beta1_MachineAddress(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Addresses = nil
+	}
+	// WARNING: in.Initialization requires manual conversion: does not exist in peer-type
+	out.UserData = (*corev1.SecretReference)(unsafe.Pointer(in.UserData))
+	if in.RenderedData != nil {
+		in, out := &in.RenderedData, &out.RenderedData
+		*out = new(corev1.ObjectReference)
+		if err := Convert_v1beta2_Metal3ObjectRef_To_v1_ObjectReference(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.RenderedData = nil
+	}
+	out.MetaData = (*corev1.SecretReference)(unsafe.Pointer(in.MetaData))
+	out.NetworkData = (*corev1.SecretReference)(unsafe.Pointer(in.NetworkData))
 	// WARNING: in.Deprecated requires manual conversion: does not exist in peer-type
 	return nil
 }
@@ -1924,7 +2105,17 @@ func Convert_v1beta2_Metal3MachineTemplate_To_v1beta1_Metal3MachineTemplate(in *
 
 func autoConvert_v1beta1_Metal3MachineTemplateList_To_v1beta2_Metal3MachineTemplateList(in *Metal3MachineTemplateList, out *v1beta2.Metal3MachineTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3MachineTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3MachineTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3MachineTemplate_To_v1beta2_Metal3MachineTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1935,7 +2126,17 @@ func Convert_v1beta1_Metal3MachineTemplateList_To_v1beta2_Metal3MachineTemplateL
 
 func autoConvert_v1beta2_Metal3MachineTemplateList_To_v1beta1_Metal3MachineTemplateList(in *v1beta2.Metal3MachineTemplateList, out *Metal3MachineTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3MachineTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3MachineTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3MachineTemplate_To_v1beta1_Metal3MachineTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -1957,41 +2158,31 @@ func Convert_v1beta1_Metal3MachineTemplateResource_To_v1beta2_Metal3MachineTempl
 }
 
 func autoConvert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(in *v1beta2.Metal3MachineTemplateResource, out *Metal3MachineTemplateResource, s conversion.Scope) error {
+	// WARNING: in.ObjectMeta requires manual conversion: does not exist in peer-type
 	if err := Convert_v1beta2_Metal3MachineSpec_To_v1beta1_Metal3MachineSpec(&in.Spec, &out.Spec, s); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Convert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource is an autogenerated conversion function.
-func Convert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(in *v1beta2.Metal3MachineTemplateResource, out *Metal3MachineTemplateResource, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(in, out, s)
-}
-
 func autoConvert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec(in *Metal3MachineTemplateSpec, out *v1beta2.Metal3MachineTemplateSpec, s conversion.Scope) error {
 	if err := Convert_v1beta1_Metal3MachineTemplateResource_To_v1beta2_Metal3MachineTemplateResource(&in.Template, &out.Template, s); err != nil {
 		return err
 	}
-	out.NodeReuse = in.NodeReuse
+	if err := v1.Convert_bool_To_Pointer_bool(&in.NodeReuse, &out.NodeReuse, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec is an autogenerated conversion function.
-func Convert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec(in *Metal3MachineTemplateSpec, out *v1beta2.Metal3MachineTemplateSpec, s conversion.Scope) error {
-	return autoConvert_v1beta1_Metal3MachineTemplateSpec_To_v1beta2_Metal3MachineTemplateSpec(in, out, s)
 }
 
 func autoConvert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec(in *v1beta2.Metal3MachineTemplateSpec, out *Metal3MachineTemplateSpec, s conversion.Scope) error {
 	if err := Convert_v1beta2_Metal3MachineTemplateResource_To_v1beta1_Metal3MachineTemplateResource(&in.Template, &out.Template, s); err != nil {
 		return err
 	}
-	out.NodeReuse = in.NodeReuse
+	if err := v1.Convert_Pointer_bool_To_bool(&in.NodeReuse, &out.NodeReuse, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec is an autogenerated conversion function.
-func Convert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec(in *v1beta2.Metal3MachineTemplateSpec, out *Metal3MachineTemplateSpec, s conversion.Scope) error {
-	return autoConvert_v1beta2_Metal3MachineTemplateSpec_To_v1beta1_Metal3MachineTemplateSpec(in, out, s)
 }
 
 func autoConvert_v1beta1_Metal3Remediation_To_v1beta2_Metal3Remediation(in *Metal3Remediation, out *v1beta2.Metal3Remediation, s conversion.Scope) error {
@@ -2028,7 +2219,17 @@ func Convert_v1beta2_Metal3Remediation_To_v1beta1_Metal3Remediation(in *v1beta2.
 
 func autoConvert_v1beta1_Metal3RemediationList_To_v1beta2_Metal3RemediationList(in *Metal3RemediationList, out *v1beta2.Metal3RemediationList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3Remediation)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3Remediation, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3Remediation_To_v1beta2_Metal3Remediation(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2039,7 +2240,17 @@ func Convert_v1beta1_Metal3RemediationList_To_v1beta2_Metal3RemediationList(in *
 
 func autoConvert_v1beta2_Metal3RemediationList_To_v1beta1_Metal3RemediationList(in *v1beta2.Metal3RemediationList, out *Metal3RemediationList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3Remediation)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3Remediation, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3Remediation_To_v1beta1_Metal3Remediation(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2049,7 +2260,15 @@ func Convert_v1beta2_Metal3RemediationList_To_v1beta1_Metal3RemediationList(in *
 }
 
 func autoConvert_v1beta1_Metal3RemediationSpec_To_v1beta2_Metal3RemediationSpec(in *Metal3RemediationSpec, out *v1beta2.Metal3RemediationSpec, s conversion.Scope) error {
-	out.Strategy = (*v1beta2.RemediationStrategy)(unsafe.Pointer(in.Strategy))
+	if in.Strategy != nil {
+		in, out := &in.Strategy, &out.Strategy
+		*out = new(v1beta2.RemediationStrategy)
+		if err := Convert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Strategy = nil
+	}
 	return nil
 }
 
@@ -2059,7 +2278,15 @@ func Convert_v1beta1_Metal3RemediationSpec_To_v1beta2_Metal3RemediationSpec(in *
 }
 
 func autoConvert_v1beta2_Metal3RemediationSpec_To_v1beta1_Metal3RemediationSpec(in *v1beta2.Metal3RemediationSpec, out *Metal3RemediationSpec, s conversion.Scope) error {
-	out.Strategy = (*RemediationStrategy)(unsafe.Pointer(in.Strategy))
+	if in.Strategy != nil {
+		in, out := &in.Strategy, &out.Strategy
+		*out = new(RemediationStrategy)
+		if err := Convert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.Strategy = nil
+	}
 	return nil
 }
 
@@ -2070,7 +2297,7 @@ func Convert_v1beta2_Metal3RemediationSpec_To_v1beta1_Metal3RemediationSpec(in *
 
 func autoConvert_v1beta1_Metal3RemediationStatus_To_v1beta2_Metal3RemediationStatus(in *Metal3RemediationStatus, out *v1beta2.Metal3RemediationStatus, s conversion.Scope) error {
 	out.Phase = in.Phase
-	out.RetryCount = in.RetryCount
+	out.RetryCount = int32(in.RetryCount)
 	out.LastRemediated = (*v1.Time)(unsafe.Pointer(in.LastRemediated))
 	return nil
 }
@@ -2082,7 +2309,7 @@ func Convert_v1beta1_Metal3RemediationStatus_To_v1beta2_Metal3RemediationStatus(
 
 func autoConvert_v1beta2_Metal3RemediationStatus_To_v1beta1_Metal3RemediationStatus(in *v1beta2.Metal3RemediationStatus, out *Metal3RemediationStatus, s conversion.Scope) error {
 	out.Phase = in.Phase
-	out.RetryCount = in.RetryCount
+	out.RetryCount = int(in.RetryCount)
 	out.LastRemediated = (*v1.Time)(unsafe.Pointer(in.LastRemediated))
 	return nil
 }
@@ -2126,7 +2353,17 @@ func Convert_v1beta2_Metal3RemediationTemplate_To_v1beta1_Metal3RemediationTempl
 
 func autoConvert_v1beta1_Metal3RemediationTemplateList_To_v1beta2_Metal3RemediationTemplateList(in *Metal3RemediationTemplateList, out *v1beta2.Metal3RemediationTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]v1beta2.Metal3RemediationTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]v1beta2.Metal3RemediationTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_Metal3RemediationTemplate_To_v1beta2_Metal3RemediationTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2137,7 +2374,17 @@ func Convert_v1beta1_Metal3RemediationTemplateList_To_v1beta2_Metal3RemediationT
 
 func autoConvert_v1beta2_Metal3RemediationTemplateList_To_v1beta1_Metal3RemediationTemplateList(in *v1beta2.Metal3RemediationTemplateList, out *Metal3RemediationTemplateList, s conversion.Scope) error {
 	out.ListMeta = in.ListMeta
-	out.Items = *(*[]Metal3RemediationTemplate)(unsafe.Pointer(&in.Items))
+	if in.Items != nil {
+		in, out := &in.Items, &out.Items
+		*out = make([]Metal3RemediationTemplate, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_Metal3RemediationTemplate_To_v1beta1_Metal3RemediationTemplate(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Items = nil
+	}
 	return nil
 }
 
@@ -2219,75 +2466,73 @@ func Convert_v1beta2_Metal3RemediationTemplateStatus_To_v1beta1_Metal3Remediatio
 }
 
 func autoConvert_v1beta1_NetworkData_To_v1beta2_NetworkData(in *NetworkData, out *v1beta2.NetworkData, s conversion.Scope) error {
-	if err := Convert_v1beta1_NetworkDataLink_To_v1beta2_NetworkDataLink(&in.Links, &out.Links, s); err != nil {
-		return err
-	}
-	if err := Convert_v1beta1_NetworkDataNetwork_To_v1beta2_NetworkDataNetwork(&in.Networks, &out.Networks, s); err != nil {
-		return err
-	}
-	if err := Convert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Links requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataLink vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataLink)
+	// WARNING: in.Networks requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataNetwork vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataNetwork)
+	// WARNING: in.Services requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataService vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataService)
 	return nil
-}
-
-// Convert_v1beta1_NetworkData_To_v1beta2_NetworkData is an autogenerated conversion function.
-func Convert_v1beta1_NetworkData_To_v1beta2_NetworkData(in *NetworkData, out *v1beta2.NetworkData, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkData_To_v1beta2_NetworkData(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkData_To_v1beta1_NetworkData(in *v1beta2.NetworkData, out *NetworkData, s conversion.Scope) error {
-	if err := Convert_v1beta2_NetworkDataLink_To_v1beta1_NetworkDataLink(&in.Links, &out.Links, s); err != nil {
-		return err
-	}
-	if err := Convert_v1beta2_NetworkDataNetwork_To_v1beta1_NetworkDataNetwork(&in.Networks, &out.Networks, s); err != nil {
-		return err
-	}
-	if err := Convert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Links requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataLink vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataLink)
+	// WARNING: in.Networks requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataNetwork vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataNetwork)
+	// WARNING: in.Services requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataService vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataService)
 	return nil
-}
-
-// Convert_v1beta2_NetworkData_To_v1beta1_NetworkData is an autogenerated conversion function.
-func Convert_v1beta2_NetworkData_To_v1beta1_NetworkData(in *v1beta2.NetworkData, out *NetworkData, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkData_To_v1beta1_NetworkData(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(in *NetworkDataIPv4, out *v1beta2.NetworkDataIPv4, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
 	out.IPAddressFromIPPool = in.IPAddressFromIPPool
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*v1beta2.FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
-	out.Routes = *(*[]v1beta2.NetworkDataRoutev4)(unsafe.Pointer(&in.Routes))
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (*k8s.io/api/core/v1.TypedLocalObjectReference vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation)
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]v1beta2.NetworkDataRoutev4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(in *NetworkDataIPv4, out *v1beta2.NetworkDataIPv4, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(in *v1beta2.NetworkDataIPv4, out *NetworkDataIPv4, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
 	out.IPAddressFromIPPool = in.IPAddressFromIPPool
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
-	out.Routes = *(*[]NetworkDataRoutev4)(unsafe.Pointer(&in.Routes))
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference vs *k8s.io/api/core/v1.TypedLocalObjectReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation)
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]NetworkDataRoutev4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(in *v1beta2.NetworkDataIPv4, out *NetworkDataIPv4, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataIPv4DHCP_To_v1beta2_NetworkDataIPv4DHCP(in *NetworkDataIPv4DHCP, out *v1beta2.NetworkDataIPv4DHCP, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
-	out.Routes = *(*[]v1beta2.NetworkDataRoutev4)(unsafe.Pointer(&in.Routes))
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]v1beta2.NetworkDataRoutev4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
 }
 
@@ -2299,7 +2544,17 @@ func Convert_v1beta1_NetworkDataIPv4DHCP_To_v1beta2_NetworkDataIPv4DHCP(in *Netw
 func autoConvert_v1beta2_NetworkDataIPv4DHCP_To_v1beta1_NetworkDataIPv4DHCP(in *v1beta2.NetworkDataIPv4DHCP, out *NetworkDataIPv4DHCP, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
-	out.Routes = *(*[]NetworkDataRoutev4)(unsafe.Pointer(&in.Routes))
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]NetworkDataRoutev4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
 }
 
@@ -2312,36 +2567,56 @@ func autoConvert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(in *NetworkD
 	out.ID = in.ID
 	out.Link = in.Link
 	out.IPAddressFromIPPool = in.IPAddressFromIPPool
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*v1beta2.FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
-	out.Routes = *(*[]v1beta2.NetworkDataRoutev6)(unsafe.Pointer(&in.Routes))
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (*k8s.io/api/core/v1.TypedLocalObjectReference vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation)
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]v1beta2.NetworkDataRoutev6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(in *NetworkDataIPv6, out *v1beta2.NetworkDataIPv6, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(in *v1beta2.NetworkDataIPv6, out *NetworkDataIPv6, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
 	out.IPAddressFromIPPool = in.IPAddressFromIPPool
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
-	out.Routes = *(*[]NetworkDataRoutev6)(unsafe.Pointer(&in.Routes))
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference vs *k8s.io/api/core/v1.TypedLocalObjectReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation)
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]NetworkDataRoutev6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(in *v1beta2.NetworkDataIPv6, out *NetworkDataIPv6, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataIPv6DHCP_To_v1beta2_NetworkDataIPv6DHCP(in *NetworkDataIPv6DHCP, out *v1beta2.NetworkDataIPv6DHCP, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
-	out.Routes = *(*[]v1beta2.NetworkDataRoutev6)(unsafe.Pointer(&in.Routes))
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]v1beta2.NetworkDataRoutev6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
 }
 
@@ -2353,7 +2628,17 @@ func Convert_v1beta1_NetworkDataIPv6DHCP_To_v1beta2_NetworkDataIPv6DHCP(in *Netw
 func autoConvert_v1beta2_NetworkDataIPv6DHCP_To_v1beta1_NetworkDataIPv6DHCP(in *v1beta2.NetworkDataIPv6DHCP, out *NetworkDataIPv6DHCP, s conversion.Scope) error {
 	out.ID = in.ID
 	out.Link = in.Link
-	out.Routes = *(*[]NetworkDataRoutev6)(unsafe.Pointer(&in.Routes))
+	if in.Routes != nil {
+		in, out := &in.Routes, &out.Routes
+		*out = make([]NetworkDataRoutev6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Routes = nil
+	}
 	return nil
 }
 
@@ -2363,9 +2648,39 @@ func Convert_v1beta2_NetworkDataIPv6DHCP_To_v1beta1_NetworkDataIPv6DHCP(in *v1be
 }
 
 func autoConvert_v1beta1_NetworkDataLink_To_v1beta2_NetworkDataLink(in *NetworkDataLink, out *v1beta2.NetworkDataLink, s conversion.Scope) error {
-	out.Ethernets = *(*[]v1beta2.NetworkDataLinkEthernet)(unsafe.Pointer(&in.Ethernets))
-	out.Bonds = *(*[]v1beta2.NetworkDataLinkBond)(unsafe.Pointer(&in.Bonds))
-	out.Vlans = *(*[]v1beta2.NetworkDataLinkVlan)(unsafe.Pointer(&in.Vlans))
+	if in.Ethernets != nil {
+		in, out := &in.Ethernets, &out.Ethernets
+		*out = make([]v1beta2.NetworkDataLinkEthernet, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataLinkEthernet_To_v1beta2_NetworkDataLinkEthernet(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ethernets = nil
+	}
+	if in.Bonds != nil {
+		in, out := &in.Bonds, &out.Bonds
+		*out = make([]v1beta2.NetworkDataLinkBond, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Bonds = nil
+	}
+	if in.Vlans != nil {
+		in, out := &in.Vlans, &out.Vlans
+		*out = make([]v1beta2.NetworkDataLinkVlan, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Vlans = nil
+	}
 	return nil
 }
 
@@ -2375,9 +2690,39 @@ func Convert_v1beta1_NetworkDataLink_To_v1beta2_NetworkDataLink(in *NetworkDataL
 }
 
 func autoConvert_v1beta2_NetworkDataLink_To_v1beta1_NetworkDataLink(in *v1beta2.NetworkDataLink, out *NetworkDataLink, s conversion.Scope) error {
-	out.Ethernets = *(*[]NetworkDataLinkEthernet)(unsafe.Pointer(&in.Ethernets))
-	out.Bonds = *(*[]NetworkDataLinkBond)(unsafe.Pointer(&in.Bonds))
-	out.Vlans = *(*[]NetworkDataLinkVlan)(unsafe.Pointer(&in.Vlans))
+	if in.Ethernets != nil {
+		in, out := &in.Ethernets, &out.Ethernets
+		*out = make([]NetworkDataLinkEthernet, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataLinkEthernet_To_v1beta1_NetworkDataLinkEthernet(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Ethernets = nil
+	}
+	if in.Bonds != nil {
+		in, out := &in.Bonds, &out.Bonds
+		*out = make([]NetworkDataLinkBond, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Bonds = nil
+	}
+	if in.Vlans != nil {
+		in, out := &in.Vlans, &out.Vlans
+		*out = make([]NetworkDataLinkVlan, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.Vlans = nil
+	}
 	return nil
 }
 
@@ -2391,16 +2736,19 @@ func autoConvert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(in *
 	out.BondXmitHashPolicy = in.BondXmitHashPolicy
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*v1beta2.NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
-	out.Parameters = *(*v1beta2.NetworkDataLinkBondParams)(unsafe.Pointer(&in.Parameters))
+	out.MTU = int32(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(v1beta2.NetworkLinkEthernetMac)
+		if err := Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
+	// WARNING: in.Parameters requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataLinkBondParams vs []github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataLinkBondParam)
 	out.BondLinks = *(*[]string)(unsafe.Pointer(&in.BondLinks))
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(in *NetworkDataLinkBond, out *v1beta2.NetworkDataLinkBond, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataLinkBond_To_v1beta2_NetworkDataLinkBond(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(in *v1beta2.NetworkDataLinkBond, out *NetworkDataLinkBond, s conversion.Scope) error {
@@ -2408,24 +2756,35 @@ func autoConvert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(in *
 	out.BondXmitHashPolicy = in.BondXmitHashPolicy
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
-	out.Parameters = *(*NetworkDataLinkBondParams)(unsafe.Pointer(&in.Parameters))
+	out.MTU = int(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(NetworkLinkEthernetMac)
+		if err := Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
+	// WARNING: in.Parameters requires manual conversion: inconvertible types ([]github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataLinkBondParam vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataLinkBondParams)
 	out.BondLinks = *(*[]string)(unsafe.Pointer(&in.BondLinks))
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(in *v1beta2.NetworkDataLinkBond, out *NetworkDataLinkBond, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataLinkBond_To_v1beta1_NetworkDataLinkBond(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataLinkEthernet_To_v1beta2_NetworkDataLinkEthernet(in *NetworkDataLinkEthernet, out *v1beta2.NetworkDataLinkEthernet, s conversion.Scope) error {
 	out.Type = in.Type
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*v1beta2.NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
+	out.MTU = int32(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(v1beta2.NetworkLinkEthernetMac)
+		if err := Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
 	return nil
 }
 
@@ -2438,8 +2797,16 @@ func autoConvert_v1beta2_NetworkDataLinkEthernet_To_v1beta1_NetworkDataLinkEther
 	out.Type = in.Type
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
+	out.MTU = int(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(NetworkLinkEthernetMac)
+		if err := Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
 	return nil
 }
 
@@ -2449,41 +2816,97 @@ func Convert_v1beta2_NetworkDataLinkEthernet_To_v1beta1_NetworkDataLinkEthernet(
 }
 
 func autoConvert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(in *NetworkDataLinkVlan, out *v1beta2.NetworkDataLinkVlan, s conversion.Scope) error {
-	out.VlanID = in.VlanID
+	// WARNING: in.VlanID requires manual conversion: inconvertible types (int vs *int32)
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*v1beta2.NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
+	out.MTU = int32(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(v1beta2.NetworkLinkEthernetMac)
+		if err := Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
 	out.VlanLink = in.VlanLink
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(in *NetworkDataLinkVlan, out *v1beta2.NetworkDataLinkVlan, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataLinkVlan_To_v1beta2_NetworkDataLinkVlan(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(in *v1beta2.NetworkDataLinkVlan, out *NetworkDataLinkVlan, s conversion.Scope) error {
-	out.VlanID = in.VlanID
+	// WARNING: in.VlanID requires manual conversion: inconvertible types (*int32 vs int)
 	out.Id = in.Id
 	out.Name = in.Name
-	out.MTU = in.MTU
-	out.MACAddress = (*NetworkLinkEthernetMac)(unsafe.Pointer(in.MACAddress))
+	out.MTU = int(in.MTU)
+	if in.MACAddress != nil {
+		in, out := &in.MACAddress, &out.MACAddress
+		*out = new(NetworkLinkEthernetMac)
+		if err := Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(*in, *out, s); err != nil {
+			return err
+		}
+	} else {
+		out.MACAddress = nil
+	}
 	out.VlanLink = in.VlanLink
 	return nil
 }
 
-// Convert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(in *v1beta2.NetworkDataLinkVlan, out *NetworkDataLinkVlan, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataLinkVlan_To_v1beta1_NetworkDataLinkVlan(in, out, s)
-}
-
 func autoConvert_v1beta1_NetworkDataNetwork_To_v1beta2_NetworkDataNetwork(in *NetworkDataNetwork, out *v1beta2.NetworkDataNetwork, s conversion.Scope) error {
-	out.IPv4 = *(*[]v1beta2.NetworkDataIPv4)(unsafe.Pointer(&in.IPv4))
-	out.IPv6 = *(*[]v1beta2.NetworkDataIPv6)(unsafe.Pointer(&in.IPv6))
-	out.IPv4DHCP = *(*[]v1beta2.NetworkDataIPv4DHCP)(unsafe.Pointer(&in.IPv4DHCP))
-	out.IPv6DHCP = *(*[]v1beta2.NetworkDataIPv6DHCP)(unsafe.Pointer(&in.IPv6DHCP))
-	out.IPv6SLAAC = *(*[]v1beta2.NetworkDataIPv6DHCP)(unsafe.Pointer(&in.IPv6SLAAC))
+	if in.IPv4 != nil {
+		in, out := &in.IPv4, &out.IPv4
+		*out = make([]v1beta2.NetworkDataIPv4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataIPv4_To_v1beta2_NetworkDataIPv4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv4 = nil
+	}
+	if in.IPv6 != nil {
+		in, out := &in.IPv6, &out.IPv6
+		*out = make([]v1beta2.NetworkDataIPv6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataIPv6_To_v1beta2_NetworkDataIPv6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6 = nil
+	}
+	if in.IPv4DHCP != nil {
+		in, out := &in.IPv4DHCP, &out.IPv4DHCP
+		*out = make([]v1beta2.NetworkDataIPv4DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataIPv4DHCP_To_v1beta2_NetworkDataIPv4DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv4DHCP = nil
+	}
+	if in.IPv6DHCP != nil {
+		in, out := &in.IPv6DHCP, &out.IPv6DHCP
+		*out = make([]v1beta2.NetworkDataIPv6DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataIPv6DHCP_To_v1beta2_NetworkDataIPv6DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6DHCP = nil
+	}
+	if in.IPv6SLAAC != nil {
+		in, out := &in.IPv6SLAAC, &out.IPv6SLAAC
+		*out = make([]v1beta2.NetworkDataIPv6DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta1_NetworkDataIPv6DHCP_To_v1beta2_NetworkDataIPv6DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6SLAAC = nil
+	}
 	return nil
 }
 
@@ -2493,11 +2916,61 @@ func Convert_v1beta1_NetworkDataNetwork_To_v1beta2_NetworkDataNetwork(in *Networ
 }
 
 func autoConvert_v1beta2_NetworkDataNetwork_To_v1beta1_NetworkDataNetwork(in *v1beta2.NetworkDataNetwork, out *NetworkDataNetwork, s conversion.Scope) error {
-	out.IPv4 = *(*[]NetworkDataIPv4)(unsafe.Pointer(&in.IPv4))
-	out.IPv6 = *(*[]NetworkDataIPv6)(unsafe.Pointer(&in.IPv6))
-	out.IPv4DHCP = *(*[]NetworkDataIPv4DHCP)(unsafe.Pointer(&in.IPv4DHCP))
-	out.IPv6DHCP = *(*[]NetworkDataIPv6DHCP)(unsafe.Pointer(&in.IPv6DHCP))
-	out.IPv6SLAAC = *(*[]NetworkDataIPv6DHCP)(unsafe.Pointer(&in.IPv6SLAAC))
+	if in.IPv4 != nil {
+		in, out := &in.IPv4, &out.IPv4
+		*out = make([]NetworkDataIPv4, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataIPv4_To_v1beta1_NetworkDataIPv4(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv4 = nil
+	}
+	if in.IPv6 != nil {
+		in, out := &in.IPv6, &out.IPv6
+		*out = make([]NetworkDataIPv6, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataIPv6_To_v1beta1_NetworkDataIPv6(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6 = nil
+	}
+	if in.IPv4DHCP != nil {
+		in, out := &in.IPv4DHCP, &out.IPv4DHCP
+		*out = make([]NetworkDataIPv4DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataIPv4DHCP_To_v1beta1_NetworkDataIPv4DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv4DHCP = nil
+	}
+	if in.IPv6DHCP != nil {
+		in, out := &in.IPv6DHCP, &out.IPv6DHCP
+		*out = make([]NetworkDataIPv6DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataIPv6DHCP_To_v1beta1_NetworkDataIPv6DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6DHCP = nil
+	}
+	if in.IPv6SLAAC != nil {
+		in, out := &in.IPv6SLAAC, &out.IPv6SLAAC
+		*out = make([]NetworkDataIPv6DHCP, len(*in))
+		for i := range *in {
+			if err := Convert_v1beta2_NetworkDataIPv6DHCP_To_v1beta1_NetworkDataIPv6DHCP(&(*in)[i], &(*out)[i], s); err != nil {
+				return err
+			}
+		}
+	} else {
+		out.IPv6SLAAC = nil
+	}
 	return nil
 }
 
@@ -2508,212 +2981,152 @@ func Convert_v1beta2_NetworkDataNetwork_To_v1beta1_NetworkDataNetwork(in *v1beta
 
 func autoConvert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(in *NetworkDataRoutev4, out *v1beta2.NetworkDataRoutev4, s conversion.Scope) error {
 	out.Network = v1alpha1.IPAddressv4Str(in.Network)
-	out.Prefix = in.Prefix
+	// WARNING: in.Prefix requires manual conversion: inconvertible types (int vs *int32)
 	if err := Convert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(&in.Gateway, &out.Gateway, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Services requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataServicev4 vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataServicev4)
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(in *NetworkDataRoutev4, out *v1beta2.NetworkDataRoutev4, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataRoutev4_To_v1beta2_NetworkDataRoutev4(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(in *v1beta2.NetworkDataRoutev4, out *NetworkDataRoutev4, s conversion.Scope) error {
 	out.Network = v1alpha1.IPAddressv4Str(in.Network)
-	out.Prefix = in.Prefix
+	// WARNING: in.Prefix requires manual conversion: inconvertible types (*int32 vs int)
 	if err := Convert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(&in.Gateway, &out.Gateway, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Services requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataServicev4 vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataServicev4)
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(in *v1beta2.NetworkDataRoutev4, out *NetworkDataRoutev4, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataRoutev4_To_v1beta1_NetworkDataRoutev4(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(in *NetworkDataRoutev6, out *v1beta2.NetworkDataRoutev6, s conversion.Scope) error {
 	out.Network = v1alpha1.IPAddressv6Str(in.Network)
-	out.Prefix = in.Prefix
+	// WARNING: in.Prefix requires manual conversion: inconvertible types (int vs *int32)
 	if err := Convert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(&in.Gateway, &out.Gateway, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Services requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataServicev6 vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataServicev6)
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(in *NetworkDataRoutev6, out *v1beta2.NetworkDataRoutev6, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataRoutev6_To_v1beta2_NetworkDataRoutev6(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(in *v1beta2.NetworkDataRoutev6, out *NetworkDataRoutev6, s conversion.Scope) error {
 	out.Network = v1alpha1.IPAddressv6Str(in.Network)
-	out.Prefix = in.Prefix
+	// WARNING: in.Prefix requires manual conversion: inconvertible types (*int32 vs int)
 	if err := Convert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(&in.Gateway, &out.Gateway, s); err != nil {
 		return err
 	}
-	if err := Convert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(&in.Services, &out.Services, s); err != nil {
-		return err
-	}
+	// WARNING: in.Services requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkDataServicev6 vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkDataServicev6)
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(in *v1beta2.NetworkDataRoutev6, out *NetworkDataRoutev6, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataRoutev6_To_v1beta1_NetworkDataRoutev6(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(in *NetworkDataService, out *v1beta2.NetworkDataService, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressStr)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_Pointer_string_To_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(in *NetworkDataService, out *v1beta2.NetworkDataService, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataService_To_v1beta2_NetworkDataService(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(in *v1beta2.NetworkDataService, out *NetworkDataService, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressStr)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_string_To_Pointer_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(in *v1beta2.NetworkDataService, out *NetworkDataService, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataService_To_v1beta1_NetworkDataService(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(in *NetworkDataServicev4, out *v1beta2.NetworkDataServicev4, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressv4Str)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_Pointer_string_To_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(in *NetworkDataServicev4, out *v1beta2.NetworkDataServicev4, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataServicev4_To_v1beta2_NetworkDataServicev4(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(in *v1beta2.NetworkDataServicev4, out *NetworkDataServicev4, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressv4Str)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_string_To_Pointer_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(in *v1beta2.NetworkDataServicev4, out *NetworkDataServicev4, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataServicev4_To_v1beta1_NetworkDataServicev4(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(in *NetworkDataServicev6, out *v1beta2.NetworkDataServicev6, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressv6Str)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_Pointer_string_To_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(in *NetworkDataServicev6, out *v1beta2.NetworkDataServicev6, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkDataServicev6_To_v1beta2_NetworkDataServicev6(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(in *v1beta2.NetworkDataServicev6, out *NetworkDataServicev6, s conversion.Scope) error {
 	out.DNS = *(*[]v1alpha1.IPAddressv6Str)(unsafe.Pointer(&in.DNS))
-	out.DNSFromIPPool = (*string)(unsafe.Pointer(in.DNSFromIPPool))
+	if err := v1.Convert_string_To_Pointer_string(&in.DNSFromIPPool, &out.DNSFromIPPool, s); err != nil {
+		return err
+	}
 	return nil
-}
-
-// Convert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(in *v1beta2.NetworkDataServicev6, out *NetworkDataServicev6, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkDataServicev6_To_v1beta1_NetworkDataServicev6(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(in *NetworkGatewayv4, out *v1beta2.NetworkGatewayv4, s conversion.Scope) error {
 	out.String = (*v1alpha1.IPAddressv4Str)(unsafe.Pointer(in.String))
-	out.FromIPPool = (*string)(unsafe.Pointer(in.FromIPPool))
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*v1beta2.FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
+	if err := v1.Convert_Pointer_string_To_string(&in.FromIPPool, &out.FromIPPool, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (*k8s.io/api/core/v1.TypedLocalObjectReference vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation)
 	return nil
-}
-
-// Convert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(in *NetworkGatewayv4, out *v1beta2.NetworkGatewayv4, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkGatewayv4_To_v1beta2_NetworkGatewayv4(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(in *v1beta2.NetworkGatewayv4, out *NetworkGatewayv4, s conversion.Scope) error {
 	out.String = (*v1alpha1.IPAddressv4Str)(unsafe.Pointer(in.String))
-	out.FromIPPool = (*string)(unsafe.Pointer(in.FromIPPool))
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
+	if err := v1.Convert_string_To_Pointer_string(&in.FromIPPool, &out.FromIPPool, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference vs *k8s.io/api/core/v1.TypedLocalObjectReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation)
 	return nil
-}
-
-// Convert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(in *v1beta2.NetworkGatewayv4, out *NetworkGatewayv4, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkGatewayv4_To_v1beta1_NetworkGatewayv4(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(in *NetworkGatewayv6, out *v1beta2.NetworkGatewayv6, s conversion.Scope) error {
 	out.String = (*v1alpha1.IPAddressv6Str)(unsafe.Pointer(in.String))
-	out.FromIPPool = (*string)(unsafe.Pointer(in.FromIPPool))
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*v1beta2.FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
+	if err := v1.Convert_Pointer_string_To_string(&in.FromIPPool, &out.FromIPPool, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (*k8s.io/api/core/v1.TypedLocalObjectReference vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation)
 	return nil
-}
-
-// Convert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6 is an autogenerated conversion function.
-func Convert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(in *NetworkGatewayv6, out *v1beta2.NetworkGatewayv6, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkGatewayv6_To_v1beta2_NetworkGatewayv6(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(in *v1beta2.NetworkGatewayv6, out *NetworkGatewayv6, s conversion.Scope) error {
 	out.String = (*v1alpha1.IPAddressv6Str)(unsafe.Pointer(in.String))
-	out.FromIPPool = (*string)(unsafe.Pointer(in.FromIPPool))
-	out.FromPoolRef = (*corev1.TypedLocalObjectReference)(unsafe.Pointer(in.FromPoolRef))
-	out.FromPoolAnnotation = (*FromPoolAnnotation)(unsafe.Pointer(in.FromPoolAnnotation))
+	if err := v1.Convert_string_To_Pointer_string(&in.FromIPPool, &out.FromIPPool, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromPoolRef requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.IPPoolReference vs *k8s.io/api/core/v1.TypedLocalObjectReference)
+	// WARNING: in.FromPoolAnnotation requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.FromPoolAnnotation vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.FromPoolAnnotation)
 	return nil
-}
-
-// Convert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6 is an autogenerated conversion function.
-func Convert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(in *v1beta2.NetworkGatewayv6, out *NetworkGatewayv6, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkGatewayv6_To_v1beta1_NetworkGatewayv6(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(in *NetworkLinkEthernetMac, out *v1beta2.NetworkLinkEthernetMac, s conversion.Scope) error {
-	out.String = (*string)(unsafe.Pointer(in.String))
-	out.FromHostInterface = (*string)(unsafe.Pointer(in.FromHostInterface))
-	out.FromAnnotation = (*v1beta2.NetworkLinkEthernetMacFromAnnotation)(unsafe.Pointer(in.FromAnnotation))
+	if err := v1.Convert_Pointer_string_To_string(&in.String, &out.String, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_Pointer_string_To_string(&in.FromHostInterface, &out.FromHostInterface, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromAnnotation requires manual conversion: inconvertible types (*github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkLinkEthernetMacFromAnnotation vs github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkLinkEthernetMacFromAnnotation)
 	return nil
-}
-
-// Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac is an autogenerated conversion function.
-func Convert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(in *NetworkLinkEthernetMac, out *v1beta2.NetworkLinkEthernetMac, s conversion.Scope) error {
-	return autoConvert_v1beta1_NetworkLinkEthernetMac_To_v1beta2_NetworkLinkEthernetMac(in, out, s)
 }
 
 func autoConvert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(in *v1beta2.NetworkLinkEthernetMac, out *NetworkLinkEthernetMac, s conversion.Scope) error {
-	out.String = (*string)(unsafe.Pointer(in.String))
-	out.FromHostInterface = (*string)(unsafe.Pointer(in.FromHostInterface))
-	out.FromAnnotation = (*NetworkLinkEthernetMacFromAnnotation)(unsafe.Pointer(in.FromAnnotation))
+	if err := v1.Convert_string_To_Pointer_string(&in.String, &out.String, s); err != nil {
+		return err
+	}
+	if err := v1.Convert_string_To_Pointer_string(&in.FromHostInterface, &out.FromHostInterface, s); err != nil {
+		return err
+	}
+	// WARNING: in.FromAnnotation requires manual conversion: inconvertible types (github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2.NetworkLinkEthernetMacFromAnnotation vs *github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1.NetworkLinkEthernetMacFromAnnotation)
 	return nil
-}
-
-// Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac is an autogenerated conversion function.
-func Convert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(in *v1beta2.NetworkLinkEthernetMac, out *NetworkLinkEthernetMac, s conversion.Scope) error {
-	return autoConvert_v1beta2_NetworkLinkEthernetMac_To_v1beta1_NetworkLinkEthernetMac(in, out, s)
 }
 
 func autoConvert_v1beta1_NetworkLinkEthernetMacFromAnnotation_To_v1beta2_NetworkLinkEthernetMacFromAnnotation(in *NetworkLinkEthernetMacFromAnnotation, out *v1beta2.NetworkLinkEthernetMacFromAnnotation, s conversion.Scope) error {
@@ -2740,24 +3153,14 @@ func Convert_v1beta2_NetworkLinkEthernetMacFromAnnotation_To_v1beta1_NetworkLink
 
 func autoConvert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(in *RemediationStrategy, out *v1beta2.RemediationStrategy, s conversion.Scope) error {
 	out.Type = v1beta2.RemediationType(in.Type)
-	out.RetryLimit = in.RetryLimit
-	out.Timeout = (*v1.Duration)(unsafe.Pointer(in.Timeout))
+	out.RetryLimit = int32(in.RetryLimit)
+	// WARNING: in.Timeout requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy is an autogenerated conversion function.
-func Convert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(in *RemediationStrategy, out *v1beta2.RemediationStrategy, s conversion.Scope) error {
-	return autoConvert_v1beta1_RemediationStrategy_To_v1beta2_RemediationStrategy(in, out, s)
 }
 
 func autoConvert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(in *v1beta2.RemediationStrategy, out *RemediationStrategy, s conversion.Scope) error {
 	out.Type = RemediationType(in.Type)
-	out.RetryLimit = in.RetryLimit
-	out.Timeout = (*v1.Duration)(unsafe.Pointer(in.Timeout))
+	out.RetryLimit = int(in.RetryLimit)
+	// WARNING: in.TimeoutSeconds requires manual conversion: does not exist in peer-type
 	return nil
-}
-
-// Convert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy is an autogenerated conversion function.
-func Convert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(in *v1beta2.RemediationStrategy, out *RemediationStrategy, s conversion.Scope) error {
-	return autoConvert_v1beta2_RemediationStrategy_To_v1beta1_RemediationStrategy(in, out, s)
 }

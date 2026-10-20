@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -30,8 +31,6 @@ import (
 
 	"github.com/blang/semver"
 	"github.com/google/go-github/github"
-
-	"errors"
 	"golang.org/x/oauth2"
 )
 
@@ -43,16 +42,18 @@ Use these as the base of your release notes.
 */
 
 const (
-	features        = ":sparkles: New Features"
-	bugs            = ":bug: Bug Fixes"
-	documentation   = ":book: Documentation"
-	warning         = ":warning: Breaking Changes"
-	other           = ":seedling: Others"
-	unknown         = ":question: Sort these by hand"
-	superseded      = ":recycle: Superseded or Reverted"
-	repoOwner       = "metal3-io"
-	repoName        = "cluster-api-provider-metal3"
-	warningTemplate = ":rotating_light: This is a %s. Use it only for testing purposes.\nIf you find any bugs, file an [issue](https://github.com/metal3-io/cluster-api-provider-metal3/issues/new/).\n\n"
+	features          = ":sparkles: New Features"
+	bugs              = ":bug: Bug Fixes"
+	documentation     = ":book: Documentation"
+	warning           = ":warning: Breaking Changes"
+	other             = ":seedling: Others"
+	unknown           = ":question: Sort these by hand"
+	superseded        = ":recycle: Superseded or Reverted"
+	repoOwner         = "metal3-io"
+	repoName          = "cluster-api-provider-metal3"
+	imageRegistry     = "quay.io"
+	warningTemplate   = ":rotating_light: This is a %s. Use it only for testing purposes.\nIf you find any bugs, file an [issue](https://github.com/metal3-io/cluster-api-provider-metal3/issues/new/).\n\n"
+	sha256Placeholder = "<IMAGE-SHA256-PLACEHOLDER>"
 )
 
 var (
@@ -65,7 +66,8 @@ var (
 		unknown,
 		superseded,
 	}
-	toTag = flag.String("releaseTag", "", "The tag or commit to end to.")
+	toTag       = flag.String("releaseTag", "", "The tag or commit to end to.")
+	githubToken = flag.String("githubToken", "", "The GitHub token for API access. Should have minimal scopes (e.g., public_repo or contents:read).")
 )
 
 func main() {
@@ -268,8 +270,7 @@ func run() int {
 		fmt.Printf("</details>\n\n")
 	}
 
-	fmt.Printf("The image for this release is: %v\n", latestTag)
-	fmt.Printf("Mariadb image tag is: capm3-%v\n", latestTag)
+	fmt.Printf("The image for this release is: %s/%s/%s:%s@%s\n", imageRegistry, repoOwner, repoName, latestTag, sha256Placeholder)
 	fmt.Println("\n_Thanks to all our contributors!_ 😊")
 
 	return 0
@@ -291,9 +292,15 @@ func formatMerge(line, prNumber string) string {
 // For minor and pre releases, it returns the main branch's latest commit.
 // For patch releases, it returns the latest commit on the corresponding release branch.
 func getCommitHashFromNewTag(newTag string) (string, error) {
-	token := os.Getenv("GITHUB_TOKEN")
+	token := *githubToken
 	if token == "" {
-		return "", errors.New("GITHUB_TOKEN is required")
+		token = os.Getenv("GITHUB_TOKEN")
+		if token != "" {
+			log.Println("WARNING: Using GITHUB_TOKEN from environment variable. Please use --githubToken flag instead for better security.")
+		}
+	}
+	if token == "" {
+		return "", errors.New("Github token is required (use --githubToken flag or set GITHUB_TOKEN environment variable)")
 	}
 
 	ctx := context.Background()

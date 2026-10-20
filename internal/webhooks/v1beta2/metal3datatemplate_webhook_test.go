@@ -21,6 +21,7 @@ import (
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 func TestMetal3DataTemplateValidation(t *testing.T) {
@@ -48,12 +49,12 @@ func TestMetal3DataTemplateValidation(t *testing.T) {
 				},
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv4: []infrav1.NetworkDataIPv4{
 								{
 									ID:   "test",
 									Link: "eth0",
-									FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+									FromPoolAnnotation: infrav1.FromPoolAnnotation{
 										Object:     "baremetalhost",
 										Annotation: "ippool.metal3.io/provisioning",
 									},
@@ -73,12 +74,12 @@ func TestMetal3DataTemplateValidation(t *testing.T) {
 				},
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv6: []infrav1.NetworkDataIPv6{
 								{
 									ID:   "test",
 									Link: "eth0",
-									FromPoolAnnotation: &infrav1.FromPoolAnnotation{
+									FromPoolAnnotation: infrav1.FromPoolAnnotation{
 										Object:     "machine",
 										Annotation: "ippool.metal3.io/provisioning",
 									},
@@ -98,7 +99,7 @@ func TestMetal3DataTemplateValidation(t *testing.T) {
 				},
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv4: []infrav1.NetworkDataIPv4{
 								{
 									ID:   "test",
@@ -120,13 +121,113 @@ func TestMetal3DataTemplateValidation(t *testing.T) {
 				},
 				Spec: infrav1.Metal3DataTemplateSpec{
 					NetworkData: &infrav1.NetworkData{
-						Networks: infrav1.NetworkDataNetwork{
+						Networks: &infrav1.NetworkDataNetwork{
 							IPv6: []infrav1.NetworkDataIPv6{
 								{
 									ID:   "test",
 									Link: "eth0",
 									// No FromPoolRef, FromPoolAnnotation, or IPAddressFromIPPool
 								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "should succeed when fromBootMAC is true and interface is empty",
+			expectErr: false,
+			c: &infrav1.Metal3DataTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+				},
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "boot-mac",
+								FromBootMAC: ptr.To(true),
+								Interface:   "",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "should succeed when fromBootMAC is false and interface is provided",
+			expectErr: false,
+			c: &infrav1.Metal3DataTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+				},
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "eth0-mac",
+								FromBootMAC: ptr.To(false),
+								Interface:   "eth0",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "should fail when fromBootMAC is false and interface is empty",
+			expectErr: true,
+			c: &infrav1.Metal3DataTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+				},
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "eth0-mac",
+								FromBootMAC: ptr.To(false),
+								Interface:   "",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "should fail when fromBootMAC is not set and interface is empty",
+			expectErr: true,
+			c: &infrav1.Metal3DataTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+				},
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key: "eth0-mac",
+								// FromBootMAC defaults to false
+								// Interface is empty
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "should fail when fromBootMAC is true and interface is provided",
+			expectErr: true,
+			c: &infrav1.Metal3DataTemplate{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: "foo",
+				},
+				Spec: infrav1.Metal3DataTemplateSpec{
+					MetaData: &infrav1.MetaData{
+						FromHostInterfaces: []infrav1.MetaDataHostInterface{
+							{
+								Key:         "boot-mac",
+								FromBootMAC: ptr.To(true),
+								Interface:   "eth0",
 							},
 						},
 					},
@@ -217,7 +318,7 @@ func TestMetal3DataTemplateUpdateValidation(t *testing.T) {
 			expectErr: true,
 			new: &infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Services: infrav1.NetworkDataService{
+					Services: &infrav1.NetworkDataService{
 						DNS: []ipamv1.IPAddressStr{
 							"abc",
 						},
@@ -226,7 +327,7 @@ func TestMetal3DataTemplateUpdateValidation(t *testing.T) {
 			},
 			old: &infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Services: infrav1.NetworkDataService{
+					Services: &infrav1.NetworkDataService{
 						DNS: []ipamv1.IPAddressStr{
 							"abcd",
 						},
@@ -239,7 +340,7 @@ func TestMetal3DataTemplateUpdateValidation(t *testing.T) {
 			expectErr: true,
 			new: &infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Services: infrav1.NetworkDataService{
+					Services: &infrav1.NetworkDataService{
 						DNS: []ipamv1.IPAddressStr{
 							"abc",
 						},
@@ -248,7 +349,7 @@ func TestMetal3DataTemplateUpdateValidation(t *testing.T) {
 			},
 			old: &infrav1.Metal3DataTemplateSpec{
 				NetworkData: &infrav1.NetworkData{
-					Networks: infrav1.NetworkDataNetwork{
+					Networks: &infrav1.NetworkDataNetwork{
 						IPv4DHCP: []infrav1.NetworkDataIPv4DHCP{
 							{
 								ID:   "abc",
@@ -294,4 +395,65 @@ func TestMetal3DataTemplateUpdateValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMetal3DataTemplateClusterNameDeprecationWarning(t *testing.T) {
+	g := NewWithT(t)
+	webhook := &Metal3DataTemplate{}
+
+	t.Run("should return warning when clusterName is set on create", func(_ *testing.T) {
+		dt := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "foo",
+			},
+			Spec: infrav1.Metal3DataTemplateSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+		warnings, err := webhook.ValidateCreate(ctx, dt)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(warnings).To(HaveLen(1))
+		g.Expect(warnings[0]).To(ContainSubstring("spec.clusterName is deprecated"))
+	})
+
+	t.Run("should not return warning when clusterName is empty on create", func(_ *testing.T) {
+		dt := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "foo",
+			},
+			Spec: infrav1.Metal3DataTemplateSpec{},
+		}
+		warnings, err := webhook.ValidateCreate(ctx, dt)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(warnings).To(BeEmpty())
+	})
+
+	t.Run("should return warning when clusterName is set on update", func(_ *testing.T) {
+		oldDT := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "foo",
+			},
+			Spec: infrav1.Metal3DataTemplateSpec{
+				ClusterName: "test-cluster",
+			},
+		}
+		newDT := oldDT.DeepCopy()
+		warnings, err := webhook.ValidateUpdate(ctx, oldDT, newDT)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(warnings).To(HaveLen(1))
+		g.Expect(warnings[0]).To(ContainSubstring("spec.clusterName is deprecated"))
+	})
+
+	t.Run("should not return warning when clusterName is empty on update", func(_ *testing.T) {
+		oldDT := &infrav1.Metal3DataTemplate{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: "foo",
+			},
+			Spec: infrav1.Metal3DataTemplateSpec{},
+		}
+		newDT := oldDT.DeepCopy()
+		warnings, err := webhook.ValidateUpdate(ctx, oldDT, newDT)
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(warnings).To(BeEmpty())
+	})
 }

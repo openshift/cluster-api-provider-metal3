@@ -19,7 +19,6 @@ import (
 
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -29,15 +28,21 @@ func TestMetal3DataClaimValidation(t *testing.T) {
 			Namespace: "foo",
 		},
 		Spec: infrav1.Metal3DataClaimSpec{
-			Template: corev1.ObjectReference{
+			Template: &infrav1.Metal3ObjectRef{
 				Name:      "abc",
-				Namespace: "abc",
+				Namespace: "foo",
 			},
 		},
 	}
 
 	invalidHost1 := valid.DeepCopy()
 	invalidHost1.Spec.Template.Name = ""
+
+	validEmptyNs := valid.DeepCopy()
+	validEmptyNs.Spec.Template.Namespace = ""
+
+	crossNamespace := valid.DeepCopy()
+	crossNamespace.Spec.Template.Namespace = "other"
 
 	tests := []struct {
 		name      string
@@ -53,6 +58,16 @@ func TestMetal3DataClaimValidation(t *testing.T) {
 			name:      "should succeed when endpoint correct",
 			expectErr: false,
 			c:         valid,
+		},
+		{
+			name:      "should succeed when template namespace is empty",
+			expectErr: false,
+			c:         validEmptyNs,
+		},
+		{
+			name:      "should fail when template namespace differs from claim namespace",
+			expectErr: true,
+			c:         crossNamespace,
 		},
 	}
 
@@ -83,12 +98,12 @@ func TestMetal3DataClaimUpdateValidation(t *testing.T) {
 			name:      "should succeed when values are the same",
 			expectErr: false,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abc",
 				},
 			},
 			old: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abc",
 				},
 			},
@@ -97,7 +112,7 @@ func TestMetal3DataClaimUpdateValidation(t *testing.T) {
 			name:      "should fail with nil old",
 			expectErr: true,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abc",
 				},
 			},
@@ -107,10 +122,10 @@ func TestMetal3DataClaimUpdateValidation(t *testing.T) {
 			name:      "should fail when dataTemplate is unset",
 			expectErr: true,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{},
+				Template: &infrav1.Metal3ObjectRef{},
 			},
 			old: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abc",
 				},
 			},
@@ -119,12 +134,12 @@ func TestMetal3DataClaimUpdateValidation(t *testing.T) {
 			name:      "should fail when dataTemplate name changes",
 			expectErr: true,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abc",
 				},
 			},
 			old: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name: "abcd",
 				},
 			},
@@ -133,31 +148,47 @@ func TestMetal3DataClaimUpdateValidation(t *testing.T) {
 			name:      "should fail when datatemplate Namespace changes",
 			expectErr: true,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name:      "abc",
 					Namespace: "abc",
 				},
 			},
 			old: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
+				Template: &infrav1.Metal3ObjectRef{
 					Name:      "abc",
 					Namespace: "abcd",
 				},
 			},
 		},
 		{
-			name:      "should fail when datatemplate kind changes",
+			name:      "should fail when new template namespace differs from claim namespace",
 			expectErr: true,
 			new: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
-					Name: "abc",
-					Kind: "abc",
+				Template: &infrav1.Metal3ObjectRef{
+					Name:      "abc",
+					Namespace: "other",
 				},
 			},
 			old: &infrav1.Metal3DataClaimSpec{
-				Template: corev1.ObjectReference{
-					Name: "abc",
-					Kind: "abcd",
+				Template: &infrav1.Metal3ObjectRef{
+					Name:      "abc",
+					Namespace: "other",
+				},
+			},
+		},
+		{
+			name:      "should succeed when new template namespace matches claim namespace",
+			expectErr: false,
+			new: &infrav1.Metal3DataClaimSpec{
+				Template: &infrav1.Metal3ObjectRef{
+					Name:      "abc",
+					Namespace: "foo",
+				},
+			},
+			old: &infrav1.Metal3DataClaimSpec{
+				Template: &infrav1.Metal3ObjectRef{
+					Name:      "abc",
+					Namespace: "foo",
 				},
 			},
 		},

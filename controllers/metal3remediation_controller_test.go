@@ -58,6 +58,7 @@ type reconcileNormalRemediationTestCase struct {
 	IsNodeForbidden              bool
 	IsNodeBackedUp               bool
 	IsNodeDeleted                bool
+	IsTimeoutNil                 bool
 	IsTimedOut                   bool
 	IsRetryLimitReached          bool
 	IsOutOfServiceTaintSupported bool
@@ -217,8 +218,16 @@ func setReconcileNormalRemediationExpectations(ctrl *gomock.Controller,
 			}
 		}
 
-		m.EXPECT().GetTimeout().Return(&metav1.Duration{Duration: time.Second})
-		m.EXPECT().TimeToRemediate(gomock.Any()).Return(tc.IsTimedOut, time.Second)
+		if tc.IsTimeoutNil {
+			m.EXPECT().TimeToRemediate(gomock.Any()).Do(func(t int32) {
+				Expect(t).To(Equal(int32(defaultRemediationTimeoutSeconds)))
+			}).Return(tc.IsTimedOut, time.Second)
+		} else {
+			m.EXPECT().GetTimeoutSeconds().Return(int32(1))
+			m.EXPECT().TimeToRemediate(gomock.Any()).Do(func(t int32) {
+				Expect(t).To(Equal(int32(1)))
+			}).Return(tc.IsTimedOut, time.Second)
+		}
 		if tc.IsTimedOut {
 			m.EXPECT().RetryLimitIsSet().Return(true)
 			m.EXPECT().HasReachRetryLimit().Return(tc.IsRetryLimitReached)
