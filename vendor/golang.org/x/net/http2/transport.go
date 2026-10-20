@@ -712,19 +712,12 @@ func canRetryError(err error) bool {
 		return true
 	}
 	if se, ok := err.(StreamError); ok {
-		if se.Code == ErrCodeProtocol && se.Cause == errFromPeer {
-			// See golang/go#47635, golang/go#42777
-			return true
-		}
 		return se.Code == ErrCodeRefusedStream
 	}
 	return false
 }
 
 func (t *Transport) dialClientConn(ctx context.Context, addr string, singleUse bool) (*ClientConn, error) {
-	if t.transportTestHooks != nil {
-		return t.newClientConn(nil, singleUse, nil)
-	}
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return nil, err
@@ -3232,10 +3225,6 @@ func (gz *gzipReader) Close() error {
 
 	return gz.body.Close()
 }
-
-type errorReader struct{ err error }
-
-func (r errorReader) Read(p []byte) (int, error) { return 0, r.err }
 
 // isConnectionCloseRequest reports whether req should use its own
 // connection for a single request and then close the connection.
