@@ -536,6 +536,7 @@ vendor: ## Runs go mod to ensure proper vendoring.
 	cd $(TOOLS_DIR) && go mod vendor
 	cd $(APIS_DIR) && go mod vendor
 	cd $(TEST_DIR) && go mod vendor
+	cd $(FAKE_APISERVER_DIR) && go mod vendor
 
 .PHONY: generate
 generate: ## Generate code

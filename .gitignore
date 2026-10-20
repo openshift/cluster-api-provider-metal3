@@ -70,8 +70,8 @@ github/
 !vendor/**
 !openshift/tools/vendor/**
 
-go.work
-go.work.sum
+/go.work
+/go.work.sum
 
 # Development containers (https://containers.dev/)
 .devcontainer
