@@ -139,10 +139,8 @@ func (src *Metal3MachineTemplate) ConvertTo(dstRaw conversion.Hub) error {
 	}
 
 	dst.Spec.Template.ObjectMeta = restored.Spec.Template.ObjectMeta
-	// Restore Image.Checksum nil state from hub data
-	if restored.Spec.Template.Spec.Image.Checksum == nil {
-		dst.Spec.Template.Spec.Image.Checksum = nil
-	}
+	// Restore Image from hub data to preserve the optional checksum's nil/empty state.
+	dst.Spec.Template.Spec.Image = restored.Spec.Template.Spec.Image
 
 	return nil
 }
@@ -592,6 +590,11 @@ func Convert_v1beta1_Image_To_v1beta2_Image(in *Image, out *infrav1.Image, s api
 	return nil
 }
 
+func isEmptyImage(image Image) bool {
+	return image.URL == "" && image.Checksum == "" &&
+		ptr.Deref(image.ChecksumType, "") == "" && ptr.Deref(image.DiskFormat, "") == ""
+}
+
 // Convert_v1beta2_Image_To_v1beta1_Image handles conversion of Image from v1beta2 to v1beta1.
 // In v1beta2: Checksum is *string, ChecksumType and DiskFormat are string.
 // In v1beta1: Checksum is string, ChecksumType and DiskFormat are *string.
@@ -843,9 +846,13 @@ func Convert_v1beta1_Metal3MachineSpec_To_v1beta2_Metal3MachineSpec(in *Metal3Ma
 	// Convert AutomatedCleaningMode from *string to string
 	out.AutomatedCleaningMode = ptr.Deref(in.AutomatedCleaningMode, "")
 
-	// Convert Image
-	if err := Convert_v1beta1_Image_To_v1beta2_Image(&in.Image, &out.Image, s); err != nil {
-		return err
+	// An empty v1beta1 Image is its zero value. Don't convert it when CustomDeploy
+	// is set: converting an empty checksum to a non-nil pointer makes the v1beta2
+	// Image non-zero, so it is serialized without the required URL.
+	if !isEmptyImage(in.Image) || in.CustomDeploy == nil || in.CustomDeploy.Method == "" {
+		if err := Convert_v1beta1_Image_To_v1beta2_Image(&in.Image, &out.Image, s); err != nil {
+			return err
+		}
 	}
 
 	// Convert CustomDeploy from *CustomDeploy to CustomDeploy
