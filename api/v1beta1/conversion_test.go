@@ -17,6 +17,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -95,6 +96,37 @@ func TestFuzzyConversion(t *testing.T) {
 		Spoke:       &Metal3RemediationTemplate{},
 		FuzzerFuncs: []fuzzer.FuzzerFuncs{Metal3RemediationTemplateFuzzFuncs},
 	}))
+}
+
+func TestMetal3MachineTemplateCustomDeployConversionOmitsEmptyImage(t *testing.T) {
+	in := &Metal3MachineTemplate{
+		Spec: Metal3MachineTemplateSpec{
+			Template: Metal3MachineTemplateResource{
+				Spec: Metal3MachineSpec{
+					CustomDeploy: &CustomDeploy{Method: "install_coreos"},
+				},
+			},
+		},
+	}
+	out := &infrav1.Metal3MachineTemplate{}
+	if err := Convert_v1beta1_Metal3MachineTemplate_To_v1beta2_Metal3MachineTemplate(in, out, nil); err != nil {
+		t.Fatalf("failed to convert Metal3MachineTemplate: %v", err)
+	}
+	if out.Spec.Template.Spec.CustomDeploy.Method != "install_coreos" {
+		t.Fatalf("expected customDeploy method install_coreos, got %q", out.Spec.Template.Spec.CustomDeploy.Method)
+	}
+
+	data, err := json.Marshal(out.Spec.Template.Spec)
+	if err != nil {
+		t.Fatalf("failed to marshal converted Metal3MachineSpec: %v", err)
+	}
+	var spec map[string]json.RawMessage
+	if err := json.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("failed to unmarshal converted Metal3MachineSpec: %v", err)
+	}
+	if _, ok := spec["image"]; ok {
+		t.Fatalf("expected empty image to be omitted when customDeploy is set, got %s", data)
+	}
 }
 
 func Metal3ClusterFuzzFuncs(_ runtimeserializer.CodecFactory) []interface{} {
