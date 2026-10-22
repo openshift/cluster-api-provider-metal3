@@ -296,9 +296,9 @@ spec:
       jsonPath: .metadata.creationTimestamp
       name: Age
       type: date
-    - description: metal3Cluster is Ready
-      jsonPath: .status.ready
-      name: Ready
+    - description: Metal3Cluster is provisioned
+      jsonPath: .status.initialization.provisioned
+      name: Provisioned
       type: string
     - description: Most recent error
       jsonPath: .status.deprecated.v1beta1.failureReason
@@ -335,32 +335,34 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3ClusterSpec defines the desired state of Metal3Cluster.
+            description: spec defines the desired state of Metal3Cluster.
             properties:
               cloudProviderEnabled:
                 description: |-
-                  Determines if the cluster is to be deployed with an external cloud provider.
+                  cloudProviderEnabled determines if the cluster is to be deployed with an external cloud provider.
                   If set to false, CAPM3 will use node labels to set providerID on the kubernetes nodes.
                   If set to true, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-                  Default value is true, it is set in the webhook.
                 type: boolean
               controlPlaneEndpoint:
-                description: ControlPlaneEndpoint represents the endpoint used to
+                description: controlPlaneEndpoint represents the endpoint used to
                   communicate with the control plane.
+                minProperties: 1
                 properties:
                   host:
-                    description: Host is the hostname on which the API server is serving.
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
                     type: string
                   port:
-                    description: Port is the port on which the API server is serving.
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
                     type: integer
-                required:
-                - host
-                - port
                 type: object
               failureDomains:
-                description: FailureDomains specifies a list of failure zones that
-                  can be used
+                description: failureDomains is a list of failure domain objects synced
+                  from the infrastructure provider.
                 items:
                   description: |-
                     FailureDomain is the Schema for Cluster API failure domains.
@@ -384,18 +386,15 @@ spec:
                   required:
                   - name
                   type: object
+                maxItems: 100
+                minItems: 1
                 type: array
-              noCloudProvider:
-                description: |-
-                  Determines if the cluster is not to be deployed with an external cloud provider.
-                  If set to true, CAPM3 will use node labels to set providerID on the kubernetes nodes.
-                  If set to false, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-
-                  Deprecated: This field is deprecated, use cloudProviderEnabled instead
-                type: boolean
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             type: object
           status:
-            description: Metal3ClusterStatus defines the observed state of Metal3Cluster.
+            description: status defines the observed state of Metal3Cluster.
             properties:
               conditions:
                 description: |-
@@ -474,8 +473,10 @@ spec:
 
                           Deprecated: This field is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                         items:
-                          description: Condition defines an observation of a Cluster
-                            API resource operational state.
+                          description: |-
+                            Condition defines an observation of a Cluster API resource operational state.
+
+                            Deprecated: This type is deprecated and is going to be removed when support for v1beta1 will be dropped. Please see https://github.com/kubernetes-sigs/cluster-api/blob/main/docs/proposals/20240916-improve-status-in-CAPI-resources.md for more details.
                           properties:
                             lastTransitionTime:
                               description: |-
@@ -526,12 +527,14 @@ spec:
                         type: array
                       failureMessage:
                         description: |-
-                          FailureMessage indicates that there is a fatal problem reconciling the
+                          failureMessage indicates that there is a fatal problem reconciling the
                           state, and will be set to a descriptive error message.
+                        maxLength: 1024
+                        minLength: 0
                         type: string
                       failureReason:
                         description: |-
-                          FailureReason indicates that there is a fatal problem reconciling the
+                          failureReason indicates that there is a fatal problem reconciling the
                           state, and will be set to a token value suitable for
                           programmatic interpretation.
                         type: string
@@ -569,17 +572,22 @@ spec:
                 x-kubernetes-list-map-keys:
                 - name
                 x-kubernetes-list-type: map
+              initialization:
+                description: |-
+                  initialization provides observations of the Metal3Cluster initialization process.
+                  NOTE: Fields in this struct are part of the Cluster API contract and are used to orchestrate initial Cluster provisioning.
+                minProperties: 1
+                properties:
+                  provisioned:
+                    description: |-
+                      provisioned is true when the infrastructure provider reports that the Cluster's infrastructure is fully provisioned.
+                      NOTE: this field is part of the Cluster API contract, and it is used to orchestrate initial Cluster provisioning.
+                    type: boolean
+                type: object
               lastUpdated:
-                description: LastUpdated identifies when this status was last observed.
+                description: lastUpdated identifies when this status was last observed.
                 format: date-time
                 type: string
-              ready:
-                description: |-
-                  Ready denotes that the Metal3 cluster (infrastructure) is ready. In
-                  Baremetal case, it does not mean anything for now as no infrastructure
-                  steps need to be performed. Required by Cluster API. Set to True by the
-                  metal3Cluster controller after creation.
-                type: boolean
             type: object
         type: object
     served: true

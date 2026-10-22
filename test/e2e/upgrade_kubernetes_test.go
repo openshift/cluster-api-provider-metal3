@@ -44,12 +44,12 @@ var _ = Describe("Kubernetes version upgrade in target nodes", Label("k8s-upgrad
 				BootstrapClusterProxy: bootstrapClusterProxy,
 				SpecName:              specName,
 				ClusterName:           clusterName,
-				K8sVersion:            e2eConfig.MustGetVariable("FROM_K8S_VERSION"),
+				K8sVersion:            e2eConfig.MustGetVariable("KUBERNETES_VERSION_UPGRADE_FROM"),
 				KCPMachineCount:       int64(numberOfControlplane),
 				WorkerMachineCount:    int64(numberOfWorkers),
 				ClusterctlLogFolder:   clusterctlLogFolder,
 				ClusterctlConfigPath:  clusterctlConfigPath,
-				OSType:                osType,
+				OSType:                osType + flavorSuffix(),
 				Namespace:             namespace,
 			}
 		})
@@ -71,7 +71,9 @@ var _ = Describe("Kubernetes version upgrade in target nodes", Label("k8s-upgrad
 		ListBareMetalHosts(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMetal3Machines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMachines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
-		ListNodes(ctx, targetCluster.GetClient())
+		if targetCluster != nil {
+			ListNodes(ctx, targetCluster.GetClient())
+		}
 		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup, clusterctlConfigPath)
 	})
 
@@ -93,7 +95,7 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 	clusterClient := input.BootstrapClusterProxy.GetClient()
 	targetClusterClient := input.TargetCluster.GetClient()
 	clientSet := input.TargetCluster.GetClientSet()
-	kubernetesVersion := input.E2EConfig.MustGetVariable("FROM_K8S_VERSION")
+	kubernetesVersion := input.E2EConfig.MustGetVariable("KUBERNETES_VERSION_UPGRADE_FROM")
 	upgradedK8sVersion := input.E2EConfig.MustGetVariable("KUBERNETES_VERSION")
 	numberOfWorkers := int(*input.E2EConfig.MustGetInt32PtrVariable("WORKER_MACHINE_COUNT"))
 	numberOfControlplane := int(*input.E2EConfig.MustGetInt32PtrVariable("CONTROL_PLANE_MACHINE_COUNT"))
@@ -115,7 +117,7 @@ func upgradeKubernetes(ctx context.Context, inputGetter func() upgradeKubernetes
 
 	// Download node image
 	By("Download image")
-	imageURL, imageChecksum := EnsureImage(upgradedK8sVersion)
+	imageURL, imageChecksum := EnsureImage(input.E2EConfig, upgradedK8sVersion)
 
 	By("Create new KCP Metal3MachineTemplate with upgraded image to boot")
 	m3MachineTemplateName := clusterName + "-controlplane"

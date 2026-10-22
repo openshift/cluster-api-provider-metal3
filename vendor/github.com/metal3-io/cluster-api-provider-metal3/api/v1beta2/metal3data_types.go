@@ -29,42 +29,39 @@ const (
 
 // Metal3DataSpec defines the desired state of Metal3Data.
 type Metal3DataSpec struct {
-	// Index stores the index value of this instance in the Metal3DataTemplate.
+	// index stores the index value of this instance in the Metal3DataTemplate.
 	// +optional
-	Index int `json:"index,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	Index *int32 `json:"index,omitempty"`
 
-	// TemplateReference refers to the Template the Metal3MachineTemplate refers to.
-	// It can be matched against the key or it may also point to the name of the template
-	// Metal3Data refers to.
-	//
-	// Deprecated: This field is deprecated and will be removed in a future release.
-	// +optional
-	TemplateReference string `json:"templateReference,omitempty"`
-
-	// MetaData points to the rendered MetaData secret.
+	// metaData points to the rendered MetaData secret.
 	// +optional
 	MetaData *corev1.SecretReference `json:"metaData,omitempty"`
 
-	// NetworkData points to the rendered NetworkData secret.
+	// networkData points to the rendered NetworkData secret.
 	// +optional
 	NetworkData *corev1.SecretReference `json:"networkData,omitempty"`
 
-	// DataClaim points to the Metal3DataClaim the Metal3Data was created for.
-	Claim corev1.ObjectReference `json:"claim"`
+	// claim points to the Metal3DataClaim the Metal3Data was created for.
+	// +optional
+	Claim *Metal3ObjectRef `json:"claim,omitempty"`
 
-	// DataTemplate is the Metal3DataTemplate this was generated from.
-	Template corev1.ObjectReference `json:"template"`
+	// template is the Metal3DataTemplate this was generated from.
+	// +optional
+	Template *Metal3ObjectRef `json:"template,omitempty"`
 }
 
 // Metal3DataStatus defines the observed state of Metal3Data.
 type Metal3DataStatus struct {
-	// Ready is a flag set to True if the secrets were rendered properly
+	// ready is a flag set to True if the secrets were rendered properly
 	// +optional
-	Ready bool `json:"ready"`
+	Ready *bool `json:"ready,omitempty"`
 
-	// ErrorMessage contains the error message
+	// errorMessage contains the error message
 	// +optional
-	ErrorMessage *string `json:"errorMessage,omitempty"`
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=512
+	ErrorMessage string `json:"errorMessage,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -76,11 +73,14 @@ type Metal3DataStatus struct {
 // Metal3Data is the Schema for the metal3datas API.
 type Metal3Data struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	// spec defines the desired state of Metal3Data.
 	// +optional
-	Spec Metal3DataSpec `json:"spec,omitempty"`
+	Spec Metal3DataSpec `json:"spec,omitempty,omitzero"`
+	// status defines the observed state of Metal3Data.
 	// +optional
 	Status Metal3DataStatus `json:"status,omitempty"`
 }

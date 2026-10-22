@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../../../../../config/default
+
+# scripts/ci-e2e.sh injects the local e2e image here (kustomize edit set image),
+# keeping ${REGISTRY} in sync with the kubeadm registries.conf and e2e_conf.yaml.
+# Standalone kustomize build falls back to the config/default :main image
+patches:
+- patch: |
+    # Extend default with TLS 1.3 hardening.
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--tls-min-version=VersionTLS13"
+  target:
+    kind: Deployment
+    name: controller-manager

@@ -9,12 +9,30 @@ set -eux
 IS_CONTAINER="${IS_CONTAINER:-false}"
 ARTIFACTS="${ARTIFACTS:-/tmp}"
 CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-podman}"
-WORKDIR="${WORKDIR:-/workdir}"
+GIT_CONFIG_REQUIRED="${GIT_CONFIG_REQUIRED:-false}"
 
 if [ "${IS_CONTAINER}" != "false" ]; then
-    # we need to tell git its OK to use dir owned by someone else
-    git config --global safe.directory "${WORKDIR}"
     export XDG_CACHE_HOME="/tmp/.cache"
+
+    # Copy source to a writable temp directory so make generate can write
+    # generated files without requiring a read-write host mount.
+    # This script is a verification check only — generated output is not
+    # written back to the host working tree.
+    CODEGEN_DIR="$(mktemp -d -t codegen.XXXXXX)"
+
+    # Rootful containers require the source directory to be marked as safe in
+    # git config, otherwise git commands will fail with
+    # "fatal: detected dubious ownership in repository at <path>"
+    if [ "${GIT_CONFIG_REQUIRED}" != "false" ]; then
+        git config --global safe.directory "${CODEGEN_DIR}"
+    fi
+
+    # This part could be run outside of a container and generated files
+    # should be cleaned up just in case this is run locally and not in test
+    # environment.
+    trap 'rm -rf "${CODEGEN_DIR}"' EXIT
+    cp -a . "${CODEGEN_DIR}"
+    cd "${CODEGEN_DIR}"
 
     INPUT_FILES="$(git ls-files config) $(git ls-files | grep zz_generated)"
     cksum ${INPUT_FILES} > "${ARTIFACTS}/lint.cksums.before"
@@ -26,9 +44,10 @@ if [ "${IS_CONTAINER}" != "false" ]; then
 else
     "${CONTAINER_RUNTIME}" run --rm \
         --env IS_CONTAINER=TRUE \
-        --volume "${PWD}:${WORKDIR}:rw,z" \
+        --env GIT_CONFIG_REQUIRED=TRUE \
+        --volume "${PWD}:/workdir:ro,z" \
         --entrypoint sh \
-        --workdir "${WORKDIR}" \
-        docker.io/golang:1.24 \
-        "${WORKDIR}"/hack/codegen.sh "$@"
+        --workdir /workdir \
+        docker.io/golang:1.26 \
+        /workdir/hack/codegen.sh "$@"
 fi
