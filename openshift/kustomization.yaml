@@ -76,6 +76,14 @@ patches:
     kind: CustomResourceDefinition
     name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
 
+# OpenShift workload kubeconfigs use the capm3-manager identity for Node API calls.
+- path: ./patches/manager-role-node-rbac.yaml
+  target:
+    group: rbac.authorization.k8s.io
+    version: v1
+    kind: ClusterRole
+    name: manager-role
+
 # Add TLS configuration args (substituted by cluster-capi-operator revisiongenerator)
 # NOTE: --tls-min-version is already set in upstream config/manager/manager.yaml
 - target:
