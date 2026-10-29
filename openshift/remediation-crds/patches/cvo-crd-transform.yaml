@@ -12,7 +12,7 @@
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
-    release.openshift.io/feature-gate: -ClusterAPIMachineManagement,-ClusterAPIMachineManagementBaremetal
+    release.openshift.io/feature-gate: -ClusterAPIMachineManagementBareMetal
 
 # Remove v1beta2 version (index 1)
 - op: remove
