@@ -5,7 +5,7 @@ metadata:
     exclude.release.openshift.io/internal-openshift-hosted: "true"
     include.release.openshift.io/self-managed-high-availability: "true"
     include.release.openshift.io/single-node-developer: "true"
-    release.openshift.io/feature-gate: -ClusterAPIMachineManagement,-ClusterAPIMachineManagementBaremetal
+    release.openshift.io/feature-gate: -ClusterAPIMachineManagementBareMetal
   name: metal3remediationtemplates.infrastructure.cluster.x-k8s.io
 spec:
   group: infrastructure.cluster.x-k8s.io
