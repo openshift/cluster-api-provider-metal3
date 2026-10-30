@@ -19,6 +19,7 @@ package controllers
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/go-logr/logr"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
@@ -38,17 +39,20 @@ import (
 )
 
 type reconcileNormalTestCase struct {
-	ExpectError                     bool
-	ExpectRequeue                   bool
-	Provisioned                     bool
-	BootstrapNotReady               bool
-	Annotated                       bool
-	AssociateFails                  bool
-	GetProviderIDFails              bool
-	SetNodeProviderIDFails          bool
-	CloudProviderEnabled            bool
-	Metal3DataClaimCreated          bool
-	SetProviderIDFromNodeLabelFails bool
+	ExpectError                        bool
+	ExpectRequeue                      bool
+	Provisioned                        bool
+	BootstrapNotReady                  bool
+	Annotated                          bool
+	AssociateFails                     bool
+	AssociateReason                    string
+	AnnotatedAfterAssociate            bool
+	GetProviderIDFails                 bool
+	SetNodeProviderIDFails             bool
+	CloudProviderEnabled               bool
+	Metal3DataClaimCreated             bool
+	SetProviderIDFromNodeLabelFails    bool
+	SetProviderIDFromNodeLabelNotFound bool
 }
 
 func setReconcileNormalExpectations(ctrl *gomock.Controller,
@@ -56,35 +60,34 @@ func setReconcileNormalExpectations(ctrl *gomock.Controller,
 ) *baremetal_mocks.MockMachineManagerInterface {
 	m := baremetal_mocks.NewMockMachineManagerInterface(ctrl)
 
+	// First call to IsProvisioned to check if machine was already ready (for metrics)
+	m.EXPECT().IsProvisioned().Return(tc.Provisioned)
+
 	m.EXPECT().SetFinalizer()
 
-	// provisioned, we should only call Update, nothing else
-	m.EXPECT().IsProvisioned().Return(tc.Provisioned)
 	if tc.Provisioned {
 		m.EXPECT().MachineHasNodeRef().Return(tc.Provisioned)
-		m.EXPECT().SetV1beta2Condition(
-			infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition,
+		m.EXPECT().SetCondition(
+			infrav1.AssociateMetal3MachineMetaDataCondition,
 			metav1.ConditionTrue,
-			infrav1.AssociateMetal3MachineMetaDataSuccessV1Beta2Reason, "")
+			infrav1.AssociateMetal3MachineMetaDataSuccessReason, "")
 		m.EXPECT().Update(context.TODO()).Return(nil)
 		m.EXPECT().IsBootstrapReady().MaxTimes(0)
 		m.EXPECT().AssociateM3Metadata(context.TODO()).MaxTimes(0)
 		m.EXPECT().HasAnnotation().MaxTimes(0)
-		m.EXPECT().GetProviderIDAndBMHID().MaxTimes(0)
 		return m
 	}
 
 	// Bootstrap data not ready, we'll requeue, not call anything else
 	m.EXPECT().IsBootstrapReady().Return(!tc.BootstrapNotReady)
 	if tc.BootstrapNotReady {
-		m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.AssociateBMHCondition,
-			infrav1.WaitingForBootstrapReadyReason, clusterv1.ConditionSeverityInfo, "")
-		m.EXPECT().SetV1beta2Condition(infrav1.AssociateBareMetalHostV1Beta2Condition,
-			metav1.ConditionFalse, infrav1.WaitingForBootstrapDataV1Beta2Reason,
+		m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.AssociateBMHV1Beta1Condition,
+			infrav1.WaitingForBootstrapReadyV1Beta1Reason, clusterv1.ConditionSeverityInfo, "")
+		m.EXPECT().SetCondition(infrav1.AssociateBareMetalHostCondition,
+			metav1.ConditionFalse, infrav1.WaitingForBootstrapDataReason,
 			"Waiting for bootstrap data to be ready before proceeding")
 		m.EXPECT().AssociateM3Metadata(context.TODO()).MaxTimes(0)
 		m.EXPECT().HasAnnotation().MaxTimes(0)
-		m.EXPECT().GetProviderIDAndBMHID().MaxTimes(0)
 		m.EXPECT().Update(context.TODO()).MaxTimes(0)
 		return m
 	}
@@ -94,35 +97,49 @@ func setReconcileNormalExpectations(ctrl *gomock.Controller,
 	if !tc.Annotated {
 		// if associate fails, we do not go further
 		if tc.AssociateFails {
-			m.EXPECT().Associate(context.TODO()).Return(errors.New("failed"))
-			m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.AssociateBMHCondition,
-				infrav1.AssociateBMHFailedReason, clusterv1.ConditionSeverityError, "%s", gomock.Any())
-			m.EXPECT().SetV1beta2Condition(infrav1.AssociateBareMetalHostV1Beta2Condition,
-				metav1.ConditionFalse, infrav1.AssociateBareMetalHostFailedV1Beta2Reason, gomock.Any())
+			m.EXPECT().Associate(context.TODO()).Return("", errors.New("failed"))
+			m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.AssociateBMHV1Beta1Condition,
+				infrav1.AssociateBMHFailedV1Beta1Reason, clusterv1.ConditionSeverityError, "%s", gomock.Any())
+			m.EXPECT().SetCondition(infrav1.AssociateBareMetalHostCondition,
+				metav1.ConditionFalse, infrav1.AssociateBareMetalHostFailedReason, gomock.Any())
 			m.EXPECT().AssociateM3Metadata(context.TODO()).MaxTimes(0)
 			m.EXPECT().Update(context.TODO()).MaxTimes(0)
 			return m
 		}
-		m.EXPECT().Associate(context.TODO()).Return(nil)
+		// Use the specified associate reason or default to success
+		associateReason := tc.AssociateReason
+		if associateReason == "" {
+			associateReason = infrav1.AssociateBareMetalHostSuccessReason
+		}
+		m.EXPECT().Associate(context.TODO()).Return(associateReason, nil)
+		// After association, HasAnnotation is checked again
+		m.EXPECT().HasAnnotation().Return(tc.AnnotatedAfterAssociate)
+		if tc.AnnotatedAfterAssociate {
+			m.EXPECT().SetV1Beta1ConditionToTrue(infrav1.AssociateBMHV1Beta1Condition)
+			m.EXPECT().SetCondition(infrav1.AssociateBareMetalHostCondition,
+				metav1.ConditionTrue, associateReason, "")
+		}
+		return m
 	}
 
 	if tc.Annotated {
 		m.EXPECT().Update(context.TODO()).Return(nil).MaxTimes(10)
-		m.EXPECT().SetConditionMetal3MachineToTrue(infrav1.AssociateBMHCondition)
-		m.EXPECT().SetV1beta2Condition(infrav1.AssociateBareMetalHostV1Beta2Condition,
-			metav1.ConditionTrue, infrav1.AssociateBareMetalHostSuccessV1Beta2Reason,
+		m.EXPECT().GetMetal3Machine().Return(&infrav1.Metal3Machine{}).Times(2)
+		m.EXPECT().SetV1Beta1ConditionToTrue(infrav1.AssociateBMHV1Beta1Condition)
+		m.EXPECT().SetCondition(infrav1.AssociateBareMetalHostCondition,
+			metav1.ConditionTrue, infrav1.AssociateBareMetalHostSuccessReason,
 			"")
 		if tc.Metal3DataClaimCreated {
 			m.EXPECT().AssociateM3Metadata(context.TODO())
-			m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition,
-				metav1.ConditionTrue, infrav1.AssociateMetal3MachineMetaDataSuccessV1Beta2Reason,
+			m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition,
+				metav1.ConditionTrue, infrav1.AssociateMetal3MachineMetaDataSuccessReason,
 				"")
 		} else {
 			m.EXPECT().AssociateM3Metadata(context.TODO()).Return(errors.New("failed"))
-			m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition,
-				infrav1.AssociateM3MetaDataFailedReason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
-			m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition,
-				metav1.ConditionFalse, infrav1.AssociateMetal3MachineMetaDataFailedV1Beta2Reason, gomock.Any())
+			m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.KubernetesNodeReadyV1Beta1Condition,
+				infrav1.AssociateM3MetaDataFailedV1Beta1Reason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
+			m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition,
+				metav1.ConditionFalse, infrav1.AssociateMetal3MachineMetaDataFailedReason, gomock.Any())
 			return m
 		}
 		if tc.CloudProviderEnabled {
@@ -135,10 +152,18 @@ func setReconcileNormalExpectations(ctrl *gomock.Controller,
 		m.EXPECT().NodeWithMatchingProviderIDExists(context.TODO(), nil).Return(false)
 		if tc.SetProviderIDFromNodeLabelFails {
 			m.EXPECT().SetProviderIDFromNodeLabel(context.TODO(), nil).Return(false, errors.New("failed"))
+			m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition,
+				metav1.ConditionFalse, infrav1.CreateMachineErrorReason, gomock.Any())
+		} else if tc.SetProviderIDFromNodeLabelNotFound {
+			m.EXPECT().SetProviderIDFromNodeLabel(context.TODO(), nil).Return(false, nil)
+			m.EXPECT().Metal3MachineHasProviderID().Return(false)
+			m.EXPECT().SetDefaultProviderID().Return(nil)
+			m.EXPECT().SetReadyTrue()
+			m.EXPECT().SetNodeProviderIDByHostname(context.TODO(), nil).Return(nil)
 		} else {
 			m.EXPECT().SetProviderIDFromNodeLabel(context.TODO(), nil).Return(true, nil)
 			m.EXPECT().GetMetal3Machine().Return(&infrav1.Metal3Machine{})
-			m.EXPECT().SetMetal3DataReadyConditionTrue(infrav1.SecretsSetExternallyV1Beta2Reason)
+			m.EXPECT().SetMetal3DataReadyConditionTrue(infrav1.SecretsSetExternallyReason)
 			m.EXPECT().SetReadyTrue()
 		}
 	}
@@ -157,13 +182,13 @@ func setReconcileDeleteExpectations(ctrl *gomock.Controller,
 	tc reconcileDeleteTestCase,
 ) *baremetal_mocks.MockMachineManagerInterface {
 	m := baremetal_mocks.NewMockMachineManagerInterface(ctrl)
-	m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.DeletingReason, clusterv1.ConditionSeverityInfo, "")
-	m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingV1Beta2Reason, "")
+	m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.KubernetesNodeReadyV1Beta1Condition, infrav1.DeletingV1Beta1Reason, clusterv1.ConditionSeverityInfo, "")
+	m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingReason, "")
 
 	if tc.DissociateM3MetadataFails {
 		m.EXPECT().DissociateM3Metadata(context.TODO()).Return(errors.New("failed"))
-		m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.DisassociateM3MetaDataFailedReason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
-		m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition, metav1.ConditionFalse, infrav1.DisassociateM3MetaDataFailedV1Beta2Reason, gomock.Any())
+		m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.KubernetesNodeReadyV1Beta1Condition, infrav1.DisassociateM3MetaDataFailedV1Beta1Reason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
+		m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition, metav1.ConditionFalse, infrav1.DisassociateM3MetaDataFailedReason, gomock.Any())
 		m.EXPECT().Delete(context.TODO()).MaxTimes(0)
 		m.EXPECT().UnsetFinalizer().MaxTimes(0)
 		return m
@@ -171,15 +196,15 @@ func setReconcileDeleteExpectations(ctrl *gomock.Controller,
 	if tc.DeleteFails {
 		m.EXPECT().DissociateM3Metadata(context.TODO())
 		m.EXPECT().Delete(context.TODO()).Return(errors.New("failed"))
-		m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.DeletionFailedReason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
-		m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingFailedV1Beta2Reason, gomock.Any())
+		m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.KubernetesNodeReadyV1Beta1Condition, infrav1.DeletionFailedV1Beta1Reason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
+		m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingFailedReason, gomock.Any())
 		m.EXPECT().UnsetFinalizer().MaxTimes(0)
 		return m
 	} else if tc.DeleteRequeue {
 		m.EXPECT().DissociateM3Metadata(context.TODO())
 		m.EXPECT().Delete(context.TODO()).Return(baremetal.WithTransientError(errors.New("failed"), requeueAfter))
-		m.EXPECT().SetConditionMetal3MachineToFalse(infrav1.KubernetesNodeReadyCondition, infrav1.DeletionFailedReason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
-		m.EXPECT().SetV1beta2Condition(infrav1.AssociateMetal3MachineMetaDataV1Beta2Condition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingFailedV1Beta2Reason, gomock.Any())
+		m.EXPECT().SetV1Beta1ConditionToFalse(infrav1.KubernetesNodeReadyV1Beta1Condition, infrav1.DeletionFailedV1Beta1Reason, clusterv1.ConditionSeverityWarning, "%s", gomock.Any())
+		m.EXPECT().SetCondition(infrav1.AssociateMetal3MachineMetaDataCondition, metav1.ConditionFalse, infrav1.Metal3MachineDeletingFailedReason, gomock.Any())
 		m.EXPECT().UnsetFinalizer().MaxTimes(0)
 		return m
 	}
@@ -218,7 +243,7 @@ var _ = Describe("Metal3Machine manager", func() {
 		DescribeTable("ReconcileNormal tests",
 			func(tc reconcileNormalTestCase) {
 				m := setReconcileNormalExpectations(gomockCtrl, tc)
-				res, err := bmReconcile.reconcileNormal(context.TODO(), m, logr.Discard())
+				res, err := bmReconcile.reconcileNormal(context.TODO(), m, logr.Discard(), "test-ns", "test-cluster", time.Now())
 
 				if tc.ExpectError {
 					Expect(err).To(HaveOccurred())
@@ -241,10 +266,33 @@ var _ = Describe("Metal3Machine manager", func() {
 				ExpectRequeue:     false,
 				BootstrapNotReady: true,
 			}),
-			Entry("Not Annotated", reconcileNormalTestCase{
-				ExpectError:   false,
-				ExpectRequeue: false,
-				Annotated:     false,
+			Entry("Not Annotated, Associate with regular success, annotation set", reconcileNormalTestCase{
+				ExpectError:             false,
+				ExpectRequeue:           false,
+				Annotated:               false,
+				AssociateReason:         infrav1.AssociateBareMetalHostSuccessReason,
+				AnnotatedAfterAssociate: true,
+			}),
+			Entry("Not Annotated, Associate with regular success, annotation not set", reconcileNormalTestCase{
+				ExpectError:             false,
+				ExpectRequeue:           false,
+				Annotated:               false,
+				AssociateReason:         infrav1.AssociateBareMetalHostSuccessReason,
+				AnnotatedAfterAssociate: false,
+			}),
+			Entry("Not Annotated, Associate via node reuse, annotation set", reconcileNormalTestCase{
+				ExpectError:             false,
+				ExpectRequeue:           false,
+				Annotated:               false,
+				AssociateReason:         infrav1.AssociateBareMetalHostViaNodeReuseSuccessReason,
+				AnnotatedAfterAssociate: true,
+			}),
+			Entry("Not Annotated, Associate via node reuse, annotation not set", reconcileNormalTestCase{
+				ExpectError:             false,
+				ExpectRequeue:           false,
+				Annotated:               false,
+				AssociateReason:         infrav1.AssociateBareMetalHostViaNodeReuseSuccessReason,
+				AnnotatedAfterAssociate: false,
 			}),
 			Entry("Not Annotated, Associate fails", reconcileNormalTestCase{
 				ExpectError:    true,
@@ -292,6 +340,13 @@ var _ = Describe("Metal3Machine manager", func() {
 				Annotated:                       true,
 				Metal3DataClaimCreated:          true,
 				SetProviderIDFromNodeLabelFails: false,
+			}),
+			Entry("SetProviderIDFromNodeLabel no node found, falls through to default ProviderID", reconcileNormalTestCase{
+				ExpectError:                        false,
+				ExpectRequeue:                      false,
+				Annotated:                          true,
+				Metal3DataClaimCreated:             true,
+				SetProviderIDFromNodeLabelNotFound: true,
 			}),
 		)
 	})

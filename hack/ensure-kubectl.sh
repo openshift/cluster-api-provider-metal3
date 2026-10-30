@@ -18,36 +18,162 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-GOPATH_BIN="$(go env GOPATH)/bin/"
-MINIMUM_KUBECTL_VERSION=${KUBERNETES_VERSION:-"v1.35.0"}
+if [[ "${TRACE-0}" == "1" ]]; then
+    set -o xtrace
+fi
 
-# Ensure the kubectl tool exists and is a viable version, or installs it
-verify_kubectl_version()
-{
-    # If kubectl is not available on the path, get it
-    if ! [ -x "$(command -v kubectl)" ]; then
-        if [[ "${OSTYPE}" == "linux-gnu" ]]; then
-            if ! [ -d "${GOPATH_BIN}" ]; then
-                mkdir -p "${GOPATH_BIN}"
-            fi
-            echo 'kubectl not found, installing'
-            curl -sLo "${GOPATH_BIN}/kubectl" https://storage.googleapis.com/kubernetes-release/release/"${MINIMUM_KUBECTL_VERSION}"/bin/linux/amd64/kubectl
-            chmod +x "${GOPATH_BIN}/kubectl"
-        else
-            echo "Missing required binary in path: kubectl"
-            return 2
+GOPATH_BIN="$(go env GOPATH)/bin/"
+MINIMUM_KUBECTL_VERSION=${KUBERNETES_VERSION:-"v1.37.0"}
+
+# Download the required kubectl version into the given target directory
+download_kubectl() {
+    local target_dir="${1}"
+    local arch tmp_dir checksum expected_checksum
+    local kubectl_url="https://dl.k8s.io/release/${MINIMUM_KUBECTL_VERSION}/bin/linux"
+
+    # Normalize to the architecture names used by the Kubernetes release downloads.
+    arch="$(uname -m)"
+    case "${arch}" in
+        x86_64)
+            arch="amd64"
+            ;;
+        aarch64)
+            arch="arm64"
+            ;;
+    esac
+
+    echo "Installing kubectl ${MINIMUM_KUBECTL_VERSION} to ${target_dir}"
+
+    if ! command -v sha256sum &>/dev/null; then
+        echo "ERROR: sha256sum not found. On macOS, install coreutils: brew install coreutils" >&2
+        exit 1
+    fi
+
+    tmp_dir="$(mktemp -d)"
+
+    # shellcheck disable=SC2064 # Intentional: expand tmp_dir now since it's local
+    trap "rm -rf '${tmp_dir}'" RETURN EXIT
+
+    # Download the checksum for the kubectl binary
+    if ! curl --proto '=https' --tlsv1.3 -sSfL \
+         --retry 3 --retry-delay 5 --max-time 120 \
+         -o "${tmp_dir}/kubectl.sha256sum" "${kubectl_url}/${arch}/kubectl.sha256"; then
+        echo >&2 "fatal: failed to download kubectl checksum from ${kubectl_url}/${arch}/kubectl.sha256"
+        return 1
+    fi
+
+    # Download the kubectl binary
+    if ! curl --proto '=https' --tlsv1.3 -sSfL \
+         --retry 3 --retry-delay 5 --max-time 120 \
+         -o "${tmp_dir}/kubectl" "${kubectl_url}/${arch}/kubectl"; then
+        echo >&2 "fatal: failed to download kubectl from ${kubectl_url}/${arch}/kubectl"
+        return 1
+    fi
+
+    # Verify checksum before using
+    checksum="$(sha256sum "${tmp_dir}/kubectl" | awk '{print $1;}')" || return 1
+    expected_checksum="$(awk '{print $1;}' "${tmp_dir}/kubectl.sha256sum")" || return 1
+    if [[ "${checksum}" != "${expected_checksum}" ]]; then
+        echo >&2 "fatal: ${kubectl_url}/${arch}/kubectl checksum '${checksum}' differs from expected '${expected_checksum}'"
+        return 1
+    else
+        echo "kubectl checksum ${checksum} verified"
+    fi
+
+    # Install to the target dir, using sudo if the location is not writable
+    chmod +x "${tmp_dir}/kubectl"
+    if [[ -w "${target_dir}" ]]; then
+        mv -f "${tmp_dir}/kubectl" "${target_dir}/kubectl"
+    elif command -v sudo &>/dev/null; then
+        sudo mv -f "${tmp_dir}/kubectl" "${target_dir}/kubectl"
+    else
+        echo "ERROR: ${target_dir} is not writable and sudo is unavailable."
+        return 2
+    fi
+}
+
+# Install the required kubectl version, replacing the currently active binary
+# on PATH when present so the upgrade actually takes effect.
+install_kubectl() {
+    if [[ "$(uname -s)" != "Linux" ]]; then
+        echo "Automatic kubectl installation is only supported on Linux"
+        echo "Please install ${MINIMUM_KUBECTL_VERSION} or later manually."
+        return 2
+    fi
+
+    # Prefer replacing the kubectl currently resolved on PATH, otherwise fall
+    # back to GOPATH/bin.
+    local active_kubectl target_dir
+    active_kubectl="$(command -v kubectl 2>/dev/null || true)"
+    if [[ -n "${active_kubectl}" ]]; then
+        target_dir="$(cd "$(dirname "${active_kubectl}")" && pwd)"
+    else
+        target_dir="${GOPATH_BIN%/}"
+        if [[ ! -d "${target_dir}" ]]; then
+            mkdir -p "${target_dir}"
         fi
     fi
 
+    download_kubectl "${target_dir}" || return $?
+
+    if [[ ":${PATH}:" != *":${target_dir}:"* ]]; then
+        echo "WARNING: ${target_dir} is not on your PATH; the newly installed kubectl may not take precedence."
+        echo "         Add it to your PATH, e.g.: export PATH=\"${target_dir}:\${PATH}\""
+    fi
+}
+
+# Return the detected kubectl client version, or empty if it can't be determined
+get_kubectl_version() {
+    local version
+    version="$(kubectl version --client -o yaml 2>/dev/null | grep -F gitVersion | awk '{print $2}')" || true
+    if [[ -z "${version}" ]]; then
+        # Fallback: try parsing non-yaml output (e.g. "Client Version: v1.36.0")
+        version="$(kubectl version --client 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+')" || true
+    fi
+    echo "${version}"
+}
+
+# Ensure the kubectl tool exists and is a viable version, or installs it
+verify_kubectl_version() {
+    # Remove any broken kubectl binary in GOPATH/bin
+    if [[ -f "${GOPATH_BIN}/kubectl" ]] && ! "${GOPATH_BIN}/kubectl" version --client &>/dev/null; then
+        echo "Removing broken kubectl binary at ${GOPATH_BIN}/kubectl"
+        rm -f "${GOPATH_BIN}/kubectl"
+    fi
+
+    # If kubectl is not available on the path, or not a working binary, get it
+    if ! kubectl version --client &>/dev/null; then
+        echo "kubectl not found or not working, installing"
+        install_kubectl || return $?
+        hash -r
+    fi
+
     local kubectl_version
-    IFS=" " read -ra kubectl_version <<< "$(kubectl version --client --short 2>/dev/null || kubectl version --client 2>/dev/null)"
-    if [[ "${MINIMUM_KUBECTL_VERSION}" != $(echo -e "${MINIMUM_KUBECTL_VERSION}\n${kubectl_version[2]}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) ]]; then
+    kubectl_version="$(get_kubectl_version)"
+    if [[ -z "${kubectl_version}" ]]; then
+        echo "WARNING: Unable to determine kubectl version, skipping version check"
+        return 0
+    fi
+
+    # If the detected version is older than the minimum, install the required version
+    if [[ "${MINIMUM_KUBECTL_VERSION}" != $(echo -e "${MINIMUM_KUBECTL_VERSION}\n${kubectl_version}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) ]]; then
         cat << EOF
-Detected kubectl version: ${kubectl_version[2]}.
+Detected kubectl version: ${kubectl_version}.
 Requires ${MINIMUM_KUBECTL_VERSION} or greater.
-Please install ${MINIMUM_KUBECTL_VERSION} or later.
 EOF
-        return 2
+        install_kubectl || return $?
+        hash -r
+
+        # Re-check the version after installation
+        kubectl_version="$(get_kubectl_version)"
+        if [[ -n "${kubectl_version}" && "${MINIMUM_KUBECTL_VERSION}" != $(echo -e "${MINIMUM_KUBECTL_VERSION}\n${kubectl_version}" | sort -s -t. -k 1,1 -k 2,2n -k 3,3n | head -n1) ]]; then
+            cat << EOF
+Detected kubectl version after install: ${kubectl_version}.
+Requires ${MINIMUM_KUBECTL_VERSION} or greater.
+Please ensure the installed kubectl precedes other kubectl locations on your PATH.
+EOF
+            return 2
+        fi
     fi
 }
 

@@ -20,7 +20,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1beta1 "sigs.k8s.io/cluster-api/api/core/v1beta1"
-	capierrors "sigs.k8s.io/cluster-api/errors"
+	capierrors "sigs.k8s.io/cluster-api/api/deprecated/errors"
 )
 
 const (
@@ -115,7 +115,9 @@ const (
 // Metal3MachineSpec defines the desired state of Metal3Machine.
 type Metal3MachineSpec struct {
 	// ProviderID will be the Metal3 machine in ProviderID format
-	// (metal3://<bmh-uuid>)
+	// (metal3://<namespace>/<bmh-name>/<m3m-name>).
+	// The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+	// and removed in CAPM3 v1.14.
 	// +optional
 	ProviderID *string `json:"providerID,omitempty"`
 

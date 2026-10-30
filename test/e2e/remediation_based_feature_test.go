@@ -71,12 +71,12 @@ var _ = Describe("Testing nodes remediation", Label("remediation", "features"), 
 				BootstrapClusterProxy: bootstrapClusterProxy,
 				SpecName:              specName,
 				ClusterName:           clusterName,
-				K8sVersion:            e2eConfig.MustGetVariable("FROM_K8S_VERSION"),
+				K8sVersion:            e2eConfig.MustGetVariable("KUBERNETES_VERSION_UPGRADE_FROM"),
 				KCPMachineCount:       int64(numberOfControlplane),
 				WorkerMachineCount:    int64(numberOfWorkers),
 				ClusterctlLogFolder:   clusterctlLogFolder,
 				ClusterctlConfigPath:  clusterctlConfigPath,
-				OSType:                osType,
+				OSType:                osType + flavorSuffix(),
 				Namespace:             namespace,
 			}
 		})
@@ -122,7 +122,9 @@ var _ = Describe("Testing nodes remediation", Label("remediation", "features"), 
 		ListBareMetalHosts(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMetal3Machines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
 		ListMachines(ctx, bootstrapClusterProxy.GetClient(), client.InNamespace(namespace))
-		ListNodes(ctx, targetCluster.GetClient())
+		if targetCluster != nil {
+			ListNodes(ctx, targetCluster.GetClient())
+		}
 		DumpSpecResourcesAndCleanup(ctx, specName, bootstrapClusterProxy, targetCluster, artifactFolder, namespace, e2eConfig.GetIntervals, clusterName, clusterctlLogFolder, skipCleanup, clusterctlConfigPath)
 	})
 

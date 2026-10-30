@@ -37,8 +37,9 @@ default values.
 
 In CAPM3 API version v1alpha4 (which is removed from main branch but exist in
 previous release branches) and onwards, it is possible to mark BareMetalHost
-object as unhealthy by adding an annotation `capi.metal3.io/unhealthy`. This
-annotation prevents CAPM3 to select unhealthy BareMetalHost for newly created
+object as unhealthy by adding an annotation `capi.metal3.io/unhealthy`. From
+v1beta2 onwards the annotation is `capm3.metal3.io/unhealthy`. This annotation
+prevents CAPM3 to select unhealthy BareMetalHost for newly created
 metal3machine. Removing the annotation will enable the normal operations.
 
 ## Cluster
@@ -78,15 +79,20 @@ cluster on Baremetal. It currently has two specification fields :
 
 - **controlPlaneEndpoint**: contains the target cluster API server address and
   port
-- **noCloudProvider(Deprecated use CloudProviderEnabled)**: (true/false) Whether
-  the cluster will not be deployed with an external cloud provider. If set to
-  true, CAPM3 will patch the target cluster node objects to add a providerID.
-  This will allow the CAPI process to continue even if the cluster is deployed
-  without cloud provider.
+- **noCloudProvider(Deprecated, use CloudProviderEnabled)**: (true/false)
+  Whether the cluster will not be deployed with an external cloud provider. If
+  set to `true`, CAPM3 will patch the target cluster `Node` objects to set
+  `spec.providerID`, allowing the CAPI process to continue without a cloud
+  provider.
 - **CloudProviderEnabled**: (true/false) Whether the cluster will be deployed
-  with an external cloud provider. If set to false, CAPM3 will patch the target
-  cluster node objects to add a providerID. This will allow the CAPI process to
-  continue even if the cluster is deployed without cloud provider.
+  with an external cloud provider. If set to `false`, CAPM3 will patch the
+  target cluster `Node` objects to set `spec.providerID`, allowing the CAPI
+  process to continue without a cloud provider.
+
+See
+[ProviderID Workflow](https://book.metal3.io/capm3/providerid-workflow.html)
+for the complete description of how CAPM3 assigns and propagates the ProviderID
+in both cases.
 
 Example metal3cluster :
 
@@ -132,7 +138,7 @@ spec:
       rollingUpdate:
         maxSurge: 1
       type: RollingUpdate
-  version: v1.35.0
+  version: v1.37.0
   kubeadmConfigSpec:
     joinConfiguration:
       controlPlane: {}
@@ -249,8 +255,11 @@ spec:
     name: controlplane-0
   deletion:
     nodeDrainTimeoutSeconds: 0
-  providerID: metal3://68be298f-ed11-439e-9d51-6c5260faede6
-  version: v1.35.0
+  # Set by CAPM3 — format is metal3://<namespace>/<bmh-name>/<m3m-name>
+  # The legacy format (metal3://<bmh-uuid>) will be deprecated in CAPM3 v1.13
+  # and removed in CAPM3 v1.14.
+  providerID: metal3://metal3/node-0/controlplane-0
+  version: v1.37.0
 ```
 
 ## Metal3Machine
@@ -290,8 +299,8 @@ The fields are:
   ensure that the secret belongs to the cluster ownerReference tree (see
   [doc](https://cluster-api.sigs.k8s.io/developer/providers/contracts/clusterctl.html#ownerreferences-chain)).
   The content of the secret should be a yaml equivalent of a json object that
-  follows the format definition that can be found
-  [here](https://docs.openstack.org/nova/latest/_downloads/9119ca7ac90aa2990e762c08baea3a36/network_data.json).
+  follows the format definition that can be found in the
+  [OpenStack network_data.json reference](https://docs.openstack.org/nova/latest/_downloads/4e8fe1ae7db6dd6eebca372db68fe63e/network_data.json).
 
 - **hostSelector** -- Specify criteria for matching labels on `BareMetalHost`
   objects. This can be used to limit the set of available `BareMetalHost`
@@ -331,6 +340,57 @@ unset, that field will also remain unset on the BareMetalHost.
 When the Metal3Machine gets deleted, the CAPM3 controller will remove its
 ownerreference from the data template object. This will trigger the deletion of
 the generated Metal3Data object and the secrets generated for this machine.
+
+### Node address overrides
+
+The addresses in `Machine.status.addresses` are normally derived from the
+hardware details that Ironic discovered on the BareMetalHost during inspection:
+one `InternalIP` per NIC, plus `Hostname` and `InternalDNS` from the hostname.
+
+The IP addresses can be overridden through the `metaData` secret referenced in
+`Metal3Machine.status.metaData`. The following optional keys are recognized in
+the metadata:
+
+- **InternalIP** : used as the `InternalIP` address of the Machine
+- **ExternalIP** : used as the `ExternalIP` address of the Machine
+
+The keys are case-sensitive and only non-empty string values are used. If either
+key is set, the addresses from the BareMetalHost NICs are not used at all, so
+both keys must be set to get both address types. The `Hostname` and
+`InternalDNS` addresses always come from the BareMetalHost, also when the IP
+addresses are overridden.
+
+This is useful when the BareMetalHost hardware details are unavailable, or when
+the desired addresses differ from the NICs discovered by inspection, for example
+with overlay networks, VIPs or externally routable addresses.
+
+The overrides are best effort. They are ignored, and the addresses are derived
+from the BareMetalHost instead, if the secret does not exist yet, holds no
+`metaData`, cannot be parsed as a YAML mapping, or holds values of an unexpected
+type.
+
+Since the metadata is usually rendered by the Metal3Data controller, the
+addresses are typically set through the `metaData` field of a
+Metal3DataTemplate:
+
+```yaml
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: Metal3DataTemplate
+metadata:
+  name: nodepool-1
+  namespace: metal3
+spec:
+  metaData:
+    ipAddressesFromIPPool:
+    - key: InternalIP
+      name: provisioning-pool
+      apiGroup: ipam.metal3.io
+      kind: IPPool
+    - key: ExternalIP
+      name: external-pool
+      apiGroup: ipam.metal3.io
+      kind: IPPool
+```
 
 ### hostSelector Examples
 
@@ -420,10 +480,10 @@ metadata:
 spec:
   automatedCleaningMode: metadata
   image:
-    checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img.sha256sum
+    checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.37.0-raw.img.sha256sum
     checksumType: sha256
     format: raw
-    url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img
+    url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.37.0-raw.img
   hostSelector:
     matchLabels:
       key1: value1
@@ -481,7 +541,7 @@ spec:
         name: md-0
         apiGroup: infrastructure.cluster.x-k8s.io
         kind: Metal3MachineTemplate
-      version: v1.35.0
+      version: v1.37.0
 ```
 
 ## KubeadmConfigTemplate
@@ -566,10 +626,10 @@ spec:
     spec:
       automatedCleaningMode: metadata
       image:
-        checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img.sha256sum
+        checksum: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.37.0-raw.img.sha256sum
         checksumType: sha256
         format: raw
-        url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.35.0-raw.img
+        url: http://172.22.0.1/images/UBUNTU_24.04_NODE_IMAGE_K8S_v1.37.0-raw.img
       hostSelector:
         matchLabels:
           key1: value1
@@ -758,8 +818,8 @@ The `metaData` field will be rendered into a map of strings in yaml format,
 while `networkData` will be rendered into a map equivalent of
 [Nova network_data.json](https://docs.openstack.org/nova/latest/user/metadata.html#openstack-format-metadata).
 On the target node, the network data will be rendered as a json object that
-follows the format definition that can be found
-[here](https://docs.openstack.org/nova/latest/_downloads/9119ca7ac90aa2990e762c08baea3a36/network_data.json).
+follows the format definition that can be found in the
+[OpenStack network_data.json reference](https://docs.openstack.org/nova/latest/_downloads/4e8fe1ae7db6dd6eebca372db68fe63e/network_data.json).
 
 ### Metadata Specifications
 

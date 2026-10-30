@@ -17,18 +17,27 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"net"
+)
 
-	"github.com/pkg/errors"
+const (
+	// ipv6ByteLen is the byte length of an IPv6 address.
+	ipv6ByteLen = 16
+	// Big Int value of 255.255.255.255
+	// Maximum numeric value in hex format of the IPv4-Mapped IPv6 Address
+	// according to https://www.rfc-editor.org/rfc/rfc4291.html#section-2.5.5.2
+	maxIPv4Int = 0xFFFFFFFFFFFF
 )
 
 // GetIPAddress renders the IP address, taking the index, offset and step into
 // account, it is IP version agnostic.
 func GetIPAddress(entry Pool, index int) (IPAddressStr, error) {
 	if entry.Start == nil && entry.Subnet == nil {
-		return "", errors.New("Either Start or Subnet is required for ipAddress")
+		return "", errors.New("either Start or Subnet is required for ipAddress")
 	}
 	var ip net.IP
 	var err error
@@ -53,7 +62,7 @@ func GetIPAddress(entry Pool, index int) (IPAddressStr, error) {
 				return "", err
 			}
 			if !ipNet.Contains(ip) {
-				return "", errors.New("IP address out of bonds")
+				return "", errors.New("IP address out of bounds")
 			}
 		}
 
@@ -71,10 +80,110 @@ func GetIPAddress(entry Pool, index int) (IPAddressStr, error) {
 
 		// Verify that the ip is in the subnet.
 		if !ipNet.Contains(ip) {
-			return "", errors.New("IP address out of bonds")
+			return "", errors.New("IP address out of bounds")
 		}
 	}
 	return IPAddressStr(ip.String()), nil
+}
+
+// ValidatePool validates the address-range fields of a single pool entry: that
+// any Start/End/Subnet values present are well-formed, and that start <= end
+// when both Start and End are set. It is intentionally lenient about presence
+// (a Start-only or End-only pool is valid for the sequential strategy), so it
+// does not require Start or Subnet to be set and does not bound-check the size.
+// It is the shared validation used by both the webhook and GetPoolSize so the
+// range/format checks live in a single place.
+func ValidatePool(entry Pool) error {
+	var startIP, endIP net.IP
+
+	if entry.Start != nil {
+		startIP = net.ParseIP(string(*entry.Start))
+		if startIP == nil {
+			return fmt.Errorf("invalid Start IP %q", *entry.Start)
+		}
+	}
+	if entry.End != nil {
+		endIP = net.ParseIP(string(*entry.End))
+		if endIP == nil {
+			return fmt.Errorf("invalid End IP %q", *entry.End)
+		}
+	}
+	if entry.Subnet != nil {
+		if _, _, err := net.ParseCIDR(string(*entry.Subnet)); err != nil {
+			return fmt.Errorf("invalid Subnet %q: %w", *entry.Subnet, err)
+		}
+	}
+	if startIP != nil && endIP != nil {
+		if new(big.Int).SetBytes(startIP.To16()).Cmp(new(big.Int).SetBytes(endIP.To16())) > 0 {
+			return fmt.Errorf("end IP %s is before start IP %s", endIP, startIP)
+		}
+	}
+	return nil
+}
+
+// GetPoolSize returns the number of indexable IP addresses in the given pool
+// entry, matching the index space accepted by GetIPAddress: GetIPAddress(entry, i)
+// is valid for i in [0, size) and returns an error for i >= size. Unlike
+// ValidatePool, it requires the pool to be bounded (Start with End/Subnet, or
+// Subnet only) so that a finite size can be computed.
+func GetPoolSize(entry Pool) (int, error) {
+	if err := ValidatePool(entry); err != nil {
+		return 0, err
+	}
+	if entry.Start == nil && entry.Subnet == nil {
+		return 0, errors.New("either Start or Subnet is required for ipAddress")
+	}
+
+	var startIP, endIP net.IP
+	inclusiveStart := true
+
+	switch {
+	case entry.Start != nil && entry.End != nil:
+		startIP = net.ParseIP(string(*entry.Start))
+		endIP = net.ParseIP(string(*entry.End))
+	case entry.Start != nil && entry.Subnet != nil:
+		_, ipNet, err := net.ParseCIDR(string(*entry.Subnet))
+		if err != nil {
+			return 0, err
+		}
+		startIP = net.ParseIP(string(*entry.Start))
+		endIP = lastIPInSubnet(ipNet)
+	case entry.Start != nil:
+		return 0, errors.New("pool with Start requires End or Subnet to determine size")
+	default:
+		_, ipNet, err := net.ParseCIDR(string(*entry.Subnet))
+		if err != nil {
+			return 0, err
+		}
+		// GetIPAddress with Subnet-only maps index 0 to network+1, so the
+		// network address itself is excluded from the index space.
+		startIP = ipNet.IP
+		endIP = lastIPInSubnet(ipNet)
+		inclusiveStart = false
+	}
+
+	s := new(big.Int).SetBytes(startIP.To16())
+	e := new(big.Int).SetBytes(endIP.To16())
+	diff := new(big.Int).Sub(e, s)
+	if diff.Sign() < 0 {
+		return 0, fmt.Errorf("end IP %s is before start IP %s", endIP, startIP)
+	}
+	if inclusiveStart {
+		diff.Add(diff, big.NewInt(1))
+	}
+	if !diff.IsInt64() || diff.Int64() > math.MaxInt {
+		return 0, errors.New("pool size exceeds int range")
+	}
+	return int(diff.Int64()), nil
+}
+
+// lastIPInSubnet returns the highest address contained in the given CIDR.
+func lastIPInSubnet(n *net.IPNet) net.IP {
+	last := make(net.IP, len(n.IP))
+	for i := range n.IP {
+		last[i] = n.IP[i] | ^n.Mask[i]
+	}
+	return last
 }
 
 // addOffsetToIP computes the value of the IP address with the offset. It is
@@ -82,11 +191,14 @@ func GetIPAddress(entry Pool, index int) (IPAddressStr, error) {
 // Note that if the resulting IP address is in the format ::ffff:xxxx:xxxx then
 // ip.String will fail to select the correct type of ip.
 func addOffsetToIP(ip, endIP net.IP, offset int) (net.IP, error) {
-	ip4 := false
-	if ip.To4() != nil {
-		ip4 = true
+	// Detect IPv4 before normalizing to 16-byte form.
+	ip4 := ip.To4() != nil
+	// Normalize to the 16-byte form so the byte-length and value checks
+	// below hold for both ParseIP and ParseCIDR inputs.
+	ip = ip.To16()
+	if ip == nil {
+		return nil, errors.New("invalid IP address")
 	}
-
 	// Create big integers.
 	IPInt := big.NewInt(0)
 	OffsetInt := big.NewInt(int64(offset))
@@ -102,9 +214,12 @@ func addOffsetToIP(ip, endIP net.IP, offset int) (net.IP, error) {
 
 	IPBytesLen := len(IPBytes)
 
-	// Verify that the IPv4 or IPv6 fulfills theirs constraints.
-	if (ip4 && IPBytesLen > 6 && IPBytes[4] != 255 && IPBytes[5] != 255) ||
-		(!ip4 && IPBytesLen > 16) {
+	// Verify that the IPv4 or IPv6 fulfills their constraints.
+	if ip4 {
+		if IPInt.Cmp(big.NewInt(maxIPv4Int)) > 0 {
+			return nil, fmt.Errorf("IP address overflow for : %s", ip.String())
+		}
+	} else if IPBytesLen > ipv6ByteLen {
 		return nil, fmt.Errorf("IP address overflow for : %s", ip.String())
 	}
 
@@ -114,11 +229,11 @@ func addOffsetToIP(ip, endIP net.IP, offset int) (net.IP, error) {
 		endIPInt = endIPInt.SetBytes(endIP)
 		// Computed IP is higher than the end IP.
 		if IPInt.Cmp(endIPInt) > 0 {
-			return nil, fmt.Errorf("IP address out of bonds for : %s", ip.String())
+			return nil, fmt.Errorf("IP address out of bounds for : %s", ip.String())
 		}
 	}
 
-	// COpy the output back into an ip.
-	copy(ip[16-IPBytesLen:], IPBytes)
+	// Copy the output back into an ip.
+	copy(ip[ipv6ByteLen-IPBytesLen:], IPBytes)
 	return ip, nil
 }

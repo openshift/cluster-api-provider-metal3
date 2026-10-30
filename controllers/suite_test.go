@@ -169,7 +169,6 @@ func bmcSpec() *infrav1.Metal3ClusterSpec {
 			Host: "192.168.111.249",
 			Port: 6443,
 		},
-		NoCloudProvider:      ptr.To(true),
 		CloudProviderEnabled: ptr.To(false),
 	}
 }
@@ -392,7 +391,7 @@ func newBareMetalHost(bmhName string, spec *bmov1alpha1.BareMetalHostSpec,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      bmhName,
 			Namespace: namespaceName,
-			UID:       bmhuid,
+			UID:       defaultBMHUID,
 		},
 		Spec:   *spec,
 		Status: *status,

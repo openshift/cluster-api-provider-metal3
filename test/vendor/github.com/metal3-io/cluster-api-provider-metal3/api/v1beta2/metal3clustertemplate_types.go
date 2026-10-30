@@ -18,11 +18,14 @@ package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
 
 // Metal3ClusterTemplateSpec defines the desired state of Metal3ClusterTemplate.
 type Metal3ClusterTemplateSpec struct {
-	Template Metal3ClusterTemplateResource `json:"template"`
+	// template describes the data for creating a Metal3Cluster from a template
+	// +required
+	Template Metal3ClusterTemplateResource `json:"template,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -31,10 +34,14 @@ type Metal3ClusterTemplateSpec struct {
 
 // Metal3ClusterTemplate is the Schema for the metal3clustertemplates API.
 type Metal3ClusterTemplate struct {
-	metav1.TypeMeta   `json:",inline"`
+	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
+	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec Metal3ClusterTemplateSpec `json:"spec,omitempty"`
+	// spec defines the desired state of Metal3ClusterTemplate.
+	// +required
+	Spec Metal3ClusterTemplateSpec `json:"spec,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true
@@ -43,7 +50,8 @@ type Metal3ClusterTemplate struct {
 type Metal3ClusterTemplateList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Metal3ClusterTemplate `json:"items"`
+	// item is a list of Metal3ClusterTemplate objects.
+	Items []Metal3ClusterTemplate `json:"items"`
 }
 
 func init() {
@@ -52,5 +60,11 @@ func init() {
 
 // Metal3ClusterTemplateResource describes the data for creating a Metal3Cluster from a template.
 type Metal3ClusterTemplateResource struct {
-	Spec Metal3ClusterSpec `json:"spec"`
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	// spec defines the desired state of Metal3Cluster.
+	// +required
+	Spec Metal3ClusterSpec `json:"spec,omitempty,omitzero"`
 }
