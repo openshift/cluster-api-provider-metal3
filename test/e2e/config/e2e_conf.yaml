@@ -15,6 +15,8 @@ images:
   loadBehavior: mustLoad
 - name: quay.io/metal3-io/metal3-fkas:ci
   loadBehavior: tryLoad
+- name: ${REGISTRY}/localimages/test-extension:${E2E_TAG}
+  loadBehavior: tryLoad
 
 providers:
 - name: cluster-api
@@ -269,12 +271,6 @@ providers:
       targetName: "cluster-template-ubuntu-md-taints.yaml"
     - sourcePath: "../_out/main/cluster-template-centos-md-taints.yaml"
       targetName: "cluster-template-centos-md-taints.yaml"
-    - sourcePath: "../_out/main/cluster-template-ubuntu-ip-reuse.yaml"
-      targetName: "cluster-template-ubuntu-ip-reuse.yaml"
-    - sourcePath: "../_out/main/cluster-template-centos-ip-reuse.yaml"
-      targetName: "cluster-template-centos-ip-reuse.yaml"
-    - sourcePath: "../_out/main/cluster-template-opensuse-leap-ip-reuse.yaml"
-      targetName: "cluster-template-opensuse-leap-ip-reuse.yaml"
     - sourcePath: "../_out/main/cluster-template-ubuntu-failure-domain.yaml"
       targetName: "cluster-template-ubuntu-failure-domain.yaml"
     - sourcePath: "../_out/main/cluster-template-centos-failure-domain.yaml"
@@ -287,8 +283,16 @@ providers:
       targetName: "cluster-template-centos-md-remediation-v1beta1.yaml"
     - sourcePath: "../_out/main/cluster-template-centos-md-taints-v1beta1.yaml"
       targetName: "cluster-template-centos-md-taints-v1beta1.yaml"
-    - sourcePath: "../_out/main/cluster-template-centos-ip-reuse-v1beta1.yaml"
-      targetName: "cluster-template-centos-ip-reuse-v1beta1.yaml"
+
+- name: test-extension
+  type: RuntimeExtensionProvider
+  versions:
+  - name: v1.15.99
+    value: "${PWD}/test/extension/config/default"
+    contract: v1beta2
+    files:
+    - sourcePath: "../data/shared/infrastructure-metal3/main/metadata.yaml"
+      targetName: "metadata.yaml"
 
 variables:
   CNI: "/tmp/cni.yaml"

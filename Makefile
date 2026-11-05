@@ -20,7 +20,7 @@ SHELL:=/usr/bin/env bash
 
 .DEFAULT_GOAL:=help
 
-GO_VERSION ?= 1.26.6
+GO_VERSION ?= 1.26.10
 GO := $(shell type -P go)
 # Use GOPROXY environment variable if set
 ifneq ($(GO),)
@@ -252,9 +252,6 @@ cluster-templates-main: $(KUSTOMIZE) ## Generate cluster templates
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-md-remediation > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-md-remediation.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-md-taints > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-md-taints.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-centos-md-taints > $(E2E_OUT_DIR)/main/cluster-template-centos-md-taints.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-ip-reuse.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-centos-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-centos-ip-reuse.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-opensuse-leap-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-opensuse-leap-ip-reuse.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-ubuntu-failure-domain > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-failure-domain.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-centos-failure-domain > $(E2E_OUT_DIR)/main/cluster-template-centos-failure-domain.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main/cluster-template-opensuse-leap-failure-domain > $(E2E_OUT_DIR)/main/cluster-template-opensuse-leap-failure-domain.yaml
@@ -267,7 +264,6 @@ cluster-templates-main-v1beta1: $(KUSTOMIZE) ## Generate cluster templates for m
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-ubuntu > $(E2E_OUT_DIR)/main/cluster-template-ubuntu-v1beta1.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-md-remediation > $(E2E_OUT_DIR)/main/cluster-template-centos-md-remediation-v1beta1.yaml
 	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-md-taints > $(E2E_OUT_DIR)/main/cluster-template-centos-md-taints-v1beta1.yaml
-	$(KUSTOMIZE) build $(E2E_TEMPLATES_DIR)/main-v1beta1/cluster-template-centos-ip-reuse > $(E2E_OUT_DIR)/main/cluster-template-centos-ip-reuse-v1beta1.yaml
 
 .PHONY: clusterclass-templates-main
 clusterclass-templates-main: $(KUSTOMIZE) ## Generate cluster templates
@@ -652,7 +648,7 @@ generate-examples-clusterclass: $(KUSTOMIZE) clean-examples ## Generate examples
 .PHONY: docker-build
 docker-build: ## Build the docker image for controller-manager
 	docker build --network=host --pull \
-	--build-arg ARCH=$(ARCH) . -t $(CONTROLLER_IMG)-$(ARCH):$(TAG)
+	--platform linux/$(ARCH) . -t $(CONTROLLER_IMG)-$(ARCH):$(TAG)
 	MANIFEST_IMG=$(CONTROLLER_IMG)-$(ARCH) MANIFEST_TAG=$(TAG) $(MAKE) set-manifest-image
 	$(MAKE) set-manifest-pull-policy
 
@@ -660,14 +656,14 @@ docker-build: ## Build the docker image for controller-manager
 docker-build-debug: ## Build the docker image for controller-manager with debug info
 	docker build --network=host --pull \
 	--build-arg LDFLAGS="-extldflags=-static" \
-	--build-arg ARCH=$(ARCH) . -t $(CONTROLLER_IMG)-$(ARCH):$(TAG)
+	--platform linux/$(ARCH) . -t $(CONTROLLER_IMG)-$(ARCH):$(TAG)
 	MANIFEST_IMG=$(CONTROLLER_IMG)-$(ARCH) MANIFEST_TAG=$(TAG) $(MAKE) set-manifest-image
 	$(MAKE) set-manifest-pull-policy
 
 .PHONY: docker-build-e2e
 docker-build-e2e: ## Build the CAPM3 controller image for e2e tests (loaded into the kind mgmt cluster by the test framework)
 	docker build --network=host \
-	--build-arg ARCH=$(ARCH) . -t $(CONTROLLER_IMG):$(E2E_TAG)
+	--platform linux/$(ARCH) . -t $(CONTROLLER_IMG):$(E2E_TAG)
 
 .PHONY: docker-build-fkas
 # Allow overriding this by setting CONTAINER_RUNTIME var
@@ -675,7 +671,7 @@ CONTAINER_RUNTIME := $(if $(CONTAINER_RUNTIME),$(CONTAINER_RUNTIME),docker)
 export CONTAINER_RUNTIME
 
 docker-build-fkas:
-	$(CONTAINER_RUNTIME) build --build-arg ARCH=$(ARCH) \
+	$(CONTAINER_RUNTIME) build --platform linux/$(ARCH) \
 	-f $(FAKE_APISERVER_DIR)/Dockerfile \
 	-t "quay.io/metal3-io/metal3-fkas:$(FKAS_TAG)" .
 
