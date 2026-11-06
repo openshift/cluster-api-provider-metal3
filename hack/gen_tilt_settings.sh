@@ -19,12 +19,12 @@ set -o pipefail
 
 get_latest_release() {
     set +x
-    if [ -z "${GITHUB_TOKEN:-}" ]; then
-        release="$(curl -sL "$1")" || {
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        release="$(curl -sL "${1}")" || {
             set -x && exit 1
         }
     else
-        release="$(curl -H "Authorization: token ${GITHUB_TOKEN}" -sL "$1")" || {
+        release="$(curl -H "Authorization: token ${GITHUB_TOKEN}" -sL "${1}")" || {
             set -x && exit 1
         }
     fi
@@ -45,12 +45,12 @@ CAPIRELEASEPATH="${CAPIRELEASEPATH:-https://api.github.com/repos/${CAPI_BASE_URL
 export CAPIRELEASE="${CAPIRELEASE:-$(get_latest_release "${CAPIRELEASEPATH}" "v1.3.")}"
 
 # ClusterClass enable flag
-if [ -n "${CLUSTER_TOPOLOGY:-}" ]; then
+if [[ -n "${CLUSTER_TOPOLOGY:-}" ]]; then
 cat <<EOF >tilt-settings.json
 {
     "capi_version": "${CAPIRELEASE}",
     "cert_manager_version": "v1.12.3",
-    "kubernetes_version": "${KUBERNETES_VERSION:-v1.35.0}",
+    "kubernetes_version": "${KUBERNETES_VERSION:-v1.37.0}",
     "extra_args": {
         "feature_gates": {
             "ClusterTopology": "true"
@@ -63,7 +63,7 @@ cat <<EOF >tilt-settings.json
 {
     "capi_version": "${CAPIRELEASE}",
     "cert_manager_version": "v1.12.3",
-    "kubernetes_version": "${KUBERNETES_VERSION:-v1.35.0}"
+    "kubernetes_version": "${KUBERNETES_VERSION:-v1.37.0}"
 }
 EOF
 fi

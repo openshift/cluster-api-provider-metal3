@@ -20,13 +20,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	"github.com/metal3-io/cluster-api-provider-metal3/baremetal"
+	"github.com/metal3-io/cluster-api-provider-metal3/internal/metrics"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/patch"
@@ -39,7 +40,7 @@ import (
 )
 
 const (
-	dataTemplateControllerName = "Metal3DataTemplate-controller"
+	dataTemplateControllerName = metrics.ControllerMetal3DataTemplate
 )
 
 // Metal3DataTemplateReconciler reconciles a Metal3DataTemplate object.
@@ -61,20 +62,33 @@ type Metal3DataTemplateReconciler struct {
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipclaims/status,verbs=get;watch
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipaddresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=ipam.metal3.io,resources=ipaddresses/status,verbs=get
+// +kubebuilder:rbac:groups=ipam.metal3.io,resources=ippools,verbs=get;list;watch
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddressclaims,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddressclaims/status,verbs=get;watch
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddresses,verbs=get;list;watch
 // +kubebuilder:rbac:groups=ipam.cluster.x-k8s.io,resources=ipaddresses/status,verbs=get
-// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters,verbs=get;list;watch
-// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=get;list;watch;create;update;patch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile handles Metal3DataTemplate events.
-func (r *Metal3DataTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, rerr error) {
+func (r *Metal3DataTemplateReconciler) Reconcile(ctx context.Context, req ctrl.Request) (rres ctrl.Result, rerr error) {
+	reconcileStart := time.Now()
 	log := r.Log.WithName(dataTemplateControllerName).WithValues(
 		baremetal.LogFieldDataTemplate, req.NamespacedName,
 	)
+
+	// Track metrics for this reconciliation.
+	hasError := false
+	defer func() {
+		if rerr != nil {
+			hasError = true
+			var reconcileErr baremetal.ReconcileError
+			isTransient := errors.As(rerr, &reconcileErr) && reconcileErr.IsTransient()
+			metrics.RecordReconcileError(dataTemplateControllerName, req.Namespace, isTransient)
+		}
+		metrics.RecordMetal3DataTemplateReconcile(req.Namespace, reconcileStart, hasError)
+	}()
+
 	log.V(baremetal.VerbosityLevelTrace).Info("Reconcile: starting Metal3DataTemplate reconciliation")
 
 	// Fetch the Metal3DataTemplate instance.
@@ -91,8 +105,7 @@ func (r *Metal3DataTemplateReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, err
 	}
 	log.V(baremetal.VerbosityLevelDebug).Info("Metal3DataTemplate fetched successfully",
-		"generation", metal3DataTemplate.Generation,
-		"clusterName", metal3DataTemplate.Spec.ClusterName)
+		"generation", metal3DataTemplate.Generation)
 
 	log.V(baremetal.VerbosityLevelTrace).Info("Creating patch helper")
 	helper, err := patch.NewHelper(metal3DataTemplate, r.Client)
@@ -109,22 +122,12 @@ func (r *Metal3DataTemplateReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}()
 
-	cluster := &clusterv1.Cluster{}
-	key := client.ObjectKey{
-		Name:      metal3DataTemplate.Spec.ClusterName,
-		Namespace: metal3DataTemplate.Namespace,
-	}
-
-	// Fetch the Cluster. Ignore an error if the deletion timestamp is set
-	log.V(baremetal.VerbosityLevelTrace).Info("Fetching Cluster",
-		baremetal.LogFieldCluster, metal3DataTemplate.Spec.ClusterName)
-	err = r.Client.Get(ctx, key, cluster)
-	if metal3DataTemplate.ObjectMeta.DeletionTimestamp.IsZero() {
-		if err != nil {
-			log.V(baremetal.VerbosityLevelDebug).Info("Error fetching cluster, may not exist yet")
-			log.Info("Error fetching cluster. It might not exist yet, Requeuing")
-			return ctrl.Result{}, nil
-		}
+	// A Metal3DataTemplate is not bound to a single Cluster; multiple Clusters
+	// may reference the same template. Honor a pause requested directly on the
+	// object via the pause annotation instead of deriving an owning Cluster.
+	if annotations.HasPaused(metal3DataTemplate) {
+		log.Info("Metal3DataTemplate is currently paused. Remove pause annotation to continue reconciliation.")
+		return ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}, nil
 	}
 
 	// Create a helper for managing the Metal3DataTemplate object.
@@ -134,23 +137,6 @@ func (r *Metal3DataTemplateReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, fmt.Errorf("failed to create helper for managing the Metal3DataTemplate: %w", err)
 	}
 	log.V(baremetal.VerbosityLevelDebug).Info("DataTemplateManager created successfully")
-
-	if metal3DataTemplate.Spec.ClusterName != "" && cluster.Name != "" {
-		log = log.WithValues(baremetal.LogFieldCluster, cluster.Name)
-		log.V(baremetal.VerbosityLevelTrace).Info("Setting cluster owner reference")
-		if err := dataTemplateMgr.SetClusterOwnerRef(cluster); err != nil {
-			log.V(baremetal.VerbosityLevelDebug).Info("Failed to set cluster owner reference",
-				baremetal.LogFieldError, err.Error())
-			return ctrl.Result{}, err
-		}
-		// Return early if the Metal3DataTemplate or Cluster is paused.
-		log.V(baremetal.VerbosityLevelTrace).Info("Checking pause status")
-		if annotations.IsPaused(cluster, metal3DataTemplate) {
-			log.V(baremetal.VerbosityLevelDebug).Info("Reconciliation paused")
-			log.Info("reconciliation is paused for this object")
-			return ctrl.Result{Requeue: true, RequeueAfter: requeueAfter}, nil
-		}
-	}
 
 	// Handle deletion of Metal3DataTemplate
 	if !metal3DataTemplate.ObjectMeta.DeletionTimestamp.IsZero() {
@@ -237,16 +223,17 @@ func (r *Metal3DataTemplateReconciler) SetupWithManager(ctx context.Context, mgr
 // Metal3DataClaim and that Metal3DataClaim references a Metal3DataTemplate.
 func (r *Metal3DataTemplateReconciler) Metal3DataClaimToMetal3DataTemplate(_ context.Context, obj client.Object) []ctrl.Request {
 	if m3dc, ok := obj.(*infrav1.Metal3DataClaim); ok {
-		if m3dc.Spec.Template.Name != "" {
-			namespace := m3dc.Spec.Template.Namespace
-			if namespace == "" {
-				namespace = m3dc.Namespace
+		if m3dc.Spec.Template != nil && m3dc.Spec.Template.Name != "" {
+			// Always enqueue using the Metal3DataClaim's own namespace.
+			// Cross-namespace template references are not allowed.
+			if m3dc.Spec.Template.Namespace != "" && m3dc.Spec.Template.Namespace != m3dc.Namespace {
+				return []ctrl.Request{}
 			}
 			return []ctrl.Request{
 				{
 					NamespacedName: types.NamespacedName{
 						Name:      m3dc.Spec.Template.Name,
-						Namespace: namespace,
+						Namespace: m3dc.Namespace,
 					},
 				},
 			}

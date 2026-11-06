@@ -13,21 +13,28 @@
 # limitations under the License.
 
 # Support FROM override
-ARG BUILD_IMAGE=docker.io/golang:1.24.13@sha256:c29cdf32d47053ab0d914852d9c2ed2da12b3cf13079aaef1704ef21335e68a3
+ARG BUILD_IMAGE=docker.io/golang:1.26.10@sha256:672c944cfd07599b5f1bb179869270cdc94c6254e41db4d431259693cb286b82
 ARG BASE_IMAGE=gcr.io/distroless/static:nonroot@sha256:9ecc53c269509f63c69a266168e4a687c7eb8c0cfd753bd8bfcaa4f58a90876f
 
 # Build the fkas binary on golang image
-FROM $BUILD_IMAGE AS base
-WORKDIR /workspace
+# Use a WORKDIR that mirrors the repo structure so that the replace
+# directive in go.mod resolves correctly to the repo root.
+# The builder runs on the native platform of the build host and
+# cross-compiles for the target platform, so multi-platform builds do not
+# need emulation.
+FROM --platform=$BUILDPLATFORM $BUILD_IMAGE AS base
+WORKDIR /workspace/hack/fake-apiserver
 
 # Run this with docker build --build_arg $(go env GOPROXY) to override the goproxy
 ARG goproxy=https://proxy.golang.org
 ENV GOPROXY=$goproxy
 
 # Copy the Go Modules manifests
-COPY go.mod go.sum ./
+COPY hack/fake-apiserver/go.mod hack/fake-apiserver/go.sum ./
 
-COPY capm3 ./capm3
+# Copy the api module where the replace directive expects it (at ../../api/)
+COPY api/ /workspace/api/
+
 # Cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
@@ -36,11 +43,12 @@ RUN go mod download
 FROM base AS docker-build-fkas
 
 # Copy the sources
-COPY cmd/metal3-fkas/*.go ./
+COPY hack/fake-apiserver/cmd/metal3-fkas/*.go ./
 
 # Build
-ARG ARCH=amd64
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -a -ldflags '-extldflags "-static"' \
     -o fkas .
 
@@ -48,11 +56,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
 FROM base AS docker-build-fkas-reconciler
 
 # Copy the sources
-COPY cmd/metal3-fkas-reconciler/*.go ./
+COPY hack/fake-apiserver/cmd/metal3-fkas-reconciler/*.go ./
 
 # Build
-ARG ARCH=amd64
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -a -ldflags '-extldflags "-static"' \
     -o reconciler .
 
@@ -60,7 +69,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=${ARCH} \
 FROM $BASE_IMAGE
 WORKDIR /
 # Use uid of nonroot user (65532) because kubernetes expects numeric user when applying pod security policies
-COPY --from=docker-build-fkas /workspace/fkas .
-COPY --from=docker-build-fkas-reconciler /workspace/reconciler .
+COPY --from=docker-build-fkas /workspace/hack/fake-apiserver/fkas .
+COPY --from=docker-build-fkas-reconciler /workspace/hack/fake-apiserver/reconciler .
 USER 65532
 ENTRYPOINT ["/fkas"]

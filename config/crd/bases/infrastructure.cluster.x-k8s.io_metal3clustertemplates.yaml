@@ -137,41 +137,68 @@ spec:
           metadata:
             type: object
           spec:
-            description: Metal3ClusterTemplateSpec defines the desired state of Metal3ClusterTemplate.
+            description: spec defines the desired state of Metal3ClusterTemplate.
             properties:
               template:
-                description: Metal3ClusterTemplateResource describes the data for
-                  creating a Metal3Cluster from a template.
+                description: template describes the data for creating a Metal3Cluster
+                  from a template
                 properties:
+                  metadata:
+                    description: |-
+                      metadata is the standard object's metadata.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+                    minProperties: 1
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          annotations is an unstructured key value map stored with a resource that may be
+                          set by external tools to store and retrieve arbitrary metadata. They are not
+                          queryable and should be preserved when modifying objects.
+                          More info: http://kubernetes.io/docs/user-guide/annotations
+                        type: object
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          labels is a map of string keys and values that can be used to organize and categorize
+                          (scope and select) objects. May match selectors of replication controllers
+                          and services.
+                          More info: http://kubernetes.io/docs/user-guide/labels
+                        type: object
+                    type: object
                   spec:
-                    description: Metal3ClusterSpec defines the desired state of Metal3Cluster.
+                    description: spec defines the desired state of Metal3Cluster.
                     properties:
                       cloudProviderEnabled:
                         description: |-
-                          Determines if the cluster is to be deployed with an external cloud provider.
+                          cloudProviderEnabled determines if the cluster is to be deployed with an external cloud provider.
                           If set to false, CAPM3 will use node labels to set providerID on the kubernetes nodes.
                           If set to true, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-                          Default value is true, it is set in the webhook.
                         type: boolean
                       controlPlaneEndpoint:
-                        description: ControlPlaneEndpoint represents the endpoint
+                        description: controlPlaneEndpoint represents the endpoint
                           used to communicate with the control plane.
+                        minProperties: 1
                         properties:
                           host:
-                            description: Host is the hostname on which the API server
+                            description: host is the hostname on which the API server
                               is serving.
+                            maxLength: 512
+                            minLength: 1
                             type: string
                           port:
-                            description: Port is the port on which the API server
+                            description: port is the port on which the API server
                               is serving.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
                             type: integer
-                        required:
-                        - host
-                        - port
                         type: object
                       failureDomains:
-                        description: FailureDomains specifies a list of failure zones
-                          that can be used
+                        description: failureDomains is a list of failure domain objects
+                          synced from the infrastructure provider.
                         items:
                           description: |-
                             FailureDomain is the Schema for Cluster API failure domains.
@@ -195,15 +222,12 @@ spec:
                           required:
                           - name
                           type: object
+                        maxItems: 100
+                        minItems: 1
                         type: array
-                      noCloudProvider:
-                        description: |-
-                          Determines if the cluster is not to be deployed with an external cloud provider.
-                          If set to true, CAPM3 will use node labels to set providerID on the kubernetes nodes.
-                          If set to false, providerID is set on nodes by other entities and CAPM3 uses the value of the providerID on the m3m resource.
-
-                          Deprecated: This field is deprecated, use cloudProviderEnabled instead
-                        type: boolean
+                        x-kubernetes-list-map-keys:
+                        - name
+                        x-kubernetes-list-type: map
                     type: object
                 required:
                 - spec
@@ -211,6 +235,8 @@ spec:
             required:
             - template
             type: object
+        required:
+        - spec
         type: object
     served: true
     storage: true

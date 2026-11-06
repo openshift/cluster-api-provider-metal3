@@ -70,8 +70,8 @@ github/
 !vendor/**
 !openshift/tools/vendor/**
 
-go.work
-go.work.sum
+/go.work
+/go.work.sum
 
 # Development containers (https://containers.dev/)
 .devcontainer
@@ -81,3 +81,6 @@ junit.e2e_suite.*.xml
 
 # ai stuff
 .claude
+
+# Build output (ci-e2e.sh vbmctl binary, generated configs)
+_out/

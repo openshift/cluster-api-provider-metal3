@@ -23,7 +23,7 @@ import (
 
 	"github.com/blang/semver"
 	bmov1alpha1 "github.com/metal3-io/baremetal-operator/apis/metal3.io/v1alpha1"
-	infrav1beta1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta1"
+	infrav1 "github.com/metal3-io/cluster-api-provider-metal3/api/v1beta2"
 	ipamv1 "github.com/metal3-io/ip-address-manager/api/v1alpha1"
 	irsov1alpha1 "github.com/metal3-io/ironic-standalone-operator/api/v1alpha1"
 	. "github.com/onsi/ginkgo/v2"
@@ -58,17 +58,18 @@ import (
 type vmState string
 
 const (
-	running        vmState = "running"
-	paused         vmState = "paused"
-	shutoff        vmState = "shutoff"
-	other          vmState = "other"
-	artifactoryURL         = "https://artifactory.nordix.org/artifactory/metal3/images/k8s"
-	imagesURL              = "http://172.22.0.1/images"
-	ironicImageDir         = "/opt/metal3-dev-env/ironic/html/images"
-	osTypeCentos           = "centos"
-	osTypeUbuntu           = "ubuntu"
-	osTypeLeap             = "opensuse-leap"
-	ironicSuffix           = "-ironic"
+	running   vmState = "running"
+	paused    vmState = "paused"
+	shutoff   vmState = "shutoff"
+	other     vmState = "other"
+	imagesURL         = "http://172.22.0.1/images"
+	// defaultClusterProvisioningIP is the fallback provisioning IP reachable from the
+	// cluster node (matches CLUSTER_PROVISIONING_IP).
+	defaultClusterProvisioningIP = "172.22.0.2"
+	osTypeCentos                 = "centos"
+	osTypeUbuntu                 = "ubuntu"
+	osTypeLeap                   = "opensuse-leap"
+	ironicSuffix                 = "-ironic"
 	// Out-of-service Taint test actions.
 	oostAdded   = "added"
 	oostRemoved = "removed"
@@ -76,6 +77,15 @@ const (
 	retryableOperationInterval = 3 * time.Second
 	retryableOperationTimeout  = 3 * time.Minute
 )
+
+var ironicImageDir = getIronicImageDir()
+
+func getIronicImageDir() string {
+	if dir := os.Getenv("IRONIC_DATA_DIR"); dir != "" {
+		return filepath.Join(dir, "html", "images")
+	}
+	return "/opt/metal3/ironic/html/images"
+}
 
 func Byf(format string, a ...any) {
 	By(fmt.Sprintf(format, a...))
@@ -141,22 +151,53 @@ func GetBoolVariable(e2eConfig *clusterctl.E2EConfig, varName string) bool {
 }
 
 // TODO change this function to handle multiple workload(target) clusters.
-func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrapClusterProxy framework.ClusterProxy, targetClusterProxy framework.ClusterProxy, artifactFolder string, namespace string, intervalsGetter func(spec, key string) []any, clusterName, clusterctlLogFolder string, skipCleanup bool, clusterctlConfigPath string) {
+func DumpSpecResourcesAndCleanup(ctx context.Context,
+	specName string,
+	bootstrapClusterProxy framework.ClusterProxy,
+	targetClusterProxy framework.ClusterProxy,
+	artifactFolder string,
+	namespace string,
+	intervalsGetter func(spec, key string) []any,
+	clusterName string,
+	clusterctlLogFolder string,
+	skipCleanup bool,
+	clusterctlConfigPath string) {
 	Expect(os.RemoveAll(clusterctlLogFolder)).Should(Succeed())
-	clusterClient := bootstrapClusterProxy.GetClient()
+	bootstrapClusterClient := bootstrapClusterProxy.GetClient()
 
 	bootstrapClusterProxy.CollectWorkloadClusterLogs(ctx, namespace, clusterName, artifactFolder)
 
 	By("Fetch logs from target cluster")
-	err := FetchClusterLogs(targetClusterProxy, clusterLogCollectionBasePath)
+	if targetClusterProxy != nil {
+		err := FetchClusterLogs(targetClusterProxy, filepath.Join(artifactFolder, targetClusterProxy.GetName(), "logs"))
+		if err != nil {
+			Logf("Error: %v", err)
+		}
+		err = FetchManifests(targetClusterProxy, filepath.Join(artifactFolder, targetClusterProxy.GetName(), "manifests"))
+		if err != nil {
+			Logf("Error fetching manifests for target cluster: %v", err)
+		}
+	} else {
+		Logf("Skipping target cluster log collection: targetClusterProxy is nil")
+	}
+
+	err := FetchClusterLogs(bootstrapClusterProxy, filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "logs"))
 	if err != nil {
 		Logf("Error: %v", err)
 	}
+	err = FetchManifests(bootstrapClusterProxy, filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "manifests"))
+	if err != nil {
+		Logf("Error fetching manifests for target cluster: %v", err)
+	}
+
+	By("Collecting logs from the vbmctl-managed lab containers")
+	CollectVbmctlContainerLogs(ctx, filepath.Join(artifactFolder, "vbmctl-container-logs"))
+
 	// Dumps all the resources in the spec namespace, then cleanups the cluster object and the spec namespace itself.
 	By(fmt.Sprintf("Dumping all the Cluster API resources in the %q namespace", namespace))
 	// Dump all Cluster API related resources to artifacts before deleting them.
 	framework.DumpAllResources(ctx, framework.DumpAllResourcesInput{
-		Lister:               clusterClient,
+		Lister:               bootstrapClusterClient,
 		Namespace:            namespace,
 		LogPath:              filepath.Join(artifactFolder, bootstrapClusterProxy.GetName(), "resources"),
 		KubeConfigPath:       bootstrapClusterProxy.GetKubeconfigPath(),
@@ -175,49 +216,53 @@ func DumpSpecResourcesAndCleanup(ctx context.Context, specName string, bootstrap
 			ArtifactFolder:       filepath.Join(artifactFolder, "delete-cluster"),
 		}, intervalsGetter(specName, "wait-delete-cluster")...)
 
-		// Waiting for Metal3Datas, Metal3DataTemplates and Metal3DataClaims, as these may take longer time to delete
-		By("Checking leftover Metal3Datas, Metal3DataTemplates and Metal3DataClaims")
+		// Waiting for Metal3Datas and Metal3DataClaims, as these may take longer time to delete.
+		// Metal3DataTemplates are intentionally not checked: they are decoupled from the Cluster
+		// (they can be shared across clusters) and are therefore not garbage-collected on cluster deletion.
+		By("Checking leftover Metal3Datas and Metal3DataClaims")
 		Eventually(func(g Gomega) {
 			opts := &client.ListOptions{}
-			datas := infrav1beta1.Metal3DataList{}
-			dataTemplates := infrav1beta1.Metal3DataTemplateList{}
-			dataClaims := infrav1beta1.Metal3DataClaimList{}
-			g.Expect(clusterClient.List(ctx, &datas, opts)).To(Succeed())
-			g.Expect(clusterClient.List(ctx, &dataTemplates, opts)).To(Succeed())
-			g.Expect(clusterClient.List(ctx, &dataClaims, opts)).To(Succeed())
+			datas := infrav1.Metal3DataList{}
+			dataClaims := infrav1.Metal3DataClaimList{}
+			g.Expect(bootstrapClusterClient.List(ctx, &datas, opts)).To(Succeed())
+			g.Expect(bootstrapClusterClient.List(ctx, &dataClaims, opts)).To(Succeed())
 			for _, dataObject := range datas.Items {
 				By(fmt.Sprintf("Data named: %s is not delete", dataObject.Name))
-			}
-			for _, dataObject := range dataTemplates.Items {
-				By(fmt.Sprintf("Datatemplate named: %s is not deleted", dataObject.Name))
 			}
 			for _, dataObject := range dataClaims.Items {
 				By(fmt.Sprintf("Dataclaim named: %s is not deleted", dataObject.Name))
 			}
 			g.Expect(datas.Items).To(BeEmpty())
-			g.Expect(dataTemplates.Items).To(BeEmpty())
 			g.Expect(dataClaims.Items).To(BeEmpty())
-			Logf("Waiting for Metal3Datas, Metal3DataTemplates and Metal3DataClaims to be deleted")
+			Logf("Waiting for Metal3Datas and Metal3DataClaims to be deleted")
 		}, intervalsGetter(specName, "wait-delete-cluster")...).Should(Succeed())
-		Logf("Metal3Datas, Metal3DataTemplates and Metal3DataClaims are deleted")
+		Logf("Metal3Datas and Metal3DataClaims are deleted")
 	}
 }
 
-func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
+// EnsureImage makes sure that the node image for the given OS (from the $OS
+// environment variable) and Kubernetes version is available locally, downloading
+// and converting it if needed. The source URL to download the qcow2 image from is
+// read from the e2e config variable "NODE_IMAGE_URL_<OS>_<k8sVersion>", e.g.
+// "NODE_IMAGE_URL_UBUNTU_v1.37.0".
+func EnsureImage(e2eConfig *clusterctl.E2EConfig, k8sVersion string) (imageURL string, imageChecksum string) {
 	osType := strings.ToLower(os.Getenv("OS"))
 	Expect(osType).To(BeElementOf([]string{osTypeUbuntu, osTypeCentos, osTypeLeap}))
 	imageNamePrefix := ""
+	osVarName := ""
 	switch osType {
 	case osTypeCentos:
 		imageNamePrefix = "CENTOS_10_NODE_IMAGE_K8S"
+		osVarName = "CENTOS"
 	case osTypeUbuntu:
 		imageNamePrefix = "UBUNTU_24.04_NODE_IMAGE_K8S"
+		osVarName = "UBUNTU"
 	case osTypeLeap:
 		imageNamePrefix = "LEAP_15_6_NODE_IMAGE_K8S"
+		osVarName = "LEAP"
 	}
 	imageName := fmt.Sprintf("%s_%s.qcow2", imageNamePrefix, k8sVersion)
 	rawImageName := fmt.Sprintf("%s_%s-raw.img", imageNamePrefix, k8sVersion)
-	imageLocation := fmt.Sprintf("%s_%s/", artifactoryURL, k8sVersion)
 	imageURL = fmt.Sprintf("%s/%s", imagesURL, rawImageName)
 	imageChecksum = fmt.Sprintf("%s/%s.sha256sum", imagesURL, rawImageName)
 
@@ -228,7 +273,11 @@ func EnsureImage(k8sVersion string) (imageURL string, imageChecksum string) {
 		Logf("Local image %v already exists", rawImagePath)
 	} else if os.IsNotExist(err) {
 		Logf("Local image %v is not found \nDownloading..", rawImagePath)
-		err = DownloadFile(imagePath, fmt.Sprintf("%s/%s", imageLocation, imageName))
+		sourceURLVarName := fmt.Sprintf("NODE_IMAGE_URL_%s_%s", osVarName, k8sVersion)
+		Expect(e2eConfig.HasVariable(sourceURLVarName)).To(BeTrue(), "no node image source URL configured for OS %q and Kubernetes version %q; expected variable %q to be set in the e2e config", osType, k8sVersion, sourceURLVarName)
+		sourceURL := e2eConfig.GetVariableOrEmpty(sourceURLVarName)
+		Expect(sourceURL).ToNot(BeEmpty(), "node image source URL for OS %q and Kubernetes version %q (variable %q) is a placeholder and has not been published yet", osType, k8sVersion, sourceURLVarName)
+		err = DownloadFile(imagePath, sourceURL)
 		Expect(err).ToNot(HaveOccurred())
 		cmd := exec.CommandContext(context.Background(), "qemu-img", "convert", "-O", "raw", imagePath, rawImagePath) // #nosec G204:gosec
 		err = cmd.Run()
@@ -309,6 +358,27 @@ func AnnotateBmh(ctx context.Context, clusterClient client.Client, host bmov1alp
 	Expect(helper.Patch(ctx, bmh)).To(Succeed())
 }
 
+// UpdateBmhLabel sets (value non-nil) or removes (value nil) a label on the given BMH.
+func UpdateBmhLabel(ctx context.Context, clusterClient client.Client, host bmov1alpha1.BareMetalHost, key string, value *string) {
+	bmh := &bmov1alpha1.BareMetalHost{}
+	bmhKey := client.ObjectKey{Name: host.Name, Namespace: host.Namespace}
+	Expect(clusterClient.Get(ctx, bmhKey, bmh)).To(Succeed(), "Failed to get BareMetalHost %s", host.Name)
+	helper, err := patch.NewHelper(bmh, clusterClient)
+	Expect(err).NotTo(HaveOccurred())
+
+	if value == nil {
+		Logf("Removing label %s from BMH %s", key, bmh.Name)
+		delete(bmh.Labels, key)
+	} else {
+		Logf("Adding label %s=%s to BMH %s", key, *value, bmh.Name)
+		if bmh.Labels == nil {
+			bmh.Labels = make(map[string]string)
+		}
+		bmh.Labels[key] = *value
+	}
+	Expect(helper.Patch(ctx, bmh)).To(Succeed())
+}
+
 // DeleteNodeReuseLabelFromHost deletes nodeReuseLabelName from the host if it exists.
 func DeleteNodeReuseLabelFromHost(ctx context.Context, client client.Client, host bmov1alpha1.BareMetalHost, nodeReuseLabelName string) {
 	helper, err := patch.NewHelper(&host, client)
@@ -317,6 +387,9 @@ func DeleteNodeReuseLabelFromHost(ctx context.Context, client client.Client, hos
 	if labels != nil {
 		if _, ok := labels[nodeReuseLabelName]; ok {
 			delete(host.Labels, nodeReuseLabelName)
+			// A labelled host should have a consumer ref set to the cluster. This reference must
+			// be removed too otherwise the node will be unavailable to other consumers.
+			host.Spec.ConsumerRef = nil
 		}
 	}
 	Expect(helper.Patch(ctx, &host)).To(Succeed())
@@ -404,18 +477,18 @@ func ListBareMetalHosts(ctx context.Context, c client.Client, opts ...client.Lis
 // ListMetal3Machines logs the names, ready status and provider ID of all Metal3Machines in the namespace.
 // Similar to kubectl get metal3machines.
 func ListMetal3Machines(ctx context.Context, c client.Client, opts ...client.ListOption) {
-	metal3Machines := infrav1beta1.Metal3MachineList{}
+	metal3Machines := infrav1.Metal3MachineList{}
 	Expect(c.List(ctx, &metal3Machines, opts...)).To(Succeed())
 
 	rows := make([][]string, len(metal3Machines.Items)+1)
 	// Add column names
-	rows[0] = []string{"Name:", "Ready:", "Provider ID:"}
+	rows[0] = []string{"Name:", "Provisioned:", "Provider ID:"}
 	for i, metal3Machine := range metal3Machines.Items {
 		providerID := ""
-		if metal3Machine.Spec.ProviderID != nil {
-			providerID = *metal3Machine.Spec.ProviderID
+		if metal3Machine.Spec.ProviderID != "" {
+			providerID = metal3Machine.Spec.ProviderID
 		}
-		rows[i+1] = []string{metal3Machine.GetName(), strconv.FormatBool(metal3Machine.Status.Ready), providerID}
+		rows[i+1] = []string{metal3Machine.GetName(), strconv.FormatBool(ptr.Deref(metal3Machine.Status.Initialization.Provisioned, false)), providerID}
 	}
 	logTable("Listing Metal3Machines", rows)
 }
@@ -466,17 +539,18 @@ func CreateNewM3MachineTemplate(ctx context.Context, namespace string, newM3Mach
 	checksumType := "sha256"
 	imageFormat := "raw"
 
-	m3MachineTemplate := infrav1beta1.Metal3MachineTemplate{}
+	m3MachineTemplate := infrav1.Metal3MachineTemplate{}
 	Expect(clusterClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: m3MachineTemplateName}, &m3MachineTemplate)).To(Succeed())
 
 	newM3MachineTemplate := m3MachineTemplate.DeepCopy()
 	cleanObjectMeta(&newM3MachineTemplate.ObjectMeta)
 
 	newM3MachineTemplate.Spec.Template.Spec.Image.URL = imageURL
-	newM3MachineTemplate.Spec.Template.Spec.Image.Checksum = imageChecksum
-	newM3MachineTemplate.Spec.Template.Spec.Image.DiskFormat = &imageFormat
-	newM3MachineTemplate.Spec.Template.Spec.Image.ChecksumType = &checksumType
+	newM3MachineTemplate.Spec.Template.Spec.Image.Checksum = &imageChecksum
+	newM3MachineTemplate.Spec.Template.Spec.Image.DiskFormat = imageFormat
+	newM3MachineTemplate.Spec.Template.Spec.Image.ChecksumType = checksumType
 	newM3MachineTemplate.ObjectMeta.Name = newM3MachineTemplateName
+	newM3MachineTemplate.Spec.Template.Spec.DataTemplate.Namespace = newM3MachineTemplate.ObjectMeta.Namespace
 
 	Expect(clusterClient.Create(ctx, newM3MachineTemplate)).To(Succeed(), "Failed to create new Metal3MachineTemplate")
 }
@@ -503,11 +577,11 @@ func WaitForNumBmhInState(ctx context.Context, state bmov1alpha1.ProvisioningSta
 func WaitForNumMetal3MachinesReady(ctx context.Context, input WaitForNumInput) {
 	Logf("Waiting for %d Metal3Machines to be ready", input.Replicas)
 	Eventually(func(g Gomega) {
-		m3mList := infrav1beta1.Metal3MachineList{}
+		m3mList := infrav1.Metal3MachineList{}
 		g.Expect(input.Client.List(ctx, &m3mList, input.Options...)).To(Succeed())
 		numReady := 0
 		for _, m3m := range m3mList.Items {
-			if m3m.Status.Ready {
+			if ptr.Deref(m3m.Status.Initialization.Provisioned, false) {
 				numReady++
 			}
 		}
@@ -543,9 +617,9 @@ func GetMachine(ctx context.Context, c client.Client, name client.ObjectKey) (re
 	return
 }
 
-func GetMetal3Machines(ctx context.Context, c client.Client, _, namespace string) ([]infrav1beta1.Metal3Machine, []infrav1beta1.Metal3Machine) {
-	var controlplane, workers []infrav1beta1.Metal3Machine
-	allMachines := &infrav1beta1.Metal3MachineList{}
+func GetMetal3Machines(ctx context.Context, c client.Client, _, namespace string) ([]infrav1.Metal3Machine, []infrav1.Metal3Machine) {
+	var controlplane, workers []infrav1.Metal3Machine
+	allMachines := &infrav1.Metal3MachineList{}
 	Expect(c.List(ctx, allMachines, client.InNamespace(namespace))).To(Succeed())
 
 	for _, machine := range allMachines.Items {
@@ -580,7 +654,7 @@ func GetIPPools(ctx context.Context, c client.Client, _, namespace string) ([]ip
 // key and an IPAddress as a value.
 func GenerateIPPoolPreallocations(ctx context.Context, ippool ipamv1.IPPool, poolName string, c client.Client) (map[string]ipamv1.IPAddressStr, error) {
 	allocations := ippool.Status.Allocations
-	m3DataList, m3MachineList := infrav1beta1.Metal3DataList{}, infrav1beta1.Metal3MachineList{}
+	m3DataList, m3MachineList := infrav1.Metal3DataList{}, infrav1.Metal3MachineList{}
 	Expect(c.List(ctx, &m3DataList, &client.ListOptions{})).To(Succeed())
 	Expect(c.List(ctx, &m3MachineList, &client.ListOptions{})).To(Succeed())
 	newAllocations := make(map[string]ipamv1.IPAddressStr)
@@ -596,7 +670,7 @@ func GenerateIPPoolPreallocations(ctx context.Context, ippool ipamv1.IPPool, poo
 
 // Metal3DataToMachineName finds the relevant owner reference in Metal3Data
 // and returns the name of corresponding Metal3Machine.
-func Metal3DataToMachineName(m3data infrav1beta1.Metal3Data) (string, error) {
+func Metal3DataToMachineName(m3data infrav1.Metal3Data) (string, error) {
 	ownerReferences := m3data.GetOwnerReferences()
 	for _, reference := range ownerReferences {
 		if reference.Kind == "Metal3Machine" {
@@ -607,7 +681,7 @@ func Metal3DataToMachineName(m3data infrav1beta1.Metal3Data) (string, error) {
 }
 
 // FilterMetal3DatasByName returns a filtered list of m3data objects with specific name.
-func FilterMetal3DatasByName(m3datas []infrav1beta1.Metal3Data, name string) (result []infrav1beta1.Metal3Data) {
+func FilterMetal3DatasByName(m3datas []infrav1.Metal3Data, name string) (result []infrav1.Metal3Data) {
 	Logf("m3datas: %v", m3datas)
 	Logf("looking for name: %s", name)
 	for _, m3data := range m3datas {
@@ -620,7 +694,7 @@ func FilterMetal3DatasByName(m3datas []infrav1beta1.Metal3Data, name string) (re
 }
 
 // FilterMetal3MachinesByName returns a filtered list of m3machine objects with specific name.
-func FilterMetal3MachinesByName(m3ms []infrav1beta1.Metal3Machine, name string) (result []infrav1beta1.Metal3Machine) {
+func FilterMetal3MachinesByName(m3ms []infrav1.Metal3Machine, name string) (result []infrav1.Metal3Machine) {
 	for _, m3m := range m3ms {
 		if m3m.ObjectMeta.Name == name {
 			result = append(result, m3m)
@@ -631,7 +705,7 @@ func FilterMetal3MachinesByName(m3ms []infrav1beta1.Metal3Machine, name string) 
 
 // Metal3MachineToMachineName finds the relevant owner reference in Metal3Machine
 // and returns the name of corresponding Machine.
-func Metal3MachineToMachineName(m3machine infrav1beta1.Metal3Machine) (string, error) {
+func Metal3MachineToMachineName(m3machine infrav1.Metal3Machine) (string, error) {
 	ownerReferences := m3machine.GetOwnerReferences()
 	for _, reference := range ownerReferences {
 		if reference.Kind == "Machine" {
@@ -641,21 +715,26 @@ func Metal3MachineToMachineName(m3machine infrav1beta1.Metal3Machine) (string, e
 	return "", errors.New("metal3machine missing a \"Machine\" kind owner reference")
 }
 
-func Metal3MachineToBmhName(m3machine infrav1beta1.Metal3Machine) string {
-	return strings.Replace(m3machine.GetAnnotations()["metal3.io/BareMetalHost"], "metal3/", "", 1)
+func Metal3MachineToBmhName(m3machine infrav1.Metal3Machine) string {
+	ref := m3machine.GetAnnotations()["metal3.io/BareMetalHost"]
+	if _, name, ok := strings.Cut(ref, "/"); ok {
+		return name
+	}
+	return ref
 }
 
-// Derives the name of a VM created by metal3-dev-env from the name of a BareMetalHost object.
+// BmhToVMName derives the name of a VM from the name of a BareMetalHost object.
+// With vbmctl, VM names match BMH names directly (e.g. node-0).
 func BmhToVMName(host bmov1alpha1.BareMetalHost) string {
-	return strings.ReplaceAll(host.Name, "-", "_")
+	return host.Name
 }
 
 func BmhNameToVMName(hostname string) string {
-	return strings.ReplaceAll(hostname, "-", "_")
+	return hostname
 }
 
 func MachineToVMName(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
-	allMetal3Machines := &infrav1beta1.Metal3MachineList{}
+	allMetal3Machines := &infrav1.Metal3MachineList{}
 	Expect(cli.List(ctx, allMetal3Machines, client.InNamespace(m.Namespace))).To(Succeed())
 	for _, machine := range allMetal3Machines.Items {
 		name, err := Metal3MachineToMachineName(machine)
@@ -669,7 +748,7 @@ func MachineToVMName(ctx context.Context, cli client.Client, m *clusterv1.Machin
 }
 
 func MachineToVMNamev1beta1(ctx context.Context, cli client.Client, m *clusterv1.Machine) (string, error) {
-	allMetal3Machines := &infrav1beta1.Metal3MachineList{}
+	allMetal3Machines := &infrav1.Metal3MachineList{}
 	Expect(cli.List(ctx, allMetal3Machines, client.InNamespace(m.Namespace))).To(Succeed())
 	for _, machine := range allMetal3Machines.Items {
 		name, err := Metal3MachineToMachineName(machine)
@@ -684,7 +763,7 @@ func MachineToVMNamev1beta1(ctx context.Context, cli client.Client, m *clusterv1
 
 // MachineToIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
 func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Machine, ippool ipamv1.IPPool) (string, error) {
-	m3Machine := &infrav1beta1.Metal3Machine{}
+	m3Machine := &infrav1.Metal3Machine{}
 	namespace := m.GetObjectMeta().GetNamespace()
 	err := cli.Get(ctx, types.NamespacedName{
 		Namespace: namespace,
@@ -694,8 +773,8 @@ func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Mac
 	if err != nil {
 		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", namespace, m.Spec.InfrastructureRef.Name, err)
 	}
-	m3DataList := &infrav1beta1.Metal3DataList{}
-	m3Data := &infrav1beta1.Metal3Data{}
+	m3DataList := &infrav1.Metal3DataList{}
+	m3Data := &infrav1.Metal3Data{}
 	err = cli.List(ctx, m3DataList)
 	if err != nil {
 		return "", fmt.Errorf("coudln't list Metal3Data objects: %w", err)
@@ -711,6 +790,26 @@ func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Mac
 		return "", errors.New("couldn't find a matching Metal3Data object")
 	}
 
+	// Metal3Data owns IPClaim, and IPClaim owns IPAddress.
+	// Find the IPClaim owned by the Metal3Data for the target pool.
+	ipClaims := &ipamv1.IPClaimList{}
+	err = cli.List(ctx, ipClaims)
+	if err != nil {
+		return "", fmt.Errorf("couldn't list IPClaim objects: %w", err)
+	}
+	var ipClaim *ipamv1.IPClaim
+	for i, claim := range ipClaims.Items {
+		for _, owner := range claim.OwnerReferences {
+			if owner.Name == m3Data.Name && claim.Spec.Pool.Name == ippool.Name {
+				ipClaim = &ipClaims.Items[i]
+			}
+		}
+	}
+	if ipClaim == nil {
+		return "", errors.New("couldn't find a matching IPClaim object")
+	}
+
+	// Find the IPAddress owned by the IPClaim.
 	IPAddresses := &ipamv1.IPAddressList{}
 	IPAddress := &ipamv1.IPAddress{}
 	err = cli.List(ctx, IPAddresses)
@@ -719,56 +818,7 @@ func MachineToIPAddress(ctx context.Context, cli client.Client, m *clusterv1.Mac
 	}
 	for i, ip := range IPAddresses.Items {
 		for _, owner := range ip.OwnerReferences {
-			if owner.Name == m3Data.Name && ip.Spec.Pool.Name == ippool.Name {
-				IPAddress = &IPAddresses.Items[i]
-			}
-		}
-	}
-	if IPAddress.Name == "" {
-		return "", errors.New("couldn't find a matching IPAddress object")
-	}
-
-	return string(IPAddress.Spec.Address), nil
-}
-
-// MachineTiIPAddress gets IPAddress based on machine, from machine -> m3machine -> m3data -> IPAddress.
-// This is a duplicate of MachineToIPAddress, but for v1beta1 API. Remove this function when we switch to CAPI v1beta2 API only.
-func MachineToIPAddress1beta1(ctx context.Context, cli client.Client, m *clusterv1.Machine, ippool ipamv1.IPPool) (string, error) {
-	m3Machine := &infrav1beta1.Metal3Machine{}
-	err := cli.Get(ctx, types.NamespacedName{
-		Namespace: m.Namespace,
-		Name:      m.Spec.InfrastructureRef.Name},
-		m3Machine)
-
-	if err != nil {
-		return "", fmt.Errorf("couldn't get a Metal3Machine within namespace %s with name %s : %w", m.Namespace, m.Spec.InfrastructureRef.Name, err)
-	}
-	m3DataList := &infrav1beta1.Metal3DataList{}
-	m3Data := &infrav1beta1.Metal3Data{}
-	err = cli.List(ctx, m3DataList)
-	if err != nil {
-		return "", fmt.Errorf("coudln't list Metal3Data objects: %w", err)
-	}
-	for i, m3d := range m3DataList.Items {
-		for _, owner := range m3d.OwnerReferences {
-			if owner.Name == m3Machine.Name {
-				m3Data = &m3DataList.Items[i]
-			}
-		}
-	}
-	if m3Data.Name == "" {
-		return "", errors.New("couldn't find a matching Metal3Data object")
-	}
-
-	IPAddresses := &ipamv1.IPAddressList{}
-	IPAddress := &ipamv1.IPAddress{}
-	err = cli.List(ctx, IPAddresses)
-	if err != nil {
-		return "", fmt.Errorf("couldn't list IPAddress objects: %w", err)
-	}
-	for i, ip := range IPAddresses.Items {
-		for _, owner := range ip.OwnerReferences {
-			if owner.Name == m3Data.Name && ip.Spec.Pool.Name == ippool.Name {
+			if owner.Name == ipClaim.Name {
 				IPAddress = &IPAddresses.Items[i]
 			}
 		}
@@ -1107,7 +1157,7 @@ type CreateTargetClusterInput struct {
 func CreateTargetCluster(ctx context.Context, inputGetter func() CreateTargetClusterInput) (framework.ClusterProxy, *clusterctl.ApplyClusterTemplateAndWaitResult) {
 	By("Creating a high available cluster")
 	input := inputGetter()
-	imageURL, imageChecksum := EnsureImage(input.K8sVersion)
+	imageURL, imageChecksum := EnsureImage(input.E2EConfig, input.K8sVersion)
 	os.Setenv("IMAGE_RAW_CHECKSUM", imageChecksum)
 	os.Setenv("IMAGE_RAW_URL", imageURL)
 	controlPlaneMachineCount := input.KCPMachineCount
@@ -1140,24 +1190,18 @@ func CreateTargetCluster(ctx context.Context, inputGetter func() CreateTargetClu
 	return targetCluster, &result
 }
 
+// TODO: This is now a thin wrapper around ApplyBMHs (plus a NUM_NODES slice and
+// a WaitForBMHsAvailable). Consider removing it and calling ApplyBMHs directly
+// from the callers to avoid the confusing indirection.
 func ApplyBmh(ctx context.Context, e2eConfig *clusterctl.E2EConfig, clusterProxy framework.ClusterProxy, clusterNamespace string, specName string) {
-	workingDir := "/opt/metal3-dev-env/"
 	numNodes := int(*e2eConfig.MustGetInt32PtrVariable("NUM_NODES"))
-	// Apply secrets and bmhs for [node_0 and node_1] in the management cluster to host the target management cluster
-	for i := range numNodes {
-		resource, err := os.ReadFile(filepath.Join(workingDir, fmt.Sprintf("bmhs/node_%d.yaml", i)))
-		Expect(err).ShouldNot(HaveOccurred())
-		Expect(CreateOrUpdateWithNamespace(ctx, clusterProxy, resource, clusterNamespace)).ShouldNot(HaveOccurred())
-	}
-	clusterClient := clusterProxy.GetClient()
-	ListBareMetalHosts(ctx, clusterClient, client.InNamespace(clusterNamespace))
-	WaitForNumBmhInState(ctx, bmov1alpha1.StateAvailable, WaitForNumInput{
-		Client:    clusterClient,
-		Options:   []client.ListOption{client.InNamespace(clusterNamespace)},
-		Replicas:  numNodes,
-		Intervals: e2eConfig.GetIntervals(specName, "wait-bmh-available"),
-	})
-	ListBareMetalHosts(ctx, clusterClient, client.InNamespace(clusterNamespace))
+
+	// Use the VM info from the bmcs config to generate BMHs programmatically.
+	Expect(vmInfos).ToNot(BeEmpty(), "vmInfos not populated; E2E_BMCS_CONFIG must be set and loaded before creating BMHs")
+	Expect(len(vmInfos)).To(BeNumerically(">=", numNodes), "Not enough VMs created for the requested number of nodes")
+
+	ApplyBMHs(ctx, clusterProxy, vmInfos[:numNodes], clusterNamespace)
+	WaitForBMHsAvailable(ctx, clusterProxy, clusterNamespace, numNodes, e2eConfig.GetIntervals(specName, "wait-bmh-available"))
 }
 
 // WaitForResourceVersionsToStabilize waits for the resource versions of the specified GVKs in the given namespace to stabilize.
@@ -1220,7 +1264,7 @@ func getResourceVersions(ctx context.Context, c client.Client, namespace string,
 }
 
 func IsMetal3DataCountEqualToMachineCount(ctx context.Context, c client.Client, namespace string) bool {
-	m3DataList := &infrav1beta1.Metal3DataList{}
+	m3DataList := &infrav1.Metal3DataList{}
 	machineList := &clusterv1.MachineList{}
 
 	err1 := c.List(ctx, m3DataList, client.InNamespace(namespace))
@@ -1343,7 +1387,7 @@ func UpgradeControlPlane(ctx context.Context, inputGetter func() UpgradeControlP
 	// Upgrade process starts here
 	// Download node image
 	By("Download image")
-	imageURL, imageChecksum := EnsureImage(k8sToVersion)
+	imageURL, imageChecksum := EnsureImage(e2eConfig, k8sToVersion)
 
 	By("Create new KCP Metal3MachineTemplate with upgraded image to boot")
 	m3MachineTemplateName := clusterName + "-controlplane"
@@ -1591,25 +1635,13 @@ type UninstallIRSOAndIronicResourcesInput struct {
 	IronicNamespace       string
 	IrsoOperatorKustomize string
 	IronicKustomization   string
-	IsDevEnvUninstall     bool
 }
 
 // UninstallIRSOAndIronicResources removes the IRSO deployment, Ironic CR, IronicDatabase CR (if present), and related secrets.
 func UninstallIRSOAndIronicResources(ctx context.Context, input UninstallIRSOAndIronicResourcesInput) error {
-	if input.IsDevEnvUninstall {
-		ironicObj := &irsov1alpha1.Ironic{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "ironic",
-				Namespace: input.IronicNamespace,
-			},
-		}
-		err := input.ClusterProxy.GetClient().Delete(ctx, ironicObj)
-		Expect(err).ToNot(HaveOccurred(), "Failed to delete Ironic")
-	} else {
-		By("Remove Ironic CR in the cluster " + input.ClusterProxy.GetName())
-		err := BuildAndRemoveKustomization(ctx, input.IronicKustomization, input.ClusterProxy)
-		Expect(err).NotTo(HaveOccurred())
-	}
+	By("Remove Ironic CR in the cluster " + input.ClusterProxy.GetName())
+	err := BuildAndRemoveKustomization(ctx, input.IronicKustomization, input.ClusterProxy)
+	Expect(err).NotTo(HaveOccurred())
 
 	By("Remove Ironic Service Deployment in the cluster " + input.ClusterProxy.GetName())
 	RemoveDeployment(ctx, func() RemoveDeploymentInput {
@@ -1620,20 +1652,9 @@ func UninstallIRSOAndIronicResources(ctx context.Context, input UninstallIRSOAnd
 		}
 	})
 
-	if input.IsDevEnvUninstall {
-		By("Remove Ironic Standalone Operator Deployment in the cluster " + input.ClusterProxy.GetName())
-		RemoveDeployment(ctx, func() RemoveDeploymentInput {
-			return RemoveDeploymentInput{
-				ClusterProxy: input.ClusterProxy,
-				Namespace:    IRSOControllerNameSpace,
-				Name:         IRSOControllerManagerName,
-			}
-		})
-	} else {
-		By("Uninstalling IRSO operator via kustomize")
-		err := BuildAndRemoveKustomization(ctx, input.IrsoOperatorKustomize, input.ClusterProxy)
-		Expect(err).NotTo(HaveOccurred())
-	}
+	By("Uninstalling IRSO operator via kustomize")
+	err = BuildAndRemoveKustomization(ctx, input.IrsoOperatorKustomize, input.ClusterProxy)
+	Expect(err).NotTo(HaveOccurred())
 
 	clusterClient := input.ClusterProxy.GetClient()
 

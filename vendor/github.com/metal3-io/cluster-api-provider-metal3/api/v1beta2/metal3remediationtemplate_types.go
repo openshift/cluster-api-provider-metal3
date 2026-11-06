@@ -22,19 +22,23 @@ import (
 
 // Metal3RemediationTemplateSpec defines the desired state of Metal3RemediationTemplate.
 type Metal3RemediationTemplateSpec struct {
-	Template Metal3RemediationTemplateResource `json:"template"`
+	// template describes the data needed to create a Metal3Remediation from a template
+	// +required
+	Template Metal3RemediationTemplateResource `json:"template,omitempty,omitzero"`
 }
 
 // Metal3RemediationTemplateResource describes the data needed to create a Metal3Remediation from a template.
 type Metal3RemediationTemplateResource struct {
-	// Spec is the specification of the desired behavior of the Metal3Remediation.
-	Spec Metal3RemediationSpec `json:"spec"`
+	// spec is the specification of the desired behavior of the Metal3Remediation.
+	// +required
+	Spec Metal3RemediationSpec `json:"spec,omitempty,omitzero"`
 }
 
 // Metal3RemediationTemplateStatus defines the observed state of Metal3RemediationTemplate.
 type Metal3RemediationTemplateStatus struct {
-	// Metal3RemediationStatus defines the observed state of Metal3Remediation
-	Status Metal3RemediationStatus `json:"status"`
+	// status defines the observed state of Metal3Remediation
+	// +optional
+	Status Metal3RemediationStatus `json:"status,omitempty,omitzero"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -46,13 +50,15 @@ type Metal3RemediationTemplateStatus struct {
 // Metal3RemediationTemplate is the Schema for the metal3remediationtemplates API.
 type Metal3RemediationTemplate struct {
 	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
 	// +optional
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
+	// spec defines the desired state of Metal3RemediationTemplate.
 	// +optional
-	Spec Metal3RemediationTemplateSpec `json:"spec,omitempty"`
+	Spec Metal3RemediationTemplateSpec `json:"spec,omitempty,omitzero"`
+	// status defines the observed state of Metal3RemediationTemplate.
 	// +optional
-	Status Metal3RemediationTemplateStatus `json:"status,omitempty"`
+	Status Metal3RemediationTemplateStatus `json:"status,omitempty,omitzero"`
 }
 
 // +kubebuilder:object:root=true

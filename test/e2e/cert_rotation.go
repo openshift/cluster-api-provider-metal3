@@ -14,9 +14,10 @@ import (
 )
 
 type CertRotationInput struct {
-	E2EConfig    *clusterctl.E2EConfig
-	ClusterProxy framework.ClusterProxy
-	SpecName     string
+	E2EConfig      *clusterctl.E2EConfig
+	ClusterProxy   framework.ClusterProxy
+	SpecName       string
+	ArtifactFolder string
 }
 
 func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
@@ -24,7 +25,6 @@ func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	input := inputGetter()
 	clientSet := input.ClusterProxy.GetClientSet()
 	clusterClient := input.ClusterProxy.GetClient()
-	mariadbEnabled := GetBoolVariable(input.E2EConfig, ironicMariadb)
 	ironicNS := input.E2EConfig.MustGetVariable(ironicNamespace)
 	By("Check if Ironic is running")
 	WaitForIronicReady(ctx, WaitForIronicInput{
@@ -53,7 +53,7 @@ func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	Logf("Pre-rotation: tls-secret-version=%q, deployment.revision=%q", preTLSVersion, preRevision)
 
 	By("Fetch logs from target cluster after pivot")
-	err := FetchClusterLogs(input.ClusterProxy, filepath.Join(clusterLogCollectionBasePath, "before-cert-rotation"))
+	err := FetchClusterLogs(input.ClusterProxy, filepath.Join(input.ArtifactFolder, input.ClusterProxy.GetName(), "before-cert-rotation"))
 	if err != nil {
 		Logf("Error: %v", err)
 	}
@@ -61,9 +61,6 @@ func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	By("Force the cert-manager to regenerate the certificate by deleting the secrets")
 	secretList := []string{
 		"ironic-cert",
-	}
-	if mariadbEnabled {
-		secretList = append(secretList, "mariadb-cert")
 	}
 	for _, secretName := range secretList {
 		secretErr := clientSet.CoreV1().Secrets(ironicNS).Delete(ctx, secretName, metav1.DeleteOptions{})
@@ -79,10 +76,6 @@ func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	Eventually(func(g Gomega) {
 		_, secretErr := clientSet.CoreV1().Secrets(ironicNS).Get(ctx, secretList[0], metav1.GetOptions{})
 		g.Expect(secretErr).ToNot(HaveOccurred())
-		if mariadbEnabled {
-			_, secretErr := clientSet.CoreV1().Secrets(ironicNS).Get(ctx, secretList[1], metav1.GetOptions{})
-			g.Expect(secretErr).ToNot(HaveOccurred())
-		}
 	}, input.E2EConfig.GetIntervals(input.SpecName, "wait-pod-restart")...).Should(Succeed())
 
 	By("Check if Ironic is running after certificate rotation")
@@ -103,7 +96,7 @@ func CertRotation(ctx context.Context, inputGetter func() CertRotationInput) {
 	Expect(postRevision).To(Equal(preRevision+1), "deployment revision should increase after cert rotation. before=%s after=%s", preRevision, postRevision)
 
 	By("Fetch logs from target cluster after pivot")
-	err = FetchClusterLogs(input.ClusterProxy, filepath.Join(clusterLogCollectionBasePath, "after-cert-rotation"))
+	err = FetchClusterLogs(input.ClusterProxy, filepath.Join(input.ArtifactFolder, input.ClusterProxy.GetName(), "after-cert-rotation"))
 	if err != nil {
 		Logf("Error: %v", err)
 	}

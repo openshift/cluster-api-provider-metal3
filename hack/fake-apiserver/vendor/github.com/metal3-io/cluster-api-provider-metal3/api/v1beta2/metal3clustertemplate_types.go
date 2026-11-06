@@ -1,0 +1,70 @@
+/*
+Copyright 2026 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1beta2
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+)
+
+// Metal3ClusterTemplateSpec defines the desired state of Metal3ClusterTemplate.
+type Metal3ClusterTemplateSpec struct {
+	// template describes the data for creating a Metal3Cluster from a template
+	// +required
+	Template Metal3ClusterTemplateResource `json:"template,omitempty,omitzero"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:resource:path=metal3clustertemplates,scope=Namespaced,categories=cluster-api,shortName=m3ct
+// +kubebuilder:storageversion
+
+// Metal3ClusterTemplate is the Schema for the metal3clustertemplates API.
+type Metal3ClusterTemplate struct {
+	metav1.TypeMeta `json:",inline"`
+	// metadata is the standard object's metadata.
+	// +optional
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	// spec defines the desired state of Metal3ClusterTemplate.
+	// +required
+	Spec Metal3ClusterTemplateSpec `json:"spec,omitempty,omitzero"`
+}
+
+// +kubebuilder:object:root=true
+
+// Metal3ClusterTemplateList contains a list of Metal3ClusterTemplate.
+type Metal3ClusterTemplateList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	// item is a list of Metal3ClusterTemplate objects.
+	Items []Metal3ClusterTemplate `json:"items"`
+}
+
+func init() {
+	objectTypes = append(objectTypes, &Metal3ClusterTemplate{}, &Metal3ClusterTemplateList{})
+}
+
+// Metal3ClusterTemplateResource describes the data for creating a Metal3Cluster from a template.
+type Metal3ClusterTemplateResource struct {
+	// metadata is the standard object's metadata.
+	// More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#metadata
+	// +optional
+	ObjectMeta clusterv1.ObjectMeta `json:"metadata,omitempty,omitzero"`
+	// spec defines the desired state of Metal3Cluster.
+	// +required
+	Spec Metal3ClusterSpec `json:"spec,omitempty,omitzero"`
+}

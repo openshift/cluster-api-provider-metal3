@@ -18,17 +18,6 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - nodes
-  verbs:
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - ""
-  resources:
   - pods
   verbs:
   - list
@@ -92,7 +81,6 @@ rules:
 - apiGroups:
   - cluster.x-k8s.io
   resources:
-  - kubeadmcontrolplanes
   - machinedeployments
   - machines
   - machines/status
@@ -103,6 +91,14 @@ rules:
   - list
   - patch
   - update
+  - watch
+- apiGroups:
+  - controlplane.cluster.x-k8s.io
+  resources:
+  - kubeadmcontrolplanes
+  verbs:
+  - get
+  - list
   - watch
 - apiGroups:
   - infrastructure.cluster.x-k8s.io
@@ -157,7 +153,6 @@ rules:
   - watch
 - apiGroups:
   - ipam.cluster.x-k8s.io
-  - ipam.metal3.io
   resources:
   - ipaddresses
   verbs:
@@ -171,6 +166,15 @@ rules:
   - ipaddresses/status
   verbs:
   - get
+- apiGroups:
+  - ipam.metal3.io
+  resources:
+  - ipaddresses
+  - ippools
+  verbs:
+  - get
+  - list
+  - watch
 - apiGroups:
   - ipam.metal3.io
   resources:
