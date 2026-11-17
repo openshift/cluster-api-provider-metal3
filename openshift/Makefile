@@ -27,7 +27,7 @@ remediation-crds: $(KUSTOMIZE) ## Generates remediation CRDs for CVO deployment 
 	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone remediation-crds/metal3remediationtemplate -o manifests/0000_30_machine-api-operator_07_metal3remediationtemplate.crd.yaml
 
 .PHONY: ocp-manifests
-ocp-manifests: remediation-crds $(MANIFESTS_GEN) ## Builds openshift specific manifests
+ocp-manifests: remediation-crds $(MANIFESTS_GEN) $(KUSTOMIZE) ## Builds openshift specific manifests
 	$(MANIFESTS_GEN) \
 		--manifests-path "capi-operator-manifests" \
 		--kustomize-dir "../openshift" \
@@ -38,3 +38,8 @@ ocp-manifests: remediation-crds $(MANIFESTS_GEN) ## Builds openshift specific ma
 		--self-image-ref registry.ci.openshift.org/openshift:baremetal-cluster-api-controllers \
 		--platform BareMetal \
 		--protect-cluster-resource metal3cluster
+	# manifests-gen overwrites container resource requests after kustomize, so
+	# provider-specific overrides are applied to its output afterwards.
+	# See capi-operator-manifests-overrides/kustomization.yaml.
+	$(KUSTOMIZE) build --load-restrictor LoadRestrictionsNone capi-operator-manifests-overrides -o capi-operator-manifests/default/manifests.yaml.tmp
+	mv capi-operator-manifests/default/manifests.yaml.tmp capi-operator-manifests/default/manifests.yaml
