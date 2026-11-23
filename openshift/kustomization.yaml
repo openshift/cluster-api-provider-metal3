@@ -93,6 +93,9 @@ patches:
     - op: add
       path: /spec/template/spec/containers/0/args/-
       value: "--tls-cipher-suites=${TLS_CIPHER_SUITES}"
+    - op: add
+      path: /spec/template/spec/containers/0/args/-
+      value: "--tls-curve-preferences=${TLS_CURVE_PREFERENCES}"
 
 images:
 - name: quay.io/metal3-io/cluster-api-provider-metal3
