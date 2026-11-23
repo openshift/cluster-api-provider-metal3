@@ -7005,6 +7005,7 @@ spec:
         - --diagnostics-address=${CAPM3_DIAGNOSTICS_ADDRESS:=:8443}
         - --insecure-diagnostics=${CAPM3_INSECURE_DIAGNOSTICS:=false}
         - --tls-cipher-suites=${TLS_CIPHER_SUITES}
+        - --tls-curve-preferences=${TLS_CURVE_PREFERENCES}
         command:
         - /manager
         envFrom:
